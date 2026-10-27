@@ -11,7 +11,7 @@ isométrica estilo "Seven Brand".
   prefiere respuestas concisas en voseo argentino, honestidad 
   sobre validación.
 - Repo: github.com/NachoAbait/nacho-hub
-- Dominio objetivo: hub.bnbstoreok.com (Vercel)
+- URL: nacho-hub.vercel.app (Vercel, sin dominio propio por decisión del 27-10-2026)
 
 ## Dos negocios cubiertos
 
@@ -20,7 +20,7 @@ isométrica estilo "Seven Brand".
 | Qué | Reventa Apple/Samsung en Dolores | App gestión + trazabilidad ganadera |
 | Estado | Activo, es el que paga | Prototipo, aún sin cobrar |
 | IG | @bnbstore.dolores (16.6k) | @agroscan |
-| Admin app | bnbstoreok.com (React+Vite+Supabase) | PWA propia |
+| Admin app | NexiOS (nexiosapp.com), BNB es el único tenant | PWA propia |
 
 NACHO Hub tiene selector de contexto `[BNB] [AgroScan] [AMBOS]`. 
 Cada agente lee el contexto activo y adapta su análisis.
@@ -139,8 +139,8 @@ Más tablas van a venir cuando construyamos cada agente.
   prototipo). NO usar IA generativa para los banners enteros, 
   solo para generar las imágenes hero de productos (una vez por 
   modelo).
-- Supabase: proyecto NUEVO, separado del de BNB Store. 
-  bnbstoreok.com queda intacto.
+- Supabase: proyecto NUEVO, separado del de BNB Store (ref 
+  `djrsijxkjcwqrlgnlcbc`). NexiOS queda intacto.
 - Visual 3D: 2 pisos con transición de cámara (BNB planta baja, 
   AgroScan arriba).
 
