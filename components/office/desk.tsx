@@ -17,11 +17,14 @@ interface Props {
   seed: number;
   /** El piso está visible: si no, la etiqueta HTML se oculta (drei no la oculta sola). */
   visible: boolean;
+  /** "normal" en la vista del piso, "detail" si su sector está en foco, "hidden" si el foco está en otro sector. */
+  labelMode: "normal" | "detail" | "hidden";
+  accentText?: string;
   onSelect: (id: string) => void;
 }
 
 /** Escritorio + monitor + silla + agente. El muñeco mira a +z (hacia la cámara). */
-export function Desk({ agent, status, position, deskColor, accent, selected, seed, visible, onSelect }: Props) {
+export function Desk({ agent, status, position, deskColor, accent, selected, seed, visible, labelMode, onSelect }: Props) {
   const [hover, setHover] = useState(false);
   const [x, z] = position;
   const screenGlow = status === "working" ? 1.8 : status === "live" ? 1.1 : status === "done" ? 0.6 : 0.08;
@@ -122,11 +125,11 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onSelect(agent.id); }}
-          style={{ visibility: visible ? "visible" : "hidden", pointerEvents: visible ? "auto" : "none" }}
-          className={`flex cursor-pointer flex-col items-center whitespace-nowrap rounded-lg border bg-black/85 px-2.5 py-1.5 text-white shadow-lg backdrop-blur transition hover:bg-black ${selected ? "border-amber-400" : "border-white/15"}`}
+          style={{ visibility: visible && labelMode !== "hidden" ? "visible" : "hidden", pointerEvents: visible && labelMode !== "hidden" ? "auto" : "none" }}
+          className={`flex cursor-pointer flex-col items-center whitespace-nowrap rounded-lg border bg-black/85 text-white shadow-lg backdrop-blur transition hover:bg-black ${labelMode === "detail" ? "px-3 py-2" : "px-2.5 py-1.5"} ${selected ? "border-amber-400" : "border-white/15"}`}
         >
           <div className="flex items-center gap-1.5">
-            <span className="text-[12px] font-bold leading-none">{agent.persona}</span>
+            <span className={`font-bold leading-none ${labelMode === "detail" ? "text-[13px]" : "text-[12px]"}`}>{agent.persona}</span>
             <span
               className={`rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider leading-none ${status === "working" ? "animate-pulse" : ""}`}
               style={{ background: STATUS_COLOR[status], color: status === "done" ? "#1a1200" : "#fff", boxShadow: `0 0 8px ${STATUS_COLOR[status]}` }}
@@ -135,6 +138,10 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
             </span>
           </div>
           <div className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/55 leading-none">{agent.name}</div>
+          {/* tarea: chiquita siempre; con el sector en foco, más detalle */}
+          <div className={`mt-1 leading-none ${labelMode === "detail" ? "text-[10px] text-white/85" : "text-[8px] text-white/50"}`}>
+            {labelMode === "detail" ? agent.description : agent.task}
+          </div>
         </button>
       </Html>
     </group>

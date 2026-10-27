@@ -20,6 +20,8 @@ export interface AgentDef {
   name: string;
   /** Nombre de persona ficticio que se muestra sobre el escritorio. */
   persona: string;
+  /** Tarea en pocas palabras, para la etiqueta chica. */
+  task: string;
   tier: Tier;
   /** En qué pisos tiene escritorio. */
   contexts: BusinessContext[];
@@ -33,37 +35,37 @@ export interface AgentDef {
 /** Los 13 agentes de CLAUDE.md. El orden define la posición del escritorio dentro del sector. */
 export const AGENTS: AgentDef[] = [
   // TIER 1 — READERS
-  { id: "price-reader", persona: "Lucas", name: "Price Reader", tier: "readers", contexts: ["BNB"], phase: 2, live: false,
+  { id: "price-reader", task: "Lee precios de proveedores", persona: "Lucas", name: "Price Reader", tier: "readers", contexts: ["BNB"], phase: 2, live: false,
     description: "Lee WhatsApp de proveedores Apple/Samsung, extrae modelo, capacidad y precio USD, actualiza products." },
-  { id: "competitor-scraper", persona: "Sofía", name: "Competitor Scraper", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "competitor-scraper", task: "Espía precios de la competencia", persona: "Sofía", name: "Competitor Scraper", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Scrapea Instagram de la competencia y guarda posts, precios y promos." },
-  { id: "market-watcher", persona: "Tomás", name: "Market Watcher", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "market-watcher", task: "Sigue noticias y dólar", persona: "Tomás", name: "Market Watcher", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Noticias Apple y dólar MEP para BNB; SENASA y mercado de hacienda para AgroScan." },
-  { id: "social-collector", persona: "Valentina", name: "Social Collector", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "social-collector", task: "Junta métricas de Instagram", persona: "Valentina", name: "Social Collector", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Métricas de las cuentas propias de Instagram vía Graph API." },
 
   // TIER 2 — ANALYSTS
-  { id: "price-analyst", persona: "Martín", name: "Price Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
+  { id: "price-analyst", task: "Compara precios vs. competencia", persona: "Martín", name: "Price Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
     description: "Compara precios propios contra la competencia." },
-  { id: "content-analyst", persona: "Camila", name: "Content Analyst", tier: "analysts", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "content-analyst", task: "Mide qué contenido rinde", persona: "Camila", name: "Content Analyst", tier: "analysts", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Qué posts rinden y por qué." },
-  { id: "ads-analyst", persona: "Joaquín", name: "Ads Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
+  { id: "ads-analyst", task: "Vigila las campañas de Meta", persona: "Joaquín", name: "Ads Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
     description: "Performance de Meta Ads, detecta anomalías." },
-  { id: "stock-analyst", persona: "Julieta", name: "Stock Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
+  { id: "stock-analyst", task: "Controla stock, margen y caja", persona: "Julieta", name: "Stock Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
     description: "Rotación, márgenes y cash flow." },
 
   // TIER 3 — CREATORS
-  { id: "designer", persona: "Nico", name: "Designer", tier: "creators", contexts: ["BNB"], phase: 1, live: true,
+  { id: "designer", task: "Arma los banners de precios", persona: "Nico", name: "Designer", tier: "creators", contexts: ["BNB"], phase: 1, live: true,
     description: "Banners automáticos con HTML + Playwright. Pipeline validado y en producción." },
-  { id: "content-creator", persona: "Agustina", name: "Content Creator", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "content-creator", task: "Propone 3 ideas por día", persona: "Agustina", name: "Content Creator", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "3 ideas diarias de posts, reels y stories." },
-  { id: "copy-writer", persona: "Facundo", name: "Copy Writer", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "copy-writer", task: "Escribe captions y respuestas", persona: "Facundo", name: "Copy Writer", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Captions, descripciones y respuestas a DMs frecuentes." },
-  { id: "dm-handler", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: false,
+  { id: "dm-handler", task: "Responde DMs rutinarios", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: false,
     description: "Responde DMs rutinarios. Bonus de Fase 3." },
 
   // TIER 4 — CHIEF
-  { id: "chief-of-staff", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: false,
+  { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: false,
     description: "Lee a los 11 anteriores y arma un Daily Brief con 3 acciones concretas." },
 ];
 

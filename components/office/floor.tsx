@@ -208,9 +208,17 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
             {/* Cartel al frente de la alfombra, bajo e inclinado hacia la cámara: no tapa los escritorios. */}
             <Html transform position={[cx, 1.25, cz + d / 2 - 0.4]} rotation={[-0.45, 0, 0]} distanceFactor={5} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-              <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: labelsShown && (!focusedTier || focused) ? "visible" : "hidden", borderColor: theme.accent }}>
-                <div className="text-lg font-black uppercase leading-none tracking-tight text-white">Equipo {tier.label}</div>
-                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+              <div
+                className={`rounded-lg border-l-4 px-4 py-2 shadow-xl transition ${focused ? "scale-110" : ""}`}
+                style={{
+                  visibility: labelsShown && (!focusedTier || focused) ? "visible" : "hidden",
+                  borderColor: theme.accent,
+                  background: focused ? theme.accent : "rgba(0,0,0,0.9)",
+                  boxShadow: focused ? `0 0 30px ${theme.accent}` : undefined,
+                }}
+              >
+                <div className={`text-lg font-black uppercase leading-none tracking-tight ${focused ? "text-black" : "text-white"}`}>Equipo {tier.label}</div>
+                <div className={`mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] ${focused ? "text-black/70" : "text-white/60"}`}>
                   {tier.tagline} · {desks.length} {desks.length === 1 ? "agente" : "agentes"}
                 </div>
               </div>
@@ -226,6 +234,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
                 selected={selectedId === agent.id}
                 seed={i * 1.7 + cx}
                 visible={labelsShown}
+                labelMode={!focusedTier ? "normal" : focused ? "detail" : "hidden"}
                 onSelect={onSelect}
               />
             ))}
