@@ -118,7 +118,13 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
       )}
       {/* etiqueta flotante */}
       <Html position={[0, 1.95, -0.8]} center distanceFactor={14} zIndexRange={[50, 0]} style={{ pointerEvents: "none" }}>
-        <div style={{ visibility: visible ? "visible" : "hidden" }} className="flex flex-col items-center whitespace-nowrap rounded-lg border border-white/15 bg-black/85 px-2.5 py-1.5 text-white shadow-lg backdrop-blur">
+        {/* La etiqueta también abre el panel: es lo más fácil de tocar, sobre todo en el celular. */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSelect(agent.id); }}
+          style={{ visibility: visible ? "visible" : "hidden", pointerEvents: visible ? "auto" : "none" }}
+          className={`flex cursor-pointer flex-col items-center whitespace-nowrap rounded-lg border bg-black/85 px-2.5 py-1.5 text-white shadow-lg backdrop-blur transition hover:bg-black ${selected ? "border-amber-400" : "border-white/15"}`}
+        >
           <div className="flex items-center gap-1.5">
             <span className="text-[12px] font-bold leading-none">{agent.persona}</span>
             <span
@@ -129,7 +135,7 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
             </span>
           </div>
           <div className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/55 leading-none">{agent.name}</div>
-        </div>
+        </button>
       </Html>
     </group>
   );

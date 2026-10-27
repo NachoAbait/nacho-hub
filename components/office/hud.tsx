@@ -3,6 +3,7 @@
 import { STATUS_COLOR, STATUS_LABEL, TIERS, agentById, type AgentStatus } from "@/lib/agents";
 import type { OfficeView, SectorFocus } from "@/components/office/camera-rig";
 import { RegenerateButton } from "@/components/dashboard/regenerate-button";
+import { BRIEFS } from "@/lib/agent-briefs";
 
 export interface DesignerBanner {
   url: string;
@@ -31,6 +32,7 @@ const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
 
 export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClearFocus, onClose, statuses, designerBanner }: Props) {
   const agent = selectedId ? agentById(selectedId) : undefined;
+  const brief = agent ? BRIEFS[agent.id] : undefined;
   const status = agent ? statuses[agent.id] ?? "idle" : "idle";
   const liveCount = Object.values(statuses).filter((s) => s !== "idle").length;
   const workingCount = Object.values(statuses).filter((s) => s === "working").length;
@@ -108,7 +110,40 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </button>
           </header>
 
-          <p className="text-sm leading-relaxed text-white/80">{agent.description}</p>
+          {brief ? (
+            <>
+              <p className="text-sm leading-relaxed text-white/90">“{brief.summary}”</p>
+
+              <section>
+                <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Qué hace</h3>
+                <ol className="flex flex-col gap-2">
+                  {brief.steps.map((step, i) => (
+                    <li key={i} className="flex gap-2.5 text-[13px] leading-snug text-white/80">
+                      <span className="mt-0.5 grid h-4 w-4 flex-none place-items-center rounded-full bg-amber-400/15 text-[10px] font-bold text-amber-300">{i + 1}</span>
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px]">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Fuentes</div>
+                  <div className="mt-1 text-white/80">{brief.sources.join(" · ")}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Entrega</div>
+                  <div className="mt-1 text-white/80">{brief.delivers}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Cuándo corre</div>
+                  <div className="mt-1 text-white/80">{brief.schedule}</div>
+                </div>
+              </section>
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed text-white/80">{agent.description}</p>
+          )}
 
           <div className="text-xs text-white/50">
             Trabaja en: {agent.contexts.join(" y ")}
