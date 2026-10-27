@@ -15,6 +15,7 @@ export async function regenerateBanner(category: string): Promise<RegenerateResu
   try {
     const banner = await generateBanner(category);
     revalidatePath("/dashboard");
+    revalidatePath("/");
     return { ok: true, imageUrl: banner.image_url };
   } catch (err) {
     const message =
