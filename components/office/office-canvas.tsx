@@ -19,7 +19,8 @@ interface Props {
 
 export function OfficeCanvas({ statuses, designerBanner }: Props) {
   const [view, setView] = useState<OfficeView>("BNB");
-  const [transitioning, setTransitioning] = useState(false);
+  // Efecto de ascensor: dirección y un contador para reiniciar la animación CSS en cada viaje.
+  const [fx, setFx] = useState<{ dir: "up" | "down" | "zoom"; key: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focus, setFocus] = useState<SectorFocus | null>(null);
   const [designerWorking, setDesignerWorking] = useState(false);
@@ -27,15 +28,16 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
   const effective: Record<string, AgentStatus> = designerWorking ? { ...statuses, designer: "working" } : statuses;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Al cambiar de piso, los dos quedan visibles mientras la cámara hace el plano de grúa (2,2 s).
   function changeView(next: OfficeView) {
     if (next === view) return;
+    const level = (v: OfficeView) => (v === "BNB" ? 0 : v === "AgroScan" ? 1 : 0.5);
+    const dir = next === "AMBOS" || view === "AMBOS" ? "zoom" : level(next) > level(view) ? "up" : "down";
     setView(next);
     setSelectedId(null);
     setFocus(null);
-    setTransitioning(true);
+    setFx({ dir, key: Date.now() });
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setTransitioning(false), 2300);
+    timer.current = setTimeout(() => setFx(null), 1000);
   }
 
   function focusSector(floor: SectorFocus["floor"], tier: Tier | null) {
@@ -56,13 +58,13 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
     <div className="relative h-dvh w-full overflow-hidden bg-[#0a0b10]">
       <Scene
         view={view}
-        transitioning={transitioning}
         focus={focus}
         statuses={effective}
         selectedId={selectedId}
         onSelect={selectAgent}
         onFocusSector={focusSector}
       />
+      {fx && <div key={fx.key} className={`elevator-fx ${fx.dir}`} aria-hidden />}
       <Hud
         view={view}
         onView={changeView}

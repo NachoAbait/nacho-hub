@@ -10,3 +10,62 @@ body {
   color: #fafafa;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* Efecto de ascensor entre plantas: oscurece y pasan líneas de velocidad. Dura lo que el viaje de cámara. */
+.elevator-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  overflow: hidden;
+  pointer-events: none;
+}
+.elevator-fx::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, #07080c 0%, #000 100%);
+  animation: fx-dark 0.9s ease-in-out forwards;
+}
+.elevator-fx::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -150%;
+  height: 400%;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 26px,
+    rgba(255, 255, 255, 0.06) 26px 30px,
+    transparent 30px 70px,
+    rgba(226, 185, 77, 0.12) 70px 72px,
+    transparent 72px 140px
+  );
+  opacity: 0;
+  animation: fx-lines-up 0.9s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+.elevator-fx.down::after { animation-name: fx-lines-down; }
+.elevator-fx.zoom::after { animation-name: fx-zoom; }
+
+@keyframes fx-dark {
+  0% { opacity: 0; }
+  30% { opacity: 0.92; }
+  50% { opacity: 0.92; }
+  100% { opacity: 0; }
+}
+/* subir: las líneas pasan hacia abajo, como los pisos por la ventana del ascensor */
+@keyframes fx-lines-up {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(45%); opacity: 0; }
+}
+@keyframes fx-lines-down {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(-45%); opacity: 0; }
+}
+@keyframes fx-zoom {
+  0% { transform: scale(1); opacity: 0; }
+  30% { opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}

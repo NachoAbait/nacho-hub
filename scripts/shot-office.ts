@@ -23,19 +23,19 @@ async function main() {
   // transición BNB → AgroScan: tres fotogramas intermedios + final
   await page.getByRole("button", { name: "AgroScan" }).click();
   // headless renderiza lento: el viaje de 2,2 s (22 frames con delta capado) tarda varios segundos
-  for (const i of [1, 2, 3, 4]) {
-    await page.waitForTimeout(1500);
+  for (const i of [1, 2, 3]) {
+    await page.waitForTimeout(700);
     await page.screenshot({ path: `${out}-travel-${i}.png` });
   }
-  await page.waitForTimeout(8000);
+  await page.waitForTimeout(5000);
   await page.screenshot({ path: `${out}-agro.png` });
 
   await page.getByRole("button", { name: "Ambos" }).click();
-  await page.waitForTimeout(12000);
+  await page.waitForTimeout(7000);
   await page.screenshot({ path: `${out}-ambos.png` });
 
   await page.getByRole("button", { name: "BNB" }).click();
-  await page.waitForTimeout(12000);
+  await page.waitForTimeout(7000);
   // click en el centro del canvas para probar selección (cae en algún escritorio o en el piso)
   // zoom a un sector: click en la alfombra de Analysts (a la derecha, entre escritorios)
   const sign = await page.getByText("Equipo Analysts", { exact: true }).first().boundingBox();

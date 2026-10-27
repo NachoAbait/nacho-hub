@@ -10,8 +10,6 @@ import { CameraRig, type OfficeView, type SectorFocus } from "@/components/offic
 
 interface Props {
   view: OfficeView;
-  /** Mientras la cámara viaja entre pisos se ven los dos. */
-  transitioning: boolean;
   focus: SectorFocus | null;
   statuses: Record<string, AgentStatus>;
   selectedId: string | null;
@@ -19,7 +17,7 @@ interface Props {
   onFocusSector: (floor: SectorFocus["floor"], tier: Tier | null) => void;
 }
 
-export default function Scene({ view, transitioning, focus, statuses, selectedId, onSelect, onFocusSector }: Props) {
+export default function Scene({ view, focus, statuses, selectedId, onSelect, onFocusSector }: Props) {
   return (
     <Canvas
       shadows
@@ -59,7 +57,7 @@ export default function Scene({ view, transitioning, focus, statuses, selectedId
           focusedTier={focus?.floor === theme.id ? focus.tier : null}
           onSelect={onSelect}
           onFocusSector={(tier) => onFocusSector(theme.id, tier)}
-          visible={view === "AMBOS" || view === theme.id || transitioning}
+          visible={view === "AMBOS" || view === theme.id}
         />
       ))}
       <CameraRig view={view} focus={focus} />

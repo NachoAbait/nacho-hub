@@ -128,7 +128,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
       }
       return;
     }
-    const next = prev + (target - prev) * (1 - Math.exp(-delta * (visible ? 5 : 3.5)));
+    const next = prev + (target - prev) * (1 - Math.exp(-delta * (visible ? 9 : 24)));
     opacity.current = next;
     g.visible = true;
     applyOpacity(materials.current, next);
@@ -160,19 +160,23 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
         <boxGeometry args={[FLOOR_W, WALL_H, 0.2]} />
         <meshStandardMaterial color={theme.wall} roughness={0.95} />
       </mesh>
-      <mesh position={[-FLOOR_W / 2, WALL_H / 2, 0]} receiveShadow>
-        <boxGeometry args={[0.2, WALL_H, FLOOR_D]} />
-        <meshStandardMaterial color={theme.wall} roughness={0.95} />
-      </mesh>
+      {[-FLOOR_W / 2, FLOOR_W / 2].map((x) => (
+        <mesh key={x} position={[x, WALL_H / 2, 0]} receiveShadow>
+          <boxGeometry args={[0.2, WALL_H, FLOOR_D]} />
+          <meshStandardMaterial color={theme.wall} roughness={0.95} />
+        </mesh>
+      ))}
       {/* zócalos */}
       <mesh position={[0, 0.08, -FLOOR_D / 2 + 0.12]}>
         <boxGeometry args={[FLOOR_W, 0.16, 0.06]} />
         <meshStandardMaterial color="#111" roughness={0.6} />
       </mesh>
-      <mesh position={[-FLOOR_W / 2 + 0.12, 0.08, 0]}>
-        <boxGeometry args={[0.06, 0.16, FLOOR_D]} />
-        <meshStandardMaterial color="#111" roughness={0.6} />
-      </mesh>
+      {[-FLOOR_W / 2 + 0.12, FLOOR_W / 2 - 0.12].map((x) => (
+        <mesh key={x} position={[x, 0.08, 0]}>
+          <boxGeometry args={[0.06, 0.16, FLOOR_D]} />
+          <meshStandardMaterial color="#111" roughness={0.6} />
+        </mesh>
+      ))}
       <Window x={-8.5} accent={theme.accent} city={city} />
       <Window x={8.5} accent={theme.accent} city={city} />
 
@@ -202,8 +206,9 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               </mesh>
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
-            <Html transform position={[cx, 2.3, cz - d / 2 + 0.2]} distanceFactor={6} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-              <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: labelsShown ? "visible" : "hidden", borderColor: theme.accent }}>
+            {/* Cartel al frente de la alfombra, bajo e inclinado hacia la cámara: no tapa los escritorios. */}
+            <Html transform position={[cx, 1.25, cz + d / 2 - 0.4]} rotation={[-0.45, 0, 0]} distanceFactor={5} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+              <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: labelsShown && (!focusedTier || focused) ? "visible" : "hidden", borderColor: theme.accent }}>
                 <div className="text-lg font-black uppercase leading-none tracking-tight text-white">Equipo {tier.label}</div>
                 <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
                   {tier.tagline} · {desks.length} {desks.length === 1 ? "agente" : "agentes"}
