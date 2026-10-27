@@ -1,7 +1,7 @@
 "use client";
 
 import { STATUS_LABEL, TIERS, agentById, type AgentStatus } from "@/lib/agents";
-import type { OfficeView } from "@/components/office/camera-rig";
+import type { OfficeView, SectorFocus } from "@/components/office/camera-rig";
 import { RegenerateButton } from "@/components/dashboard/regenerate-button";
 
 export interface DesignerBanner {
@@ -13,6 +13,8 @@ interface Props {
   view: OfficeView;
   onView: (v: OfficeView) => void;
   selectedId: string | null;
+  focus: SectorFocus | null;
+  onClearFocus: () => void;
   onClose: () => void;
   statuses: Record<string, AgentStatus>;
   designerBanner: DesignerBanner | null;
@@ -26,7 +28,7 @@ const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
 
 const DOT: Record<AgentStatus, string> = { live: "bg-green-500", done: "bg-amber-400", idle: "bg-gray-500" };
 
-export function Hud({ view, onView, selectedId, onClose, statuses, designerBanner }: Props) {
+export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, statuses, designerBanner }: Props) {
   const agent = selectedId ? agentById(selectedId) : undefined;
   const status = agent ? statuses[agent.id] ?? "idle" : "idle";
   const liveCount = Object.values(statuses).filter((s) => s !== "idle").length;
@@ -60,6 +62,17 @@ export function Hud({ view, onView, selectedId, onClose, statuses, designerBanne
         ))}
       </div>
 
+      {/* sector enfocado */}
+      {focus && (
+        <button
+          type="button"
+          onClick={onClearFocus}
+          className="absolute left-1/2 top-5 z-[100] -translate-x-1/2 rounded-full border border-amber-400/40 bg-black/75 px-4 py-1.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-black"
+        >
+          ← Equipo {TIERS.find((t) => t.id === focus.tier)?.label} · {focus.floor} · volver al piso
+        </button>
+      )}
+
       {/* leyenda */}
       <div className="pointer-events-none absolute bottom-5 left-5 z-[100] flex flex-wrap gap-3 text-[11px] text-white/60">
         {(["live", "done", "idle"] as AgentStatus[]).map((s) => (
@@ -68,7 +81,7 @@ export function Hud({ view, onView, selectedId, onClose, statuses, designerBanne
             {STATUS_LABEL[s]}
           </span>
         ))}
-        <span className="text-white/35">· Arrastrá para girar, scroll para zoom, tocá un agente</span>
+        <span className="text-white/35">· Tocá una alfombra para acercarte al sector, un agente para ver su panel</span>
       </div>
 
       {/* panel del agente */}

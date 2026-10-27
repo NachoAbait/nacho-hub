@@ -1,63 +1,108 @@
 "use client";
 
+import { useMemo } from "react";
 import { Html } from "@react-three/drei";
-import type { AgentStatus } from "@/lib/agents";
+import type { ThreeEvent } from "@react-three/fiber";
+import type { AgentStatus, Tier } from "@/lib/agents";
 import { TIERS } from "@/lib/agents";
 import { FLOOR_D, FLOOR_W, WALL_H, floorLayout, type FloorTheme } from "@/lib/office/layout";
+import { cityTexture, woodTexture } from "@/lib/office/textures";
 import { Desk } from "@/components/office/desk";
 
 interface Props {
   theme: FloorTheme;
   statuses: Record<string, AgentStatus>;
   selectedId: string | null;
+  focusedTier: Tier | null;
   onSelect: (id: string) => void;
+  onFocusSector: (tier: Tier | null) => void;
   visible: boolean;
 }
 
-function Plant({ position }: { position: [number, number, number] }) {
+function Plant({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       <mesh position={[0, 0.25, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.17, 0.5, 10]} />
-        <meshStandardMaterial color="#8a5a3c" />
+        <cylinderGeometry args={[0.24, 0.18, 0.5, 14]} />
+        <meshStandardMaterial color="#9a6a48" roughness={0.9} />
       </mesh>
-      {[0, 1.2, 2.4, 3.6, 4.8].map((r, i) => (
-        <mesh key={i} position={[Math.cos(r) * 0.12, 0.85, Math.sin(r) * 0.12]} rotation={[Math.cos(r) * 0.4, 0, Math.sin(r) * 0.4]} castShadow>
-          <coneGeometry args={[0.14, 0.75, 6]} />
-          <meshStandardMaterial color={i % 2 ? "#3f9a4f" : "#2f7d3f"} />
+      <mesh position={[0, 0.5, 0]}>
+        <cylinderGeometry args={[0.22, 0.22, 0.03, 14]} />
+        <meshStandardMaterial color="#3b2a1c" roughness={1} />
+      </mesh>
+      {[0, 0.9, 1.8, 2.7, 3.6, 4.5, 5.4].map((r, i) => (
+        <mesh key={i} position={[Math.cos(r) * 0.14, 0.9 + (i % 2) * 0.12, Math.sin(r) * 0.14]} rotation={[Math.cos(r) * 0.5, 0, Math.sin(r) * 0.5]} castShadow>
+          <coneGeometry args={[0.13, 0.85, 5]} />
+          <meshStandardMaterial color={i % 2 ? "#3f9a4f" : "#2f7d3f"} roughness={0.8} />
         </mesh>
       ))}
     </group>
   );
 }
 
-function Window({ x, accent }: { x: number; accent: string }) {
+function Window({ x, accent, city }: { x: number; accent: string; city: ReturnType<typeof cityTexture> }) {
   return (
     <group position={[x, 2.5, -FLOOR_D / 2 + 0.12]}>
-      <mesh>
-        <boxGeometry args={[5.2, 2.6, 0.08]} />
-        <meshStandardMaterial color={accent} roughness={0.5} />
+      <mesh castShadow>
+        <boxGeometry args={[5.4, 2.8, 0.1]} />
+        <meshStandardMaterial color={accent} roughness={0.5} metalness={0.2} />
       </mesh>
-      <mesh position={[0, 0, 0.05]}>
-        <planeGeometry args={[4.9, 2.3]} />
-        <meshStandardMaterial color="#0d1830" emissive="#1a2b55" emissiveIntensity={0.5} />
+      <mesh position={[0, 0, 0.06]}>
+        <planeGeometry args={[5.05, 2.45]} />
+        <meshStandardMaterial map={city} emissiveMap={city} emissive="#ffffff" emissiveIntensity={0.55} roughness={0.1} metalness={0.1} />
+      </mesh>
+      {/* parantes */}
+      <mesh position={[0, 0, 0.07]}>
+        <boxGeometry args={[0.06, 2.45, 0.02]} />
+        <meshStandardMaterial color={accent} />
       </mesh>
     </group>
   );
 }
 
-export function Floor({ theme, statuses, selectedId, onSelect, visible }: Props) {
+function Lamp({ position, accent }: { position: [number, number, number]; accent: string }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.6, 0]}>
+        <cylinderGeometry args={[0.012, 0.012, 1.2, 6]} />
+        <meshStandardMaterial color="#222" />
+      </mesh>
+      <mesh castShadow>
+        <coneGeometry args={[0.42, 0.32, 24, 1, true]} />
+        <meshStandardMaterial color={accent} roughness={0.35} metalness={0.6} side={2} />
+      </mesh>
+      <mesh position={[0, -0.12, 0]}>
+        <cylinderGeometry args={[0.3, 0.3, 0.02, 24]} />
+        <meshStandardMaterial color="#fff3d6" emissive="#ffd9a0" emissiveIntensity={2.2} toneMapped={false} />
+      </mesh>
+      <pointLight position={[0, -0.3, 0]} intensity={14} distance={9} decay={2} color={accent === "#e2b94d" ? "#ffe2b0" : "#fff6e6"} />
+    </group>
+  );
+}
+
+export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFocusSector, visible }: Props) {
   const layout = floorLayout(theme.id);
   const total = layout.reduce((n, s) => n + s.desks.length, 0);
+  const wood = useMemo(() => woodTexture(theme.floor, [7, 4.5], theme.id === "BNB" ? 2 : 5), [theme.floor, theme.id]);
+  const city = useMemo(() => cityTexture(theme.id === "BNB" ? 7 : 9), [theme.id]);
+
+  function clearFocus(e: ThreeEvent<MouseEvent>) {
+    e.stopPropagation();
+    onFocusSector(null);
+  }
 
   return (
     <group position={[0, theme.y, 0]} visible={visible}>
-      {/* losa */}
-      <mesh position={[0, -0.2, 0]} receiveShadow>
+      {/* losa + parquet */}
+      <mesh position={[0, -0.2, 0]} receiveShadow onClick={clearFocus}>
         <boxGeometry args={[FLOOR_W, 0.4, FLOOR_D]} />
-        <meshStandardMaterial color={theme.floor} roughness={0.9} />
+        <meshStandardMaterial color="#2a2118" roughness={0.9} />
       </mesh>
-      {/* pared de fondo y lateral izquierda */}
+      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={clearFocus}>
+        <planeGeometry args={[FLOOR_W, FLOOR_D]} />
+        <meshStandardMaterial map={wood} roughness={0.45} metalness={0.05} />
+      </mesh>
+      {/* paredes */}
       <mesh position={[0, WALL_H / 2, -FLOOR_D / 2]} receiveShadow>
         <boxGeometry args={[FLOOR_W, WALL_H, 0.2]} />
         <meshStandardMaterial color={theme.wall} roughness={0.95} />
@@ -66,20 +111,44 @@ export function Floor({ theme, statuses, selectedId, onSelect, visible }: Props)
         <boxGeometry args={[0.2, WALL_H, FLOOR_D]} />
         <meshStandardMaterial color={theme.wall} roughness={0.95} />
       </mesh>
-      <Window x={-9} accent={theme.accent} />
-      <Window x={9} accent={theme.accent} />
+      {/* zócalos */}
+      <mesh position={[0, 0.08, -FLOOR_D / 2 + 0.12]}>
+        <boxGeometry args={[FLOOR_W, 0.16, 0.06]} />
+        <meshStandardMaterial color="#111" roughness={0.6} />
+      </mesh>
+      <mesh position={[-FLOOR_W / 2 + 0.12, 0.08, 0]}>
+        <boxGeometry args={[0.06, 0.16, FLOOR_D]} />
+        <meshStandardMaterial color="#111" roughness={0.6} />
+      </mesh>
+      <Window x={-8.5} accent={theme.accent} city={city} />
+      <Window x={8.5} accent={theme.accent} city={city} />
 
       {/* sectores */}
       {layout.map(({ sector, desks }) => {
         const [cx, cz] = sector.center;
         const [w, d] = sector.size;
         const tier = TIERS.find((t) => t.id === sector.tier)!;
+        const focused = focusedTier === sector.tier;
         return (
           <group key={sector.tier}>
-            <mesh position={[cx, 0.012, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+            <mesh
+              position={[cx, 0.012, cz]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              receiveShadow
+              onClick={(e) => { e.stopPropagation(); onFocusSector(focused ? null : sector.tier); }}
+              onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "zoom-in"; }}
+              onPointerOut={() => { document.body.style.cursor = "auto"; }}
+            >
               <planeGeometry args={[w, d]} />
               <meshStandardMaterial color={theme.rugs[sector.tier]} roughness={1} />
             </mesh>
+            {focused && (
+              <mesh position={[cx, 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[Math.min(w, d) / 2 - 0.1, Math.min(w, d) / 2 + 0.08, 64]} />
+                <meshBasicMaterial color={theme.accent} transparent opacity={0.5} />
+              </mesh>
+            )}
+            <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
             <Html transform position={[cx, 2.3, cz - d / 2 + 0.2]} distanceFactor={6} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
               <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: visible ? "visible" : "hidden", borderColor: theme.accent }}>
                 <div className="text-lg font-black uppercase leading-none tracking-tight text-white">Equipo {tier.label}</div>
@@ -95,6 +164,7 @@ export function Floor({ theme, statuses, selectedId, onSelect, visible }: Props)
                 status={statuses[agent.id] ?? "idle"}
                 position={position}
                 deskColor={theme.desk}
+                accent={theme.accent}
                 selected={selectedId === agent.id}
                 seed={i * 1.7 + cx}
                 visible={visible}
@@ -120,10 +190,10 @@ export function Floor({ theme, statuses, selectedId, onSelect, visible }: Props)
         </div>
       </Html>
 
-      <Plant position={[-12, 0, -7]} />
+      <Plant position={[-12, 0, -7]} scale={1.2} />
       <Plant position={[0.3, 0, -7]} />
       <Plant position={[-12, 0, 7]} />
-      <Plant position={[12, 0, 0.5]} />
+      <Plant position={[12, 0, 0.5]} scale={1.1} />
     </group>
   );
 }

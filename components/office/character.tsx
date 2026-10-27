@@ -1,77 +1,131 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { Group, Mesh } from "three";
 import type { Tier } from "@/lib/agents";
 
 const TIER_COLOR: Record<Tier, string> = {
-  readers: "#3b82f6",
-  analysts: "#a855f7",
-  creators: "#f59e0b",
-  chief: "#ef4444",
+  readers: "#2f6fe4",
+  analysts: "#8b4fd6",
+  creators: "#e0962a",
+  chief: "#d2403a",
 };
+
+const SKINS = ["#f3cfae", "#e8b48c", "#c98f63", "#8d5a3b", "#f6dcc2"];
+const HAIRS = ["#2b1b12", "#0f0f0f", "#5a3a22", "#9c6b3c", "#3a2a2a", "#d9b56a"];
 
 interface Props {
   tier: Tier;
   /** Velocidad de tipeo. 0 = quieto. */
   energy: number;
-  /** Desfase para que no tipeen todos sincronizados. */
+  /** Desfase y variación de aspecto. */
   seed: number;
 }
 
 /** Muñeco low-poly sentado, mirando a +z, tipeando. */
 export function Character({ tier, energy, seed }: Props) {
-  const leftArm = useRef<Mesh>(null);
-  const rightArm = useRef<Mesh>(null);
-  const head = useRef<Mesh>(null);
+  const leftArm = useRef<Group>(null);
+  const rightArm = useRef<Group>(null);
+  const head = useRef<Group>(null);
   const body = useRef<Group>(null);
+  const torso = useRef<Mesh>(null);
+
+  const look = useMemo(() => {
+    const k = Math.abs(Math.floor(seed * 7.31));
+    return { skin: SKINS[k % SKINS.length], hair: HAIRS[(k * 3) % HAIRS.length], hairStyle: k % 3 };
+  }, [seed]);
 
   useFrame(({ clock }) => {
-    const t = clock.getElapsedTime() * (4 + energy * 6) + seed;
-    const amp = 0.025 * (0.4 + energy);
-    if (leftArm.current) leftArm.current.position.y = 0.72 + Math.max(0, Math.sin(t)) * amp;
-    if (rightArm.current) rightArm.current.position.y = 0.72 + Math.max(0, Math.sin(t + Math.PI)) * amp;
-    if (head.current) head.current.rotation.z = Math.sin(t * 0.25) * 0.05;
-    if (body.current) body.current.position.y = Math.sin(t * 0.3) * 0.01;
+    const t = clock.getElapsedTime();
+    const typing = t * (4 + energy * 7) + seed;
+    const amp = 0.06 * (0.3 + energy);
+    if (leftArm.current) leftArm.current.rotation.x = -0.55 + Math.max(0, Math.sin(typing)) * amp;
+    if (rightArm.current) rightArm.current.rotation.x = -0.55 + Math.max(0, Math.sin(typing + Math.PI)) * amp;
+    if (head.current) {
+      head.current.rotation.z = Math.sin(t * 0.8 + seed) * 0.04;
+      head.current.rotation.x = 0.12 + Math.sin(t * 0.5 + seed) * 0.03;
+    }
+    if (torso.current) torso.current.scale.y = 1 + Math.sin(t * 1.6 + seed) * 0.012;
   });
 
-  const color = TIER_COLOR[tier];
+  const shirt = TIER_COLOR[tier];
 
   return (
     <group ref={body}>
+      {/* piernas (sentado) */}
+      {[-0.11, 0.11].map((x) => (
+        <group key={x} position={[x, 0.42, 0.12]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
+            <capsuleGeometry args={[0.07, 0.32, 4, 8]} />
+            <meshStandardMaterial color="#2a2f3a" roughness={0.9} />
+          </mesh>
+          <mesh position={[0, -0.22, 0.26]} castShadow>
+            <capsuleGeometry args={[0.065, 0.3, 4, 8]} />
+            <meshStandardMaterial color="#2a2f3a" roughness={0.9} />
+          </mesh>
+        </group>
+      ))}
       {/* torso */}
-      <mesh position={[0, 0.55, 0]} castShadow>
-        <capsuleGeometry args={[0.2, 0.3, 4, 10]} />
-        <meshStandardMaterial color={color} roughness={0.7} />
+      <mesh ref={torso} position={[0, 0.66, 0]} castShadow>
+        <capsuleGeometry args={[0.2, 0.3, 6, 14]} />
+        <meshStandardMaterial color={shirt} roughness={0.75} />
+      </mesh>
+      {/* hombros */}
+      {[-0.22, 0.22].map((x) => (
+        <mesh key={x} position={[x, 0.82, 0]} castShadow>
+          <sphereGeometry args={[0.085, 12, 12]} />
+          <meshStandardMaterial color={shirt} roughness={0.75} />
+        </mesh>
+      ))}
+      {/* cuello */}
+      <mesh position={[0, 0.95, 0]}>
+        <cylinderGeometry args={[0.06, 0.07, 0.1, 10]} />
+        <meshStandardMaterial color={look.skin} roughness={0.8} />
       </mesh>
       {/* cabeza */}
-      <mesh ref={head} position={[0, 1.0, 0]} castShadow>
-        <sphereGeometry args={[0.19, 20, 20]} />
-        <meshStandardMaterial color="#f1c9a5" roughness={0.8} />
-      </mesh>
-      {/* auriculares */}
-      <mesh position={[0, 1.07, 0]}>
-        <torusGeometry args={[0.19, 0.035, 8, 24, Math.PI]} />
-        <meshStandardMaterial color="#111" roughness={0.5} />
-      </mesh>
-      <mesh position={[-0.19, 1.0, 0]}>
-        <sphereGeometry args={[0.06, 10, 10]} />
-        <meshStandardMaterial color="#111" />
-      </mesh>
-      <mesh position={[0.19, 1.0, 0]}>
-        <sphereGeometry args={[0.06, 10, 10]} />
-        <meshStandardMaterial color="#111" />
-      </mesh>
-      {/* brazos hacia el teclado */}
-      <mesh ref={leftArm} position={[-0.16, 0.72, 0.25]} rotation={[0.2, 0, 0]}>
-        <boxGeometry args={[0.09, 0.09, 0.45]} />
-        <meshStandardMaterial color={color} roughness={0.7} />
-      </mesh>
-      <mesh ref={rightArm} position={[0.16, 0.72, 0.25]} rotation={[0.2, 0, 0]}>
-        <boxGeometry args={[0.09, 0.09, 0.45]} />
-        <meshStandardMaterial color={color} roughness={0.7} />
-      </mesh>
+      <group ref={head} position={[0, 1.13, 0]}>
+        <mesh castShadow>
+          <sphereGeometry args={[0.18, 24, 24]} />
+          <meshStandardMaterial color={look.skin} roughness={0.8} />
+        </mesh>
+        {/* pelo */}
+        <mesh position={[0, 0.06, -0.02]} scale={[1.03, look.hairStyle === 2 ? 0.55 : 0.8, 1.03]}>
+          <sphereGeometry args={[0.18, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+          <meshStandardMaterial color={look.hair} roughness={0.9} />
+        </mesh>
+        {/* ojos */}
+        {[-0.06, 0.06].map((x) => (
+          <mesh key={x} position={[x, 0.01, 0.165]}>
+            <sphereGeometry args={[0.018, 8, 8]} />
+            <meshStandardMaterial color="#111" />
+          </mesh>
+        ))}
+        {/* auriculares */}
+        <mesh position={[0, 0.07, 0]} rotation={[0, 0, 0]}>
+          <torusGeometry args={[0.185, 0.025, 8, 28, Math.PI]} />
+          <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.3} />
+        </mesh>
+        {[-0.185, 0.185].map((x) => (
+          <mesh key={x} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <cylinderGeometry args={[0.055, 0.055, 0.05, 14]} />
+            <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.3} />
+          </mesh>
+        ))}
+      </group>
+      {/* brazos: pivot en el hombro, bajan hacia el teclado */}
+      {[-0.24, 0.24].map((x, i) => (
+        <group key={x} ref={i === 0 ? leftArm : rightArm} position={[x, 0.82, 0.02]} rotation={[-0.55, 0, 0]}>
+          <mesh position={[0, 0, 0.19]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <capsuleGeometry args={[0.05, 0.3, 4, 10]} />
+            <meshStandardMaterial color={shirt} roughness={0.75} />
+          </mesh>
+          <mesh position={[0, 0, 0.4]}>
+            <sphereGeometry args={[0.055, 10, 10]} />
+            <meshStandardMaterial color={look.skin} roughness={0.8} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
