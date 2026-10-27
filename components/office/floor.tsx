@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
+import { Group, Material, Mesh } from "three";
 import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { AgentStatus, Tier } from "@/lib/agents";
@@ -80,8 +82,59 @@ function Lamp({ position, accent }: { position: [number, number, number]; accent
   );
 }
 
+function applyOpacity(list: Material[], value: number) {
+  for (const m of list) {
+    m.opacity = value;
+    m.transparent = value < 1;
+  }
+}
+
 export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFocusSector, visible }: Props) {
   const layout = floorLayout(theme.id);
+  const group = useRef<Group>(null);
+  const materials = useRef<Material[]>([]);
+  const opacity = useRef(visible ? 1 : 0);
+  // Las etiquetas HTML se muestran cuando el piso pasa de media opacidad.
+  const [labelsShown, setLabelsShown] = useState(visible);
+
+  // Junta todos los materiales del piso una vez montado, para poder desvanecerlos.
+  useEffect(() => {
+    const list: Material[] = [];
+    group.current?.traverse((o) => {
+      const m = (o as Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) if (!list.includes(mat)) list.push(mat);
+    });
+    materials.current = list;
+    // Estado inicial: el piso oculto arranca invisible, sin esperar al primer frame.
+    if (group.current) {
+      group.current.visible = opacity.current > 0;
+      applyOpacity(list, opacity.current);
+    }
+  });
+
+  useFrame((_, rawDelta) => {
+    const g = group.current;
+    if (!g) return;
+    const delta = Math.min(rawDelta, 0.1); // en máquinas lentas no saltar el fundido
+    const target = visible ? 1 : 0;
+    const prev = opacity.current;
+    if (Math.abs(prev - target) < 0.002) {
+      if (prev !== target) {
+        opacity.current = target;
+        applyOpacity(materials.current, target);
+        g.visible = target > 0;
+        if (labelsShown !== visible) setLabelsShown(visible);
+      }
+      return;
+    }
+    const next = prev + (target - prev) * (1 - Math.exp(-delta * (visible ? 5 : 3.5)));
+    opacity.current = next;
+    g.visible = true;
+    applyOpacity(materials.current, next);
+    const shown = next > 0.5;
+    if (shown !== labelsShown) setLabelsShown(shown);
+  });
   const total = layout.reduce((n, s) => n + s.desks.length, 0);
   const wood = useMemo(() => woodTexture(theme.floor, [7, 4.5], theme.id === "BNB" ? 2 : 5), [theme.floor, theme.id]);
   const city = useMemo(() => cityTexture(theme.id === "BNB" ? 7 : 9), [theme.id]);
@@ -92,7 +145,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
   }
 
   return (
-    <group position={[0, theme.y, 0]} visible={visible}>
+    <group ref={group} position={[0, theme.y, 0]}>
       {/* losa + parquet */}
       <mesh position={[0, -0.2, 0]} receiveShadow onClick={clearFocus}>
         <boxGeometry args={[FLOOR_W, 0.4, FLOOR_D]} />
@@ -150,7 +203,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
             <Html transform position={[cx, 2.3, cz - d / 2 + 0.2]} distanceFactor={6} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-              <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: visible ? "visible" : "hidden", borderColor: theme.accent }}>
+              <div className="rounded-lg border-l-4 bg-black/90 px-4 py-2 shadow-xl" style={{ visibility: labelsShown ? "visible" : "hidden", borderColor: theme.accent }}>
                 <div className="text-lg font-black uppercase leading-none tracking-tight text-white">Equipo {tier.label}</div>
                 <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
                   {tier.tagline} · {desks.length} {desks.length === 1 ? "agente" : "agentes"}
@@ -167,7 +220,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
                 accent={theme.accent}
                 selected={selectedId === agent.id}
                 seed={i * 1.7 + cx}
-                visible={visible}
+                visible={labelsShown}
                 onSelect={onSelect}
               />
             ))}
@@ -177,7 +230,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
 
       {/* cartel de marca en la pared de fondo */}
       <Html transform position={[0, 3.2, -FLOOR_D / 2 + 0.2]} distanceFactor={7} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-        <div className="flex items-center gap-4 rounded-xl border px-6 py-3 shadow-2xl" style={{ visibility: visible ? "visible" : "hidden", background: "#0b0b0d", borderColor: theme.accent }}>
+        <div className="flex items-center gap-4 rounded-xl border px-6 py-3 shadow-2xl" style={{ visibility: labelsShown ? "visible" : "hidden", background: "#0b0b0d", borderColor: theme.accent }}>
           <div className="grid h-14 w-14 place-items-center rounded-lg text-3xl font-black" style={{ background: theme.accent, color: "#0b0b0d" }}>
             {theme.id === "BNB" ? "B" : "A"}
           </div>

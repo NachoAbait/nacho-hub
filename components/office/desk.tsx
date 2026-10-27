@@ -3,15 +3,9 @@
 import { useMemo, useState } from "react";
 import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
-import type { AgentDef, AgentStatus } from "@/lib/agents";
+import { STATUS_COLOR, STATUS_LABEL, type AgentDef, type AgentStatus } from "@/lib/agents";
 import { Character } from "@/components/office/character";
 import { screenTexture, woodTexture } from "@/lib/office/textures";
-
-const STATUS_DOT: Record<AgentStatus, string> = {
-  live: "#22c55e",
-  done: "#f59e0b",
-  idle: "#6b7280",
-};
 
 interface Props {
   agent: AgentDef;
@@ -30,7 +24,7 @@ interface Props {
 export function Desk({ agent, status, position, deskColor, accent, selected, seed, visible, onSelect }: Props) {
   const [hover, setHover] = useState(false);
   const [x, z] = position;
-  const energy = status === "idle" ? 0.15 : status === "done" ? 0.6 : 1;
+  const screenGlow = status === "working" ? 1.8 : status === "live" ? 1.1 : status === "done" ? 0.6 : 0.08;
 
   const wood = useMemo(() => woodTexture(deskColor, [1.5, 0.8], 11), [deskColor]);
   const screen = useMemo(() => screenTexture(accent, Math.round(seed * 10)), [accent, seed]);
@@ -74,7 +68,7 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
       </mesh>
       <mesh position={[0, 1.1, 0.18]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[0.68, 0.4]} />
-        <meshStandardMaterial map={screen} emissiveMap={screen} emissive="#ffffff" emissiveIntensity={energy > 0.3 ? 1.6 : 0.35} toneMapped={false} roughness={0.2} />
+        <meshStandardMaterial map={screen} emissiveMap={screen} emissive="#ffffff" emissiveIntensity={screenGlow} toneMapped={false} roughness={0.2} />
       </mesh>
       {/* teclado y mouse */}
       <mesh position={[0, 0.78, -0.15]}>
@@ -113,7 +107,7 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
       </group>
       {/* agente */}
       <group position={[0, 0, -0.8]}>
-        <Character tier={agent.tier} energy={energy} seed={seed} />
+        <Character tier={agent.tier} status={status} seed={seed} />
       </group>
       {/* halo de selección */}
       {(selected || hover) && (
@@ -123,10 +117,18 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
         </mesh>
       )}
       {/* etiqueta flotante */}
-      <Html position={[0, 1.85, -0.8]} center distanceFactor={14} zIndexRange={[50, 0]} style={{ pointerEvents: "none" }}>
-        <div style={{ visibility: visible ? "visible" : "hidden" }} className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-white/15 bg-black/80 px-2 py-1 text-[11px] font-semibold text-white shadow-lg backdrop-blur">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_DOT[status], boxShadow: `0 0 6px ${STATUS_DOT[status]}` }} />
-          {agent.name}
+      <Html position={[0, 1.95, -0.8]} center distanceFactor={14} zIndexRange={[50, 0]} style={{ pointerEvents: "none" }}>
+        <div style={{ visibility: visible ? "visible" : "hidden" }} className="flex flex-col items-center whitespace-nowrap rounded-lg border border-white/15 bg-black/85 px-2.5 py-1.5 text-white shadow-lg backdrop-blur">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] font-bold leading-none">{agent.persona}</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider leading-none ${status === "working" ? "animate-pulse" : ""}`}
+              style={{ background: STATUS_COLOR[status], color: status === "done" ? "#1a1200" : "#fff", boxShadow: `0 0 8px ${STATUS_COLOR[status]}` }}
+            >
+              {status === "idle" ? "zZz" : STATUS_LABEL[status]}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/55 leading-none">{agent.name}</div>
         </div>
       </Html>
     </group>

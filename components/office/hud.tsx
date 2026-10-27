@@ -1,6 +1,6 @@
 "use client";
 
-import { STATUS_LABEL, TIERS, agentById, type AgentStatus } from "@/lib/agents";
+import { STATUS_COLOR, STATUS_LABEL, TIERS, agentById, type AgentStatus } from "@/lib/agents";
 import type { OfficeView, SectorFocus } from "@/components/office/camera-rig";
 import { RegenerateButton } from "@/components/dashboard/regenerate-button";
 
@@ -12,6 +12,8 @@ export interface DesignerBanner {
 interface Props {
   view: OfficeView;
   onView: (v: OfficeView) => void;
+  /** Avisa cuando el Designer está regenerando, para animarlo como "trabajando". */
+  onDesignerWorking: (working: boolean) => void;
   selectedId: string | null;
   focus: SectorFocus | null;
   onClearFocus: () => void;
@@ -26,12 +28,12 @@ const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
   { id: "AMBOS", label: "Ambos", hint: "Vista general" },
 ];
 
-const DOT: Record<AgentStatus, string> = { live: "bg-green-500", done: "bg-amber-400", idle: "bg-gray-500" };
 
-export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, statuses, designerBanner }: Props) {
+export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClearFocus, onClose, statuses, designerBanner }: Props) {
   const agent = selectedId ? agentById(selectedId) : undefined;
   const status = agent ? statuses[agent.id] ?? "idle" : "idle";
   const liveCount = Object.values(statuses).filter((s) => s !== "idle").length;
+  const workingCount = Object.values(statuses).filter((s) => s === "working").length;
 
   return (
     <>
@@ -42,6 +44,7 @@ export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, st
         </div>
         <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
           {liveCount} de {Object.keys(statuses).length} agentes operativos
+          {workingCount > 0 && <span className="text-green-400"> · {workingCount} trabajando ahora</span>}
         </div>
       </div>
 
@@ -75,9 +78,9 @@ export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, st
 
       {/* leyenda */}
       <div className="pointer-events-none absolute bottom-5 left-5 z-[100] flex flex-wrap gap-3 text-[11px] text-white/60">
-        {(["live", "done", "idle"] as AgentStatus[]).map((s) => (
+        {(["working", "done", "live", "idle"] as AgentStatus[]).map((s) => (
           <span key={s} className="flex items-center gap-1.5">
-            <span className={`inline-block h-2 w-2 rounded-full ${DOT[s]}`} />
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[s] }} />
             {STATUS_LABEL[s]}
           </span>
         ))}
@@ -92,9 +95,11 @@ export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, st
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">
                 {TIERS.find((t) => t.id === agent.tier)?.label}
               </div>
-              <h2 className="mt-1 text-xl font-bold leading-tight">{agent.name}</h2>
+              <h2 className="mt-1 text-xl font-bold leading-tight">
+                {agent.persona} <span className="text-base font-medium text-white/50">· {agent.name}</span>
+              </h2>
               <div className="mt-1 flex items-center gap-1.5 text-xs text-white/60">
-                <span className={`inline-block h-2 w-2 rounded-full ${DOT[status]}`} />
+                <span className={`inline-block h-2 w-2 rounded-full ${status === "working" ? "animate-pulse" : ""}`} style={{ background: STATUS_COLOR[status] }} />
                 {STATUS_LABEL[status]} · Fase {agent.phase}
               </div>
             </div>
@@ -113,7 +118,7 @@ export function Hud({ view, onView, selectedId, focus, onClearFocus, onClose, st
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Último banner</span>
-                <RegenerateButton category="iphone" />
+                <RegenerateButton category="iphone" onPendingChange={onDesignerWorking} />
               </div>
               {designerBanner ? (
                 <a href={designerBanner.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-white/10">

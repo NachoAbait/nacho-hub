@@ -3,15 +3,26 @@
 import { useState, useTransition } from "react";
 import { regenerateBanner } from "@/app/dashboard/actions";
 
-export function RegenerateButton({ category }: { category: string }) {
+interface Props {
+  category: string;
+  /** Opcional: avisa cuando empieza y termina la generación. */
+  onPendingChange?: (pending: boolean) => void;
+}
+
+export function RegenerateButton({ category, onPendingChange }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   function onClick() {
     setError(null);
+    onPendingChange?.(true);
     startTransition(async () => {
-      const result = await regenerateBanner(category);
-      if (!result.ok) setError(result.error ?? "Falló la generación");
+      try {
+        const result = await regenerateBanner(category);
+        if (!result.ok) setError(result.error ?? "Falló la generación");
+      } finally {
+        onPendingChange?.(false);
+      }
     });
   }
 

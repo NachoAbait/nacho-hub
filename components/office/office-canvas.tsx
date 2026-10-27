@@ -22,9 +22,12 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
   const [transitioning, setTransitioning] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focus, setFocus] = useState<SectorFocus | null>(null);
+  const [designerWorking, setDesignerWorking] = useState(false);
+  // Mientras regenera, el Designer se ve "trabajando" aunque el server diga otra cosa.
+  const effective: Record<string, AgentStatus> = designerWorking ? { ...statuses, designer: "working" } : statuses;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Al cambiar de piso, los dos quedan visibles 1,6 s mientras la cámara viaja.
+  // Al cambiar de piso, los dos quedan visibles mientras la cámara hace el plano de grúa (2,2 s).
   function changeView(next: OfficeView) {
     if (next === view) return;
     setView(next);
@@ -32,7 +35,7 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
     setFocus(null);
     setTransitioning(true);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setTransitioning(false), 1600);
+    timer.current = setTimeout(() => setTransitioning(false), 2300);
   }
 
   function focusSector(floor: SectorFocus["floor"], tier: Tier | null) {
@@ -55,7 +58,7 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
         view={view}
         transitioning={transitioning}
         focus={focus}
-        statuses={statuses}
+        statuses={effective}
         selectedId={selectedId}
         onSelect={selectAgent}
         onFocusSector={focusSector}
@@ -63,11 +66,12 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
       <Hud
         view={view}
         onView={changeView}
+        onDesignerWorking={setDesignerWorking}
         selectedId={selectedId}
         focus={focus}
         onClearFocus={() => { setFocus(null); setSelectedId(null); }}
         onClose={() => setSelectedId(null)}
-        statuses={statuses}
+        statuses={effective}
         designerBanner={designerBanner}
       />
     </div>

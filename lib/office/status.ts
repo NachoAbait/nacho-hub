@@ -1,15 +1,24 @@
-import { AGENTS, type AgentStatus } from "@/lib/agents";
+import { AGENTS, TIER_WINDOW, type AgentStatus } from "@/lib/agents";
 import { supabaseAdmin } from "@/lib/supabase";
 
 function todayArt(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
 }
 
+/** Hora actual en ART como número decimal (7.5 = 07:30). */
+function hourArt(): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return h + m / 60;
+}
+
 /**
  * Estado de cada agente para pintar la oficina.
  * - idle: todavía no está programado
- * - live: programado, sin output de hoy
+ * - working: está en su ventana horaria del cron y todavía no dejó output
  * - done: ya dejó su informe (o banner, en el caso del Designer) hoy
+ * - live: programado, fuera de horario, sin output de hoy
  */
 export async function agentStatuses(): Promise<Record<string, AgentStatus>> {
   const db = supabaseAdmin();
@@ -23,11 +32,16 @@ export async function agentStatuses(): Promise<Record<string, AgentStatus>> {
   const reported = new Set((reports.data ?? []).map((r) => r.agent_name as string));
   const bannerToday = (banners.data ?? []).length > 0;
 
+  const hour = hourArt();
   const out: Record<string, AgentStatus> = {};
   for (const agent of AGENTS) {
-    if (!agent.live) out[agent.id] = "idle";
-    else if (agent.id === "designer") out[agent.id] = bannerToday ? "done" : "live";
-    else out[agent.id] = reported.has(agent.id) ? "done" : "live";
+    if (!agent.live) {
+      out[agent.id] = "idle";
+      continue;
+    }
+    const done = agent.id === "designer" ? bannerToday : reported.has(agent.id);
+    const [from, to] = TIER_WINDOW[agent.tier];
+    out[agent.id] = done ? "done" : hour >= from && hour < to ? "working" : "live";
   }
   return out;
 }
