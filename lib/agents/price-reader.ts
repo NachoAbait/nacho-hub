@@ -188,6 +188,7 @@ interface Applied {
   previous: number | null;
   cost: number;
   newPrice: number | null;
+  previousPrice: number | null;
   status: string;
   basis: string;
   discount: number;
@@ -301,7 +302,7 @@ export const priceReader: AgentModule = {
         });
         entry.cost_usd = cost;
         touched.add(category);
-        applied.push({ category, model: entry.model, capacity: entry.capacity, previous, cost, newPrice, status, basis: item.pricing_basis === "bulk_min" ? `escalón x${item.bulk_qty ?? "?"}` : "unitario", discount });
+        applied.push({ category, model: entry.model, capacity: entry.capacity, previous, cost, newPrice, previousPrice: previous != null && entry.margin_usd != null ? previous + entry.margin_usd : null, status, basis: item.pricing_basis === "bulk_min" ? `escalón x${item.bulk_qty ?? "?"}` : "unitario", discount });
       }
     }
 
@@ -319,7 +320,7 @@ export const priceReader: AgentModule = {
       lines.push("", "## Costos actualizados");
       for (const a of applied) {
         const dir = a.previous == null ? "nuevo costo" : a.cost > a.previous ? "↑ subió" : "↓ bajó";
-        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir}, ${a.basis}${a.discount ? `, -US$ ${a.discount} de regla` : ""})${a.newPrice != null ? ` · precio de venta US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}`);
+        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir}, ${a.basis}${a.discount ? `, -US$ ${a.discount} de regla` : ""})${a.newPrice != null ? ` · precio de venta ${a.previousPrice != null ? `US$ ${a.previousPrice} → ` : ""}US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}`);
       }
     }
     if (newModels.length) {
