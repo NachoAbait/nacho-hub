@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { runAgent, type RunOutcome } from "@/lib/agents/runtime";
 import { priceReader } from "@/lib/agents/price-reader";
-import { findAllowedSupplier, normalizePhone } from "@/lib/suppliers";
+import { findAllowedSupplier, normalizePhone, notePendingSender } from "@/lib/suppliers";
 
 export interface IngestInput {
   sender?: string | null;
@@ -35,7 +35,12 @@ export async function ingestPriceList(input: IngestInput): Promise<IngestResult>
 
   if (input.source === "whatsapp") {
     const supplier = input.sender ? await findAllowedSupplier(db, input.sender) : null;
-    if (!supplier) return { ok: true, ignored: true, reason: "remitente que no es proveedor cargado" };
+    if (!supplier) {
+      // No toca precios: solo deja registro para que Nacho lo sume desde el panel (sirve tanto para
+      // un número que escribió mal como para un canal, cuyo identificador no se puede cargar de antemano).
+      if (input.sender) await notePendingSender(db, input.sender, input.sender_name ?? null, body);
+      return { ok: true, ignored: true, reason: "remitente que no es proveedor cargado" };
+    }
     supplierId = supplier.id;
     supplierLabel = supplier.name ?? supplier.phone;
     await db

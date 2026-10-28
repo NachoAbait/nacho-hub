@@ -5,7 +5,16 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { REGISTRY } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
 import { ingestPriceList } from "@/lib/agents/ingest";
-import { listSuppliers, saveSupplierList, saveSupplierRules, type Supplier } from "@/lib/suppliers";
+import {
+  approvePendingSender,
+  dismissPendingSender,
+  listPendingSenders,
+  listSuppliers,
+  saveSupplierList,
+  saveSupplierRules,
+  type PendingSender,
+  type Supplier,
+} from "@/lib/suppliers";
 import { confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
 import { latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
@@ -51,16 +60,43 @@ export interface PriceReaderPanelData {
   report: { markdown: string; date: string; summary: string | null } | null;
   updates: PriceUpdateRow[];
   suppliers: Supplier[];
+  pendingSenders: PendingSender[];
 }
 
 export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
   const db = supabaseAdmin();
-  const [rep, updates, suppliers] = await Promise.all([latestReport(db, "price-reader"), todaysUpdates(db, todayArt()), listSuppliers(db)]);
+  const [rep, updates, suppliers, pendingSenders] = await Promise.all([
+    latestReport(db, "price-reader"),
+    todaysUpdates(db, todayArt()),
+    listSuppliers(db),
+    listPendingSenders(db),
+  ]);
   return {
     report: rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null,
     updates,
     suppliers,
+    pendingSenders,
   };
+}
+
+/** Suma un remitente nuevo (número mal cargado o canal) como proveedor activo. */
+export async function approveSender(sender: string, name: string | null): Promise<ActionResult> {
+  try {
+    await approvePendingSender(supabaseAdmin(), sender, name?.trim() || null);
+    return { ok: true, message: "Sumado como proveedor" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Descarta un remitente nuevo sin sumarlo (p. ej. una consulta de cliente). */
+export async function dismissSender(sender: string): Promise<ActionResult> {
+  try {
+    await dismissPendingSender(supabaseAdmin(), sender);
+    return { ok: true, message: "Descartado" };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 export async function saveSuppliers(text: string): Promise<ActionResult> {

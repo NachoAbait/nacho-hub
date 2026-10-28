@@ -3,8 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import Markdown from "react-markdown";
 import {
+  approveSender,
   confirmPriceUpdate,
   correctPriceUpdate,
+  dismissSender,
   loadPriceReaderPanel,
   pasteSupplierList,
   saveRules,
@@ -69,6 +71,59 @@ function UpdateRow({ u, onDone }: { u: PriceUpdateRow; onDone: () => void }) {
   );
 }
 
+function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
+  const [pending, start] = useTransition();
+  const [names, setNames] = useState<Record<string, string>>({});
+  if (data.pendingSenders.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2 rounded-xl border border-sky-400/30 bg-sky-400/5 p-3">
+      <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-sky-300">
+        Remitentes nuevos ({data.pendingSenders.length})
+      </h3>
+      <p className="text-[11px] leading-snug text-white/60">
+        Llegaron mensajes de estos números o canales, pero todavía no están sumados: no se leyeron precios.
+        Sumalo si es un proveedor, o descartalo si es una consulta de cliente.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {data.pendingSenders.map((p) => (
+          <li key={p.sender} className="rounded-lg border border-white/10 bg-black/30 p-2 text-[12px]">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/60">
+                {p.kind === "channel" ? "canal" : "número"}
+              </span>
+              <span className="truncate font-mono text-white/80">{p.sender_name ? `${p.sender_name} · ` : ""}{p.sender}</span>
+              <span className="ml-auto flex-none text-white/40">{p.messages_count} msj</span>
+            </div>
+            {p.last_body && <div className="mt-1 truncate text-white/35" title={p.last_body}>“{p.last_body}”</div>}
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                className={input + " !w-40"}
+                placeholder="Nombre del proveedor"
+                value={names[p.sender] ?? p.sender_name ?? ""}
+                onChange={(e) => setNames((n) => ({ ...n, [p.sender]: e.target.value }))}
+              />
+              <button
+                className={btn}
+                disabled={pending}
+                onClick={() => start(async () => { await approveSender(p.sender, names[p.sender] ?? p.sender_name ?? null); onDone(); })}
+              >
+                Sumar como proveedor
+              </button>
+              <button
+                className={btn}
+                disabled={pending}
+                onClick={() => start(async () => { await dismissSender(p.sender); onDone(); })}
+              >
+                Descartar
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function SuppliersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
   const active = data.suppliers.filter((s) => s.active);
   const [text, setText] = useState(active.map((s) => (s.name ? `${s.phone}, ${s.name}` : s.phone)).join("\n"));
@@ -78,7 +133,9 @@ function SuppliersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: ()
     <section className="flex flex-col gap-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
       <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-300">Proveedores (solo estos se leen)</h3>
       <p className="text-[11px] leading-snug text-white/60">
-        Un número por línea, con código de país y sin +: <code>5492257123456, Nombre</code>. Los mensajes de cualquier otro número se ignoran.
+        Un número por línea, con código de país y sin +: <code>5492257123456, Nombre</code>. Los canales de difusión no se
+        pueden cargar acá de antemano (WhatsApp no te da su código hasta que llega el primer mensaje): cuando llegue uno
+        nuevo vas a verlo abajo, en &quot;Remitentes nuevos&quot;, para sumarlo con un toque.
       </p>
       <textarea className={input + " h-24 font-mono"} value={text} onChange={(e) => setText(e.target.value)} placeholder="5492257123456, Mayorista Uno" />
       <div className="flex items-center gap-2">
@@ -147,6 +204,7 @@ export function PriceReaderPanel() {
   const pending = data.updates.filter((u) => u.review_status === "pending" && u.status !== "unchanged");
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
+      <PendingSendersBox data={data} onDone={reload} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />
       <section className="flex flex-col gap-2">

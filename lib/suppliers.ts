@@ -95,3 +95,56 @@ export async function saveSupplierRules(db: SupabaseClient, id: string, input: {
   if (input.notes !== undefined) rules.notes = input.notes;
   await db.from("suppliers").update({ rules }).eq("id", id);
 }
+
+// ---------------------------------------------------------------------------
+// Remitentes nuevos: un número mal cargado o un CANAL de difusión que Nacho
+// no podía anotar de antemano (WhatsApp no entrega el JID de un canal hasta
+// que llega el primer mensaje). Se muestran en el panel para sumarlos con un toque.
+// ---------------------------------------------------------------------------
+
+export interface PendingSender {
+  sender: string;
+  kind: "phone" | "channel";
+  sender_name: string | null;
+  last_body: string | null;
+  messages_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/** "120363...@newsletter" → canal (WhatsApp Channels); el resto es un número. */
+export function senderKind(raw: string | null | undefined): "phone" | "channel" {
+  return raw?.includes("@newsletter") ? "channel" : "phone";
+}
+
+/** Registra que vimos este remitente sin aprobar (no toca precios: es solo para que Nacho lo vea y decida). */
+export async function notePendingSender(db: SupabaseClient, raw: string, senderName: string | null, body: string): Promise<void> {
+  const kind = senderKind(raw);
+  const key = normalizePhone(raw);
+  if (!key) return;
+  const { data: prev } = await db.from("pending_senders").select("messages_count").eq("sender", key).maybeSingle<{ messages_count: number }>();
+  await db.from("pending_senders").upsert({
+    sender: key,
+    kind,
+    sender_name: senderName,
+    last_body: body.slice(0, 400),
+    messages_count: (prev?.messages_count ?? 0) + 1,
+    last_seen_at: new Date().toISOString(),
+  });
+}
+
+export async function listPendingSenders(db: SupabaseClient): Promise<PendingSender[]> {
+  const { data } = await db.from("pending_senders").select("*").order("last_seen_at", { ascending: false }).limit(20).returns<PendingSender[]>();
+  return data ?? [];
+}
+
+/** Lo suma como proveedor activo y lo saca de la lista de pendientes. */
+export async function approvePendingSender(db: SupabaseClient, sender: string, name: string | null): Promise<void> {
+  await db.from("suppliers").upsert({ phone: sender, name, active: true }, { onConflict: "phone" });
+  await db.from("pending_senders").delete().eq("sender", sender);
+}
+
+/** Lo descarta sin sumarlo (para una consulta de cliente que entró por error). */
+export async function dismissPendingSender(db: SupabaseClient, sender: string): Promise<void> {
+  await db.from("pending_senders").delete().eq("sender", sender);
+}
