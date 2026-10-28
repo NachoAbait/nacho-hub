@@ -45,8 +45,8 @@ export const AGENTS: AgentDef[] = [
     description: "Métricas de las cuentas propias de Instagram vía Graph API." },
 
   // TIER 2 — ANALYSTS
-  { id: "price-analyst", task: "Compara precios vs. competencia", persona: "Martín", name: "Price Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
-    description: "Compara precios propios contra la competencia." },
+  { id: "price-analyst", task: "Elige el proveedor más barato", persona: "Martín", name: "Price Analyst", tier: "analysts", contexts: ["BNB"], phase: 1, live: true,
+    description: "Compara las cotizaciones del día entre todos los proveedores y aplica la más barata de cada producto." },
   { id: "content-analyst", task: "Mide qué contenido rinde", persona: "Camila", name: "Content Analyst", tier: "analysts", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Qué posts rinden y por qué." },
   { id: "ads-analyst", task: "Vigila las campañas de Meta", persona: "Joaquín", name: "Ads Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
@@ -102,8 +102,8 @@ export const STATUS_COLOR: Record<AgentStatus, string> = {
 
 /** Ventana horaria (hora ART) en la que corre cada tier según el flow diario de CLAUDE.md. */
 export const TIER_WINDOW: Record<Tier, [number, number]> = {
-  readers: [3, 5],
-  analysts: [5, 6],
+  readers: [3, 10.5],
+  analysts: [11, 11.5],
   creators: [6, 7],
   chief: [7, 7.5],
 };

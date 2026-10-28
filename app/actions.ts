@@ -140,10 +140,17 @@ export async function saveRules(id: string, discount: string, notes: string): Pr
   }
 }
 
+/** Si todavía no estaba aplicado, el OK es lo que de verdad modifica NexiOS, el hub y la historia de esa categoría. */
 export async function confirmPriceUpdate(id: string): Promise<ActionResult> {
   try {
-    await confirmUpdate(supabaseAdmin(), id);
-    return { ok: true, message: "Confirmado" };
+    const db = supabaseAdmin();
+    const r = await confirmUpdate(db, id);
+    if (r.applied && r.category && isCategory(r.category)) {
+      await syncProductsFromNexios(db);
+      await generateAllBanners([r.category]);
+    }
+    revalidatePath("/");
+    return { ok: true, message: r.applied ? "Aplicado" : "Confirmado" };
   } catch (err) {
     return fail(err);
   }

@@ -46,7 +46,9 @@ export async function agentStatuses(): Promise<Record<string, AgentStatus>> {
       out[agent.id] = "working";
       continue;
     }
-    const done = agent.id === "designer" ? bannerToday : reported.has(agent.id);
+    // Lucas (price-reader) junta cotizaciones todo el día: nunca "termina", solo espera la próxima lista.
+    // El que sí termina es Martín (price-analyst), una vez que decide y aplica a las 11.
+    const done = agent.id === "designer" ? bannerToday : agent.id === "price-reader" ? false : reported.has(agent.id);
     const [from, to] = TIER_WINDOW[agent.tier];
     out[agent.id] = done ? "done" : hour >= from && hour < to ? "working" : "live";
   }

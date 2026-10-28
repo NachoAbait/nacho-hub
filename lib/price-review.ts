@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { applyCost, type SupplierRules } from "@/lib/agents/price-reader";
+import { applyCost } from "@/lib/agents/catalog-match";
+import type { SupplierRules } from "@/lib/agents/price-reader";
 import { nexios } from "@/lib/nexios";
 
 export interface PriceUpdateRow {
@@ -40,8 +41,35 @@ export async function todaysUpdates(db: SupabaseClient, today: string): Promise<
   return (data ?? []).map((r) => ({ ...r, detected_cost_usd: Number(r.detected_cost_usd) }));
 }
 
-export async function confirmUpdate(db: SupabaseClient, id: string): Promise<void> {
+/**
+ * OK de Nacho. Con el flujo nuevo (Price Analyst decide, pero no aplica lo que pide revisión),
+ * esto es lo que de verdad modifica NexiOS + el hub por primera vez, con el costo detectado.
+ * Si por algún motivo ya estaba aplicado (dato viejo), solo marca confirmado.
+ */
+export async function confirmUpdate(db: SupabaseClient, id: string): Promise<{ category: string | null; applied: boolean }> {
+  const { data: u } = await db.from("price_updates").select(COLS).eq("id", id).single<PriceUpdateRow>();
+  if (!u) throw new Error("No encontré esa interpretación");
+
+  if (u.status === "detected" && (u.hub_product_id || u.nexios_catalog_id)) {
+    let margin: number | null = null;
+    if (u.nexios_catalog_id) {
+      const { data } = await nexios()?.from("price_catalog").select("margin_usd").eq("id", u.nexios_catalog_id).maybeSingle<{ margin_usd: number | null }>() ?? { data: null };
+      margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+    }
+    if (margin == null && u.hub_product_id) {
+      const { data } = await db.from("products").select("margin_usd").eq("id", u.hub_product_id).maybeSingle<{ margin_usd: number | null }>();
+      margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+    }
+    const r = await applyCost(db, { nexios_id: u.nexios_catalog_id, hub_id: u.hub_product_id, margin_usd: margin }, u.detected_cost_usd);
+    await db
+      .from("price_updates")
+      .update({ review_status: "confirmed", reviewed_at: new Date().toISOString(), status: r.status, new_price_usd: r.newPrice, applied_at: new Date().toISOString() })
+      .eq("id", id);
+    return { category: u.category, applied: true };
+  }
+
   await db.from("price_updates").update({ review_status: "confirmed", reviewed_at: new Date().toISOString() }).eq("id", id);
+  return { category: u.category, applied: false };
 }
 
 /**

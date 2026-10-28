@@ -113,12 +113,16 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </button>
           </header>
 
+          {/* Descripción fija del puesto: colapsada, para que lo que el agente está haciendo/hizo
+              se vea de entrada sin tener que bajar. */}
           {brief ? (
-            <>
-              <p className="text-sm leading-relaxed text-white/90">“{brief.summary}”</p>
-
-              <section>
-                <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Qué hace</h3>
+            <details className="group rounded-lg border border-white/10">
+              <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 hover:text-white/80">
+                Qué hace este puesto
+                <span className="text-white/30 transition group-open:rotate-180">⌄</span>
+              </summary>
+              <div className="flex flex-col gap-3 px-3 pb-3 pt-1">
+                <p className="text-sm leading-relaxed text-white/90">“{brief.summary}”</p>
                 <ol className="flex flex-col gap-2">
                   {brief.steps.map((step, i) => (
                     <li key={i} className="flex gap-2.5 text-[13px] leading-snug text-white/80">
@@ -127,30 +131,29 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
                     </li>
                   ))}
                 </ol>
-              </section>
-
-              <section className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px]">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Fuentes</div>
-                  <div className="mt-1 text-white/80">{brief.sources.join(" · ")}</div>
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px]">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Fuentes</div>
+                    <div className="mt-1 text-white/80">{brief.sources.join(" · ")}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Entrega</div>
+                    <div className="mt-1 text-white/80">{brief.delivers}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Cuándo corre</div>
+                    <div className="mt-1 text-white/80">{brief.schedule}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Trabaja en</div>
+                    <div className="mt-1 text-white/80">{agent.contexts.join(" y ")}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Entrega</div>
-                  <div className="mt-1 text-white/80">{brief.delivers}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Cuándo corre</div>
-                  <div className="mt-1 text-white/80">{brief.schedule}</div>
-                </div>
-              </section>
-            </>
+              </div>
+            </details>
           ) : (
             <p className="text-sm leading-relaxed text-white/80">{agent.description}</p>
           )}
-
-          <div className="text-xs text-white/50">
-            Trabaja en: {agent.contexts.join(" y ")}
-          </div>
 
           {REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "designer" && <RunNowButton agentId={agent.id} />}
           {agent.id === "price-reader" && <PriceReaderPanel />}
