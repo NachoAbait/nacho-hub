@@ -1,33 +1,15 @@
-import type { ReactElement } from "react";
 // "react-dom/server" está bloqueado por Next en la capa server; la variante .browser sí se permite
 import { renderToStaticMarkup } from "react-dom/server.browser";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { Banner, BannerSnapshot, Category, Product } from "@/lib/types";
-import { renderHtmlToPng, type RenderSize } from "@/lib/designer/render";
-import { IphoneBanner, IPHONE_BANNER_SIZE, IPHONE_TEMPLATE_VERSION } from "@/components/banners/iphone";
+import { CATEGORIES, type Banner, type BannerSnapshot, type Category, type Product } from "@/lib/types";
+import { renderHtmlToPng } from "@/lib/designer/render";
+import { BANNER_MAX_PRODUCTS, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner } from "@/components/banners/category";
 
 type SnapshotProduct = BannerSnapshot["products"][number];
 
-interface BannerTemplate {
-  version: number;
-  size: RenderSize;
-  /** Cuántos productos entran en el diseño. */
-  maxProducts: number;
-  render: (products: SnapshotProduct[], dateLabel: string) => ReactElement;
-}
-
-/** Un template por categoría. Las que faltan todavía no se pueden generar. */
-const TEMPLATES: Partial<Record<Category, BannerTemplate>> = {
-  iphone: {
-    version: IPHONE_TEMPLATE_VERSION,
-    size: IPHONE_BANNER_SIZE,
-    maxProducts: 6,
-    render: (products, dateLabel) => <IphoneBanner products={products} dateLabel={dateLabel} />,
-  },
-};
-
+/** Todas las categorías comparten la base visual; el template sabe adaptarse a cada una. */
 export function hasTemplate(category: Category): boolean {
-  return Boolean(TEMPLATES[category]);
+  return (CATEGORIES as readonly string[]).includes(category);
 }
 
 function todayLabel(): string {
@@ -44,38 +26,36 @@ export class DesignerError extends Error {
   }
 }
 
-/**
- * Pipeline completo: productos activos → HTML → PNG → Storage → row en banners.
- * Lo usan el route handler y la server action del dashboard.
- */
-export async function generateBanner(category: Category): Promise<Banner> {
-  const template = TEMPLATES[category];
-  if (!template) throw new DesignerError(`Todavía no hay template para "${category}"`, 400);
-
+/** Productos activos de una categoría, en el orden del banner. */
+export async function activeProducts(category: Category): Promise<SnapshotProduct[]> {
   const db = supabaseAdmin();
-
-  const { data: products, error: productsError } = await db
+  const { data, error } = await db
     .from("products")
     .select("id, model, capacity, price_usd, hero_image_url")
     .eq("category", category)
     .eq("is_active", true)
     .order("display_order", { ascending: true })
-    .limit(template.maxProducts)
+    .limit(BANNER_MAX_PRODUCTS)
     .returns<Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url">[]>();
+  if (error) throw new DesignerError(`Error leyendo products: ${error.message}`);
+  return (data ?? []).map((p) => ({ ...p, price_usd: Number(p.price_usd) }));
+}
 
-  if (productsError) throw new DesignerError(`Error leyendo products: ${productsError.message}`);
-  if (!products || products.length === 0) {
-    throw new DesignerError(`No hay productos activos en "${category}"`, 400);
-  }
+/**
+ * Pipeline completo: productos activos → HTML → PNG → Storage → row en banners.
+ * Lo usan el route handler, la server action del dashboard y el agente Designer.
+ */
+export async function generateBanner(category: Category): Promise<Banner> {
+  if (!hasTemplate(category)) throw new DesignerError(`Categoría desconocida "${category}"`, 400);
+  const db = supabaseAdmin();
 
-  const snapshot: BannerSnapshot = {
-    category,
-    products: products.map((p) => ({ ...p, price_usd: Number(p.price_usd) })),
-    template_version: template.version,
-  };
+  const products = await activeProducts(category);
+  if (products.length === 0) throw new DesignerError(`No hay productos activos en "${category}"`, 400);
 
-  const html = "<!doctype html>" + renderToStaticMarkup(template.render(snapshot.products, todayLabel()));
-  const png = await renderHtmlToPng(html, template.size);
+  const snapshot: BannerSnapshot = { category, products, template_version: BANNER_TEMPLATE_VERSION };
+
+  const html = "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} dateLabel={todayLabel()} />);
+  const png = await renderHtmlToPng(html, BANNER_SIZE);
 
   const storagePath = `${category}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
   const { error: uploadError } = await db.storage
@@ -91,8 +71,8 @@ export async function generateBanner(category: Category): Promise<Banner> {
       category,
       image_url: imageUrl,
       storage_path: storagePath,
-      width: template.size.width,
-      height: template.size.height,
+      width: BANNER_SIZE.width,
+      height: BANNER_SIZE.height,
       snapshot_json: snapshot,
     })
     .select()
@@ -100,6 +80,33 @@ export async function generateBanner(category: Category): Promise<Banner> {
 
   if (insertError) throw new DesignerError(`Error insertando banner: ${insertError.message}`);
   return banner;
+}
+
+export interface GenerateAllResult {
+  category: Category;
+  ok: boolean;
+  banner?: Banner;
+  error?: string;
+  products: number;
+}
+
+/** Genera el banner de cada categoría que tenga productos. Una categoría que falla no frena a las demás. */
+export async function generateAllBanners(only?: Category[]): Promise<GenerateAllResult[]> {
+  const out: GenerateAllResult[] = [];
+  for (const category of only ?? CATEGORIES) {
+    const products = await activeProducts(category);
+    if (products.length === 0) {
+      out.push({ category, ok: false, error: "sin productos activos", products: 0 });
+      continue;
+    }
+    try {
+      const banner = await generateBanner(category);
+      out.push({ category, ok: true, banner, products: products.length });
+    } catch (err) {
+      out.push({ category, ok: false, error: err instanceof Error ? err.message : String(err), products: products.length });
+    }
+  }
+  return out;
 }
 
 /** Último banner generado de una categoría, o null. */
@@ -113,4 +120,17 @@ export async function latestBanner(category: Category): Promise<Banner | null> {
     .maybeSingle<Banner>();
   if (error) throw new DesignerError(`Error leyendo banners: ${error.message}`);
   return data;
+}
+
+/** Último banner de cada categoría. */
+export async function latestBanners(): Promise<Partial<Record<Category, Banner>>> {
+  const out: Partial<Record<Category, Banner>> = {};
+  const { data } = await supabaseAdmin()
+    .from("banners")
+    .select()
+    .order("generated_at", { ascending: false })
+    .limit(60)
+    .returns<Banner[]>();
+  for (const b of data ?? []) if (!out[b.category]) out[b.category] = b;
+  return out;
 }

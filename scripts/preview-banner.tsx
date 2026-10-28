@@ -14,6 +14,8 @@ const SAMPLE = [
   { id: "4", model: "iPhone Air", capacity: "256 GB", price_usd: 1199, hero_image_url: null },
   { id: "5", model: "iPhone 16", capacity: "128 GB", price_usd: 849, hero_image_url: null },
   { id: "6", model: "iPhone 16e", capacity: "128 GB", price_usd: 699, hero_image_url: null },
+  { id: "7", model: "iPhone 17 Pro Max", capacity: "512 GB", price_usd: 1779, hero_image_url: null },
+  { id: "8", model: "iPhone 17 Pro Max", capacity: "1 TB", price_usd: 2059, hero_image_url: null },
 ];
 
 async function main() {
