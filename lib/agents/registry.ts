@@ -5,12 +5,13 @@ import { priceReader } from "@/lib/agents/price-reader";
 import { priceAnalyst } from "@/lib/agents/price-analyst";
 import { stockAnalyst } from "@/lib/agents/stock-analyst";
 import { marketWatcher } from "@/lib/agents/market-watcher";
+import { chiefOfStaff } from "@/lib/agents/chief-of-staff";
 
 /**
- * Agentes con módulo programado. Los otros 8 de lib/agents.ts se suman acá cuando existan
+ * Agentes con módulo programado. Los otros 7 de lib/agents.ts se suman acá cuando existan
  * (basta con importar el módulo y agregarlo a la lista; el cron y /api/agents/[id] lo toman solos).
  */
-const MODULES: AgentModule[] = [priceReader, priceAnalyst, stockAnalyst, marketWatcher, designer];
+const MODULES: AgentModule[] = [priceReader, priceAnalyst, stockAnalyst, marketWatcher, chiefOfStaff, designer];
 
 export const REGISTRY: Record<string, AgentModule> = Object.fromEntries(MODULES.map((m) => [m.id, m]));
 

@@ -65,7 +65,7 @@ export const AGENTS: AgentDef[] = [
     description: "Responde DMs rutinarios. Bonus de Fase 3." },
 
   // TIER 4 — CHIEF
-  { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: false,
+  { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: true,
     description: "Lee a los 11 anteriores y arma un Daily Brief con 3 acciones concretas." },
 ];
 
@@ -105,7 +105,7 @@ export const TIER_WINDOW: Record<Tier, [number, number]> = {
   readers: [3, 10.5],
   analysts: [11, 11.5],
   creators: [6, 7],
-  chief: [7, 7.5],
+  chief: [11.5, 12],
 };
 
 /** Agentes con módulo programado (espejo de lib/agents/registry.ts, usable desde el cliente). */
