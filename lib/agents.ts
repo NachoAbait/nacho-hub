@@ -39,7 +39,7 @@ export const AGENTS: AgentDef[] = [
     description: "Lee WhatsApp de proveedores Apple/Samsung, extrae modelo, capacidad y precio USD, actualiza products." },
   { id: "competitor-scraper", task: "Espía precios de la competencia", persona: "Sofía", name: "Competitor Scraper", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Scrapea Instagram de la competencia y guarda posts, precios y promos." },
-  { id: "market-watcher", task: "Sigue noticias y dólar", persona: "Tomás", name: "Market Watcher", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
+  { id: "market-watcher", task: "Sigue noticias y dólar", persona: "Tomás", name: "Market Watcher", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: true,
     description: "Noticias Apple y dólar MEP para BNB; SENASA y mercado de hacienda para AgroScan." },
   { id: "social-collector", task: "Junta métricas de Instagram", persona: "Valentina", name: "Social Collector", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Métricas de las cuentas propias de Instagram vía Graph API." },
@@ -51,7 +51,7 @@ export const AGENTS: AgentDef[] = [
     description: "Qué posts rinden y por qué." },
   { id: "ads-analyst", task: "Vigila las campañas de Meta", persona: "Joaquín", name: "Ads Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
     description: "Performance de Meta Ads, detecta anomalías." },
-  { id: "stock-analyst", task: "Controla stock, margen y caja", persona: "Julieta", name: "Stock Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
+  { id: "stock-analyst", task: "Controla stock, margen y caja", persona: "Julieta", name: "Stock Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: true,
     description: "Rotación, márgenes y cash flow." },
 
   // TIER 3 — CREATORS
