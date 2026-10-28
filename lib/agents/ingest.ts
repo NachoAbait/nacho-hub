@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { runAgent, type RunOutcome } from "@/lib/agents/runtime";
 import { priceReader } from "@/lib/agents/price-reader";
+import { priceAnalyst } from "@/lib/agents/price-analyst";
 import { findAllowedSupplier, normalizePhone, notePendingSender } from "@/lib/suppliers";
 
 export interface IngestInput {
@@ -75,5 +76,11 @@ export async function ingestPriceList(input: IngestInput): Promise<IngestResult>
   if (error || !msg) throw new Error(`No pude guardar el mensaje: ${error?.message}`);
 
   const run = await runAgent(priceReader, "BNB", "ingest");
+
+  // Un proveedor puede mandar precios a cualquier hora, no solo en la ventana de la mañana.
+  // Cada vez que Lucas termina de leer algo, se lo manda a Martín al toque (no solo a las 11):
+  // si ya había una comparación de ese producto esperando aprobación, la actualiza, no la duplica.
+  if (run.ok) await runAgent(priceAnalyst, "BNB", "ingest");
+
   return { ok: run.ok, ignored: false, supplier: supplierLabel, message_id: msg.id, run };
 }

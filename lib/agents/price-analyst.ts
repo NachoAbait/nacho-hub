@@ -1,6 +1,42 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentModule } from "@/lib/agents/runtime";
 import { entryKey, loadCatalogIndex, matchCatalog, needsReview, type CatalogEntry } from "@/lib/agents/catalog-match";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
+
+interface DecisionKey {
+  hub_product_id: string | null;
+  nexios_catalog_id: string | null;
+  category: Category;
+  model: string;
+  capacity: string | null;
+}
+
+/**
+ * Lucas sigue leyendo todo el día: un proveedor puede actualizar un precio fuera de la ventana de
+ * la mañana. Cada vez que eso pasa, Martín vuelve a comparar. Si ya había una comparación de ese
+ * mismo producto esperando aprobación (todavía no confirmada ni corregida), la ACTUALIZA ahí mismo
+ * en vez de dejar una segunda fila duplicada. Si la de antes ya se había aprobado, esta es una nueva.
+ */
+async function upsertDecision(db: SupabaseClient, today: string, key: DecisionKey, fields: Record<string, unknown>): Promise<void> {
+  let q = db
+    .from("price_updates")
+    .select("id")
+    .gte("created_at", `${today}T00:00:00-03:00`)
+    .not("review_status", "in", "(confirmed,corrected)");
+
+  if (key.hub_product_id) {
+    q = q.eq("hub_product_id", key.hub_product_id);
+  } else if (key.nexios_catalog_id) {
+    q = q.eq("nexios_catalog_id", key.nexios_catalog_id);
+  } else {
+    q = q.is("hub_product_id", null).is("nexios_catalog_id", null).eq("category", key.category).eq("model", key.model);
+    q = key.capacity ? q.eq("capacity", key.capacity) : q.is("capacity", null);
+  }
+
+  const { data: existing } = await q.limit(1).maybeSingle<{ id: string }>();
+  if (existing) await db.from("price_updates").update(fields).eq("id", existing.id);
+  else await db.from("price_updates").insert(fields);
+}
 
 interface Quote {
   id: string;
@@ -90,12 +126,12 @@ export const priceAnalyst: AgentModule = {
       const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity);
 
       if (!entry) {
-        await ctx.db.from("price_updates").insert({
+        await upsertDecision(ctx.db, today, { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: best.model, capacity: best.capacity }, {
           category: best.category, model: best.model, capacity: best.capacity,
           detected_cost_usd: best.cost_usd, original_price_usd: best.original_price_usd,
           pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty, confidence: best.confidence,
           raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
-          status: "new_model",
+          status: "new_model", review_status: "pending",
         });
         decisions.push({
           category: best.category, model: best.model, capacity: best.capacity, cost: best.cost_usd, previous: null,
@@ -108,7 +144,7 @@ export const priceAnalyst: AgentModule = {
 
       const previous = entry.cost_usd;
       if (previous != null && Math.abs(previous - best.cost_usd) < 1) {
-        await ctx.db.from("price_updates").insert({
+        await upsertDecision(ctx.db, today, { hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, category: best.category, model: entry.model, capacity: entry.capacity }, {
           category: best.category, model: entry.model, capacity: entry.capacity,
           detected_cost_usd: best.cost_usd, previous_cost_usd: previous, original_price_usd: best.original_price_usd,
           pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty, confidence: best.confidence,
@@ -127,7 +163,7 @@ export const priceAnalyst: AgentModule = {
       // Martín NUNCA aplica solo: decide y queda recomendado. Lo que modifica la app es la
       // aprobación de Nacho (uno por uno o con "Aplicar todo lo recomendado"), sin excepción.
       const isRoutine = !needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd });
-      await ctx.db.from("price_updates").insert({
+      await upsertDecision(ctx.db, today, { hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, category: best.category, model: entry.model, capacity: entry.capacity }, {
         category: best.category, model: entry.model, capacity: entry.capacity,
         detected_cost_usd: best.cost_usd, previous_cost_usd: previous,
         original_price_usd: best.original_price_usd, pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty,
