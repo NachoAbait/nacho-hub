@@ -23,6 +23,9 @@ if (!CRON_SECRET) {
 
 const silent = { level: "silent", trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {}, child() { return silent; } };
 
+/** Cuántas veces se cayó seguido sin llegar a abrir bien: resetea en cada "open". */
+let reconnectAttempts = 0;
+
 function extractText(message) {
   if (!message) return "";
   const m = message.ephemeralMessage?.message ?? message.viewOnceMessage?.message ?? message;
@@ -48,7 +51,17 @@ async function sendToHub(payload) {
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
   const { version } = await fetchLatestBaileysVersion();
-  const sock = makeWASocket({ version, auth: state, logger: silent, browser: ["NACHO Hub", "Desktop", "1.0"], markOnlineOnConnect: false });
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    logger: silent,
+    browser: ["NACHO Hub", "Desktop", "1.0"],
+    markOnlineOnConnect: false,
+    // Red casera + wifi: valores más generosos que el default para no entrar en bucle de reconexión (408).
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 25_000,
+    retryRequestDelayMs: 500,
+  });
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -57,15 +70,28 @@ async function start() {
       console.log("\nEscaneá este QR desde WhatsApp > Dispositivos vinculados > Vincular un dispositivo:\n");
       qrcode.generate(qr, { small: true });
     }
-    if (connection === "open") console.log("Conectado a WhatsApp. Esperando listas de proveedores…");
+    if (connection === "open") {
+      reconnectAttempts = 0;
+      console.log("Conectado a WhatsApp. Esperando listas de proveedores…");
+    }
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
         console.error("Se cerró la sesión desde el celular. Borrá la carpeta auth y volvé a correr npm start para escanear otro QR.");
         process.exit(1);
       }
-      console.log(`Conexión cerrada (${code ?? "?"}). Reconectando en 3 s…`);
-      setTimeout(start, 3000);
+      // Backoff: si se cae seguido (red inestable), espaciar los reintentos en vez de machacar cada 3 s,
+      // que puede hacer que el servidor siga cortando la conexión.
+      reconnectAttempts++;
+      const delay = Math.min(3000 * 2 ** (reconnectAttempts - 1), 30_000);
+      console.log(`Conexión cerrada (${code ?? "?"}). Reconectando en ${Math.round(delay / 1000)} s… (intento ${reconnectAttempts})`);
+      if (reconnectAttempts >= 6) {
+        console.warn(
+          "⚠️  Van 6 reconexiones seguidas: puede ser la red del lugar, o la sesión quedó rota. " +
+          "Si sigue así, cortá con Ctrl+C, borrá la carpeta auth y volvé a escanear el QR.",
+        );
+      }
+      setTimeout(start, delay);
     }
   });
 
