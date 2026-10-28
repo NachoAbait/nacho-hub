@@ -7,18 +7,135 @@ import {
   approveSender,
   confirmPriceUpdate,
   correctPriceUpdate,
+  correctSupplierQuote,
   dismissSender,
   loadPriceReaderPanel,
+  loadSupplierQuotes,
   pasteSupplierList,
   removeSupplier,
+  runAgentNow,
   saveRules,
   saveSuppliers,
   type PriceReaderPanelData,
 } from "@/app/actions";
 import type { PriceUpdateRow } from "@/lib/price-review";
+import type { SupplierQuote, SupplierToday } from "@/lib/suppliers";
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
 const input = "w-full rounded-lg border border-white/15 bg-black/50 p-2 text-xs text-white placeholder:text-white/30";
+
+const STATE_DOT: Record<SupplierToday["state"], string> = { not_yet: "bg-white/20", reading: "bg-amber-400 animate-pulse", read: "bg-green-500" };
+const STATE_LABEL: Record<SupplierToday["state"], string> = { not_yet: "todavía no llegó", reading: "leyendo…", read: "leída hoy" };
+
+/** Una cotización puntual de un proveedor, con su propio Corregir — antes de que Martín la vea. */
+function QuoteRow({ q, onDone }: { q: SupplierQuote; onDone: () => void }) {
+  const [pending, start] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(q.original_price_usd));
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <li className="rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-semibold text-white/85">{q.model}{q.capacity ? ` ${q.capacity}` : ""}</span>
+          <span className="ml-2 text-white/50">US$ {q.cost_usd}{q.pricing_basis === "bulk_min" ? ` (escalón x${q.bulk_qty ?? "?"})` : ""}</span>
+        </div>
+        {!editing && <button className={btn + " flex-none"} disabled={pending} onClick={() => setEditing(true)}>Corregir</button>}
+      </div>
+      {q.raw_line && <div className="mt-0.5 truncate text-white/30" title={q.raw_line}>“{q.raw_line}”</div>}
+      {editing && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <span className="text-white/50">Precio unitario correcto US$</span>
+          <input className={input + " !w-20"} inputMode="numeric" value={val} onChange={(e) => setVal(e.target.value)} />
+          <button
+            className={btn}
+            disabled={pending}
+            onClick={() => start(async () => {
+              const r = await correctSupplierQuote(q.id, Number(val.replace(",", ".")));
+              setMsg(r.message);
+              if (r.ok) { setEditing(false); onDone(); }
+            })}
+          >
+            {pending ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      )}
+      {msg && <p className="mt-1 text-white/50">{msg}</p>}
+    </li>
+  );
+}
+
+/** Un proveedor en la lista de hoy: estado y, al tocarlo, lo que Lucas interpretó de su lista. */
+function SupplierTodayRow({ s }: { s: SupplierToday }) {
+  const [open, setOpen] = useState(false);
+  const [quotes, setQuotes] = useState<SupplierQuote[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && quotes === null) {
+      setLoading(true);
+      loadSupplierQuotes(s.supplier.id).then((q) => { setQuotes(q); setLoading(false); });
+    }
+  }
+  function reload() {
+    loadSupplierQuotes(s.supplier.id).then(setQuotes);
+  }
+  return (
+    <li className="rounded-lg border border-white/10 bg-white/5">
+      <button type="button" onClick={toggle} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px]">
+        <span className={`h-2 w-2 flex-none rounded-full ${STATE_DOT[s.state]}`} />
+        <span className="font-semibold text-white/85">{s.supplier.name ?? s.supplier.phone}</span>
+        <span className="text-white/45">{STATE_LABEL[s.state]}{s.quotesToday ? ` · ${s.quotesToday} productos` : ""}</span>
+        <span className="ml-auto text-white/30">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-white/10 px-3 py-2">
+          {loading ? (
+            <p className="text-[11px] text-white/40">Cargando…</p>
+          ) : !quotes || quotes.length === 0 ? (
+            <p className="text-[11px] text-white/40">Todavía no leyó nada de este proveedor hoy.</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">{quotes.map((q) => <QuoteRow key={q.id} q={q} onDone={reload} />)}</ul>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function SupplierTodayBox({ data }: { data: PriceReaderPanelData }) {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  const read = data.today.filter((s) => s.state === "read").length;
+  return (
+    <section className="flex flex-col gap-2 rounded-xl border border-green-400/25 bg-green-400/5 p-3">
+      <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-green-300">
+        Proveedores de hoy ({read}/{data.today.length} leídos)
+      </h3>
+      {data.today.length === 0 ? (
+        <p className="text-[11px] text-white/50">No hay proveedores activos todavía.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">{data.today.map((s) => <SupplierTodayRow key={s.supplier.id} s={s} />)}</ul>
+      )}
+      <div className="mt-1 flex items-center gap-2 border-t border-white/10 pt-2">
+        <button
+          type="button"
+          className="rounded-full bg-green-400 px-4 py-1.5 text-xs font-bold text-black transition hover:bg-green-300 disabled:opacity-50"
+          disabled={pending}
+          onClick={() => start(async () => { const r = await runAgentNow("price-analyst"); setMsg(r.message); })}
+        >
+          {pending ? "Comparando…" : "Ya revisé todo: comparar y aplicar precios"}
+        </button>
+        {msg && <span className="text-[11px] text-white/60">{msg}</span>}
+      </div>
+      <p className="text-[10px] leading-snug text-white/40">
+        Esto le pasa a Martín lo que juntó Lucas hasta ahora. No corre solo a una hora fija: lo activás vos cuando ya
+        revisaste lo que interpretó cada proveedor.
+      </p>
+    </section>
+  );
+}
 
 const REVIEW_LABEL: Record<PriceUpdateRow["review_status"], string> = {
   pending: "sin revisar",
@@ -291,6 +408,7 @@ export function PriceReaderPanel() {
   const rest = data.updates.filter((u) => !(u.review_status === "pending" && u.status !== "unchanged"));
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
+      <SupplierTodayBox data={data} />
       <PendingSendersBox data={data} onDone={reload} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />

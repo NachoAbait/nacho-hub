@@ -8,14 +8,19 @@ import { ingestPriceList } from "@/lib/agents/ingest";
 import {
   addSupplier as addSupplierDb,
   approvePendingSender,
+  correctQuote,
   dismissPendingSender,
   listPendingSenders,
   listSuppliers,
   removeSupplier as removeSupplierDb,
   saveSupplierList,
   saveSupplierRules,
+  suppliersToday,
+  supplierQuotesToday,
   type PendingSender,
   type Supplier,
+  type SupplierQuote,
+  type SupplierToday,
 } from "@/lib/suppliers";
 import { confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
 import { latestReport, todayArt } from "@/lib/agents/runtime";
@@ -63,22 +68,42 @@ export interface PriceReaderPanelData {
   updates: PriceUpdateRow[];
   suppliers: Supplier[];
   pendingSenders: PendingSender[];
+  today: SupplierToday[];
 }
 
 export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
   const db = supabaseAdmin();
-  const [rep, updates, suppliers, pendingSenders] = await Promise.all([
+  const today = todayArt();
+  const [rep, updates, suppliers, pendingSenders, todayStatus] = await Promise.all([
     latestReport(db, "price-reader"),
-    todaysUpdates(db, todayArt()),
+    todaysUpdates(db, today),
     listSuppliers(db),
     listPendingSenders(db),
+    suppliersToday(db, today),
   ]);
   return {
     report: rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null,
     updates,
     suppliers,
     pendingSenders,
+    today: todayStatus,
   };
+}
+
+/** Lo que Lucas interpretó hoy de un proveedor puntual, para revisar antes de mandarlo a Martín. */
+export async function loadSupplierQuotes(supplierId: string): Promise<SupplierQuote[]> {
+  return supplierQuotesToday(supabaseAdmin(), supplierId, todayArt());
+}
+
+/** Corrige una cotización puntual (antes de que Martín la compare), y Lucas lo aprende para ese proveedor. */
+export async function correctSupplierQuote(quoteId: string, listedUnitPrice: number): Promise<ActionResult> {
+  try {
+    if (!Number.isFinite(listedUnitPrice) || listedUnitPrice <= 0) return { ok: false, message: "Precio inválido" };
+    await correctQuote(supabaseAdmin(), quoteId, listedUnitPrice);
+    return { ok: true, message: "Corregido" };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 /** Suma un remitente nuevo (número mal cargado o canal) como proveedor activo. */

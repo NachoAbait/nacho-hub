@@ -181,3 +181,92 @@ export async function removeSupplier(db: SupabaseClient, id: string): Promise<vo
     await db.from("hub_settings").upsert({ key: "supplier_senders", value: list.filter((n) => phoneKey(n) !== key), updated_at: new Date().toISOString() });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Estado de lectura de hoy: qué proveedor ya mandó su lista y qué interpretó
+// Lucas de cada uno, para que Nacho revise ANTES de mandarlo a comparar.
+// ---------------------------------------------------------------------------
+
+export type SupplierReadState = "not_yet" | "reading" | "read";
+
+export interface SupplierToday {
+  supplier: Supplier;
+  state: SupplierReadState;
+  messagesToday: number;
+  quotesToday: number;
+  lastReceivedAt: string | null;
+}
+
+/** Para cada proveedor activo, si ya mandó lista hoy y si Lucas terminó de leerla. */
+export async function suppliersToday(db: SupabaseClient, today: string): Promise<SupplierToday[]> {
+  const suppliers = (await listSuppliers(db)).filter((s) => s.active);
+  if (!suppliers.length) return [];
+  const since = `${today}T00:00:00-03:00`;
+
+  const [{ data: messages }, { data: quotes }] = await Promise.all([
+    db.from("supplier_messages").select("supplier_id, parsed_at, received_at").gte("received_at", since).not("supplier_id", "is", null),
+    db.from("price_quotes").select("supplier_id").eq("quote_date", today),
+  ]);
+
+  return suppliers.map((supplier) => {
+    const msgs = (messages ?? []).filter((m) => m.supplier_id === supplier.id);
+    const quoteCount = (quotes ?? []).filter((q) => q.supplier_id === supplier.id).length;
+    const lastReceivedAt = msgs.length ? msgs.map((m) => m.received_at as string).sort().at(-1)! : null;
+    let state: SupplierReadState = "not_yet";
+    if (msgs.length > 0) state = msgs.every((m) => m.parsed_at) ? "read" : "reading";
+    return { supplier, state, messagesToday: msgs.length, quotesToday: quoteCount, lastReceivedAt };
+  });
+}
+
+export interface SupplierQuote {
+  id: string;
+  category: string;
+  model: string;
+  capacity: string | null;
+  cost_usd: number;
+  original_price_usd: number;
+  pricing_basis: string;
+  bulk_qty: number | null;
+  confidence: number;
+  raw_line: string | null;
+}
+
+/** Lo que Lucas interpretó hoy de un proveedor puntual, para que Nacho lo revise antes de mandarlo a Martín. */
+export async function supplierQuotesToday(db: SupabaseClient, supplierId: string, today: string): Promise<SupplierQuote[]> {
+  const { data } = await db
+    .from("price_quotes")
+    .select("id, category, model, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line")
+    .eq("supplier_id", supplierId)
+    .eq("quote_date", today)
+    .order("category")
+    .order("model")
+    .returns<SupplierQuote[]>();
+  return (data ?? []).map((q) => ({ ...q, cost_usd: Number(q.cost_usd), original_price_usd: Number(q.original_price_usd) }));
+}
+
+/**
+ * Corrige lo que Lucas interpretó de UNA cotización, antes de que Martín la compare.
+ * `listedUnitPrice` es el precio unitario correcto tal como lo publicó el proveedor; se le resta
+ * la regla de descuento del proveedor y se guarda el ejemplo para que Lucas aprenda la próxima vez.
+ */
+export async function correctQuote(db: SupabaseClient, quoteId: string, listedUnitPrice: number): Promise<void> {
+  const { data: q } = await db.from("price_quotes").select("supplier_id, raw_line, model, capacity").eq("id", quoteId).single<{ supplier_id: string | null; raw_line: string | null; model: string; capacity: string | null }>();
+  if (!q) throw new Error("No encontré esa cotización");
+
+  let discount = 0;
+  let supplier: Supplier | null = null;
+  if (q.supplier_id) {
+    const { data } = await db.from("suppliers").select("*").eq("id", q.supplier_id).maybeSingle<Supplier>();
+    supplier = data;
+    discount = Number(supplier?.rules?.unit_discount_usd ?? 0) || 0;
+  }
+  const cost = Math.max(0, Math.round(listedUnitPrice) - discount);
+  await db.from("price_quotes").update({ cost_usd: cost, original_price_usd: Math.round(listedUnitPrice), pricing_basis: "unit", confidence: 1 }).eq("id", quoteId);
+
+  if (supplier && q.raw_line) {
+    const prevExamples = Array.isArray((supplier.rules as { examples?: unknown[] })?.examples) ? (supplier.rules as { examples: unknown[] }).examples : [];
+    const example = { line: q.raw_line.slice(0, 300), listed_unit_price: Math.round(listedUnitPrice), model: q.model, capacity: q.capacity, at: new Date().toISOString() };
+    const rules = { ...(supplier.rules ?? {}), examples: [example, ...prevExamples].slice(0, 10) };
+    await db.from("suppliers").update({ rules }).eq("id", supplier.id);
+  }
+}
