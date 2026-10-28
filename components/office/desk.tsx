@@ -139,8 +139,9 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
           </div>
           <div className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/55 leading-none">{agent.name}</div>
           {/* tarea: chiquita siempre; con el sector en foco, más detalle */}
+          {/* Nombre + tarea corta siempre: la explicación larga vive en el panel, al tocar el agente. */}
           <div className={`mt-1 leading-none ${labelMode === "detail" ? "text-[10px] text-white/85" : "text-[8px] text-white/50"}`}>
-            {labelMode === "detail" ? agent.description : agent.task}
+            {agent.task}
           </div>
         </button>
       </Html>

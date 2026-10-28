@@ -3,12 +3,14 @@
 import { useEffect, useState, useTransition } from "react";
 import Markdown from "react-markdown";
 import {
+  addSupplier,
   approveSender,
   confirmPriceUpdate,
   correctPriceUpdate,
   dismissSender,
   loadPriceReaderPanel,
   pasteSupplierList,
+  removeSupplier,
   saveRules,
   saveSuppliers,
   type PriceReaderPanelData,
@@ -124,45 +126,116 @@ function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDon
   );
 }
 
-function SuppliersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
-  const active = data.suppliers.filter((s) => s.active);
-  const [text, setText] = useState(active.map((s) => (s.name ? `${s.phone}, ${s.name}` : s.phone)).join("\n"));
+/** Alta de un proveedor por vez: no toca a los demás. Es la forma normal de sumar. */
+function AddSupplierForm({ onDone }: { onDone: () => void }) {
+  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  function submit() {
+    start(async () => {
+      const r = await addSupplier(phone, name);
+      setMsg(r.message);
+      if (r.ok) { setPhone(""); setName(""); onDone(); }
+    });
+  }
   return (
-    <section className="flex flex-col gap-2 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <input
+        className={input + " sm:w-44"}
+        inputMode="numeric"
+        placeholder="5492257123456"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && phone.trim() && submit()}
+      />
+      <input
+        className={input + " sm:w-40"}
+        placeholder="Nombre (opcional)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && phone.trim() && submit()}
+      />
+      <button className={btn} disabled={pending || !phone.trim()} onClick={submit}>
+        {pending ? "Sumando…" : "+ Agregar proveedor"}
+      </button>
+      {msg && <span className="text-xs text-white/60">{msg}</span>}
+    </div>
+  );
+}
+
+function SuppliersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
+  const active = data.suppliers.filter((s) => s.active);
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
       <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-300">Proveedores (solo estos se leen)</h3>
       <p className="text-[11px] leading-snug text-white/60">
-        Un número por línea, con código de país y sin +: <code>5492257123456, Nombre</code>. Los canales de difusión no se
-        pueden cargar acá de antemano (WhatsApp no te da su código hasta que llega el primer mensaje): cuando llegue uno
-        nuevo vas a verlo abajo, en &quot;Remitentes nuevos&quot;, para sumarlo con un toque.
+        Número con código de país, sin +. Los canales de difusión no se pueden cargar acá de antemano (WhatsApp no te da
+        su código hasta que llega el primer mensaje): cuando llegue uno nuevo lo vas a ver abajo, en &quot;Remitentes
+        nuevos&quot;, para sumarlo con un toque.
       </p>
-      <textarea className={input + " h-24 font-mono"} value={text} onChange={(e) => setText(e.target.value)} placeholder="5492257123456, Mayorista Uno" />
-      <div className="flex items-center gap-2">
-        <button className={btn} disabled={pending} onClick={() => start(async () => { const r = await saveSuppliers(text); setMsg(r.message); onDone(); })}>Guardar</button>
-        {msg && <span className="text-xs text-white/60">{msg}</span>}
-      </div>
-      {active.map((s) => <SupplierRules key={s.id} s={s} />)}
+      <AddSupplierForm onDone={onDone} />
+      {active.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {active.map((s) => <SupplierRules key={s.id} s={s} onDone={onDone} />)}
+        </ul>
+      )}
+      <ReplaceAllBox active={active} onDone={onDone} />
     </section>
   );
 }
 
-function SupplierRules({ s }: { s: PriceReaderPanelData["suppliers"][number] }) {
+function SupplierRules({ s, onDone }: { s: PriceReaderPanelData["suppliers"][number]; onDone: () => void }) {
   const rules = s.rules as { unit_discount_usd?: number; notes?: string; examples?: unknown[] };
   const [discount, setDiscount] = useState(rules.unit_discount_usd ? String(rules.unit_discount_usd) : "");
   const [notes, setNotes] = useState(rules.notes ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   return (
-    <details className="rounded-lg border border-white/10 p-2 text-[12px]">
-      <summary className="cursor-pointer text-white/80">{s.name ?? s.phone} · {s.messages_count} mensajes · {rules.examples?.length ?? 0} correcciones aprendidas</summary>
+    <li>
+      <details className="rounded-lg border border-white/10 p-2 text-[12px]">
+        <summary className="flex cursor-pointer items-center gap-2 text-white/80">
+          <span className="flex-1">{s.name ?? s.phone} · {s.messages_count} mensajes · {rules.examples?.length ?? 0} correcciones aprendidas</span>
+          <button
+            type="button"
+            className="flex-none rounded-full px-2 py-0.5 text-[10px] text-white/40 hover:bg-white/10 hover:text-red-300"
+            disabled={pending}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); start(async () => { await removeSupplier(s.id); onDone(); }); }}
+          >
+            Quitar
+          </button>
+        </summary>
+        <div className="mt-2 flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-white/60">Descuento por unidad US$
+            <input className={input + " !w-16"} inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          </label>
+          <textarea className={input + " h-14"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas: cómo publica por cantidad, qué columna es el unitario…" />
+          <div className="flex items-center gap-2">
+            <button className={btn} disabled={pending} onClick={() => start(async () => { const r = await saveRules(s.id, discount, notes); setMsg(r.message); })}>Guardar reglas</button>
+            {msg && <span className="text-white/60">{msg}</span>}
+          </div>
+        </div>
+      </details>
+    </li>
+  );
+}
+
+/** Reemplazo total de la lista, colapsado por default: es destructivo (da de baja a quien no esté en el texto). */
+function ReplaceAllBox({ active, onDone }: { active: PriceReaderPanelData["suppliers"]; onDone: () => void }) {
+  const [text, setText] = useState(active.map((s) => (s.name ? `${s.phone}, ${s.name}` : s.phone)).join("\n"));
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <details className="rounded-lg border border-white/10 p-2 text-[11px]">
+      <summary className="cursor-pointer text-white/50">Reemplazar toda la lista de una vez (avanzado)</summary>
       <div className="mt-2 flex flex-col gap-2">
-        <label className="flex items-center gap-2 text-white/60">Descuento por unidad US$
-          <input className={input + " !w-16"} inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value)} />
-        </label>
-        <textarea className={input + " h-14"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas: cómo publica por cantidad, qué columna es el unitario…" />
+        <p className="text-white/50">
+          Pegá acá la lista completa de proveedores activos, uno por línea. Ojo: a quien no esté en este texto se lo da de baja.
+          Para sumar uno solo, usá el botón de arriba.
+        </p>
+        <textarea className={input + " h-24 font-mono"} value={text} onChange={(e) => setText(e.target.value)} placeholder="5492257123456, Mayorista Uno" />
         <div className="flex items-center gap-2">
-          <button className={btn} disabled={pending} onClick={() => start(async () => { const r = await saveRules(s.id, discount, notes); setMsg(r.message); })}>Guardar reglas</button>
+          <button className={btn} disabled={pending} onClick={() => start(async () => { const r = await saveSuppliers(text); setMsg(r.message); onDone(); })}>Reemplazar lista</button>
           {msg && <span className="text-white/60">{msg}</span>}
         </div>
       </div>

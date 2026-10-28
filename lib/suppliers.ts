@@ -148,3 +148,36 @@ export async function approvePendingSender(db: SupabaseClient, sender: string, n
 export async function dismissPendingSender(db: SupabaseClient, sender: string): Promise<void> {
   await db.from("pending_senders").delete().eq("sender", sender);
 }
+
+// ---------------------------------------------------------------------------
+// Alta y baja de UN proveedor por vez (botones del panel). A diferencia de
+// saveSupplierList, estas nunca tocan a los demás proveedores.
+// ---------------------------------------------------------------------------
+
+/** Suma o reactiva un proveedor sin afectar a los demás. */
+export async function addSupplier(db: SupabaseClient, rawPhone: string, name: string | null): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const phone = normalizePhone(rawPhone);
+  const key = phoneKey(phone);
+  if (key.length < 8) return { ok: false, reason: "número inválido (necesita al menos 8 dígitos)" };
+
+  await db.from("suppliers").upsert({ phone, active: true, ...(name ? { name } : {}) }, { onConflict: "phone" });
+
+  const { data: setting } = await db.from("hub_settings").select("value").eq("key", "supplier_senders").maybeSingle<{ value: unknown }>();
+  const list = Array.isArray(setting?.value) ? (setting.value as unknown[]).map(String) : [];
+  if (!list.some((n) => phoneKey(n) === key)) {
+    await db.from("hub_settings").upsert({ key: "supplier_senders", value: [...list, phone], updated_at: new Date().toISOString() });
+  }
+  return { ok: true };
+}
+
+/** Desactiva un proveedor puntual (no lo borra: conserva reglas e historial). */
+export async function removeSupplier(db: SupabaseClient, id: string): Promise<void> {
+  const { data } = await db.from("suppliers").select("phone").eq("id", id).maybeSingle<{ phone: string }>();
+  await db.from("suppliers").update({ active: false }).eq("id", id);
+  if (data?.phone) {
+    const key = phoneKey(data.phone);
+    const { data: setting } = await db.from("hub_settings").select("value").eq("key", "supplier_senders").maybeSingle<{ value: unknown }>();
+    const list = Array.isArray(setting?.value) ? (setting.value as unknown[]).map(String) : [];
+    await db.from("hub_settings").upsert({ key: "supplier_senders", value: list.filter((n) => phoneKey(n) !== key), updated_at: new Date().toISOString() });
+  }
+}

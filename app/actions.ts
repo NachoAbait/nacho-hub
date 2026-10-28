@@ -6,10 +6,12 @@ import { REGISTRY } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
 import { ingestPriceList } from "@/lib/agents/ingest";
 import {
+  addSupplier as addSupplierDb,
   approvePendingSender,
   dismissPendingSender,
   listPendingSenders,
   listSuppliers,
+  removeSupplier as removeSupplierDb,
   saveSupplierList,
   saveSupplierRules,
   type PendingSender,
@@ -94,6 +96,26 @@ export async function dismissSender(sender: string): Promise<ActionResult> {
   try {
     await dismissPendingSender(supabaseAdmin(), sender);
     return { ok: true, message: "Descartado" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Suma un proveedor por vez: no toca a los demás (a diferencia de saveSuppliers). */
+export async function addSupplier(phone: string, name: string): Promise<ActionResult> {
+  try {
+    const r = await addSupplierDb(supabaseAdmin(), phone, name.trim() || null);
+    return r.ok ? { ok: true, message: "Proveedor sumado" } : { ok: false, message: r.reason };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Da de baja un proveedor puntual (conserva reglas e historial). */
+export async function removeSupplier(id: string): Promise<ActionResult> {
+  try {
+    await removeSupplierDb(supabaseAdmin(), id);
+    return { ok: true, message: "Proveedor dado de baja" };
   } catch (err) {
     return fail(err);
   }
