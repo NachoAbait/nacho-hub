@@ -183,38 +183,39 @@ export async function removeSupplier(db: SupabaseClient, id: string): Promise<vo
 }
 
 // ---------------------------------------------------------------------------
-// Estado de lectura de hoy: qué proveedor ya mandó su lista y qué interpretó
-// Lucas de cada uno, para que Nacho revise ANTES de mandarlo a comparar.
+// Estado de lectura de hoy: lo único que Lucas tiene que contar es, por
+// proveedor, si está esperando, leyendo, o ya leyó y se lo mandó a Martín.
 // ---------------------------------------------------------------------------
 
-export type SupplierReadState = "not_yet" | "reading" | "read";
+export type SupplierReadState = "esperando" | "leyendo" | "leido_enviado";
 
 export interface SupplierToday {
   supplier: Supplier;
   state: SupplierReadState;
-  messagesToday: number;
   quotesToday: number;
-  lastReceivedAt: string | null;
 }
 
-/** Para cada proveedor activo, si ya mandó lista hoy y si Lucas terminó de leerla. */
+/**
+ * Para cada proveedor activo: sin mensajes hoy → esperando. Con mensajes (aunque ya estén
+ * leídos) pero Martín todavía no comparó hoy → leyendo. Después de que Martín corrió hoy → leído y enviado.
+ */
 export async function suppliersToday(db: SupabaseClient, today: string): Promise<SupplierToday[]> {
   const suppliers = (await listSuppliers(db)).filter((s) => s.active);
   if (!suppliers.length) return [];
   const since = `${today}T00:00:00-03:00`;
 
-  const [{ data: messages }, { data: quotes }] = await Promise.all([
-    db.from("supplier_messages").select("supplier_id, parsed_at, received_at").gte("received_at", since).not("supplier_id", "is", null),
+  const [{ data: messages }, { data: quotes }, { data: analystRuns }] = await Promise.all([
+    db.from("supplier_messages").select("supplier_id, received_at").gte("received_at", since).not("supplier_id", "is", null),
     db.from("price_quotes").select("supplier_id").eq("quote_date", today),
+    db.from("agent_runs").select("id").eq("agent_id", "price-analyst").eq("status", "ok").gte("started_at", since).limit(1),
   ]);
+  const sentToday = (analystRuns ?? []).length > 0;
 
   return suppliers.map((supplier) => {
-    const msgs = (messages ?? []).filter((m) => m.supplier_id === supplier.id);
+    const hasMessage = (messages ?? []).some((m) => m.supplier_id === supplier.id);
     const quoteCount = (quotes ?? []).filter((q) => q.supplier_id === supplier.id).length;
-    const lastReceivedAt = msgs.length ? msgs.map((m) => m.received_at as string).sort().at(-1)! : null;
-    let state: SupplierReadState = "not_yet";
-    if (msgs.length > 0) state = msgs.every((m) => m.parsed_at) ? "read" : "reading";
-    return { supplier, state, messagesToday: msgs.length, quotesToday: quoteCount, lastReceivedAt };
+    const state: SupplierReadState = !hasMessage ? "esperando" : sentToday ? "leido_enviado" : "leyendo";
+    return { supplier, state, quotesToday: quoteCount };
   });
 }
 
