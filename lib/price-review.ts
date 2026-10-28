@@ -17,7 +17,8 @@ export interface PriceUpdateRow {
   adjustment_usd: number | null;
   raw_line: string | null;
   status: string;
-  review_status: "pending" | "confirmed" | "corrected";
+  review_status: "pending" | "confirmed" | "corrected" | "auto";
+  confidence: number | null;
   corrected_cost_usd: number | null;
   hub_product_id: string | null;
   nexios_catalog_id: string | null;
@@ -25,7 +26,7 @@ export interface PriceUpdateRow {
 }
 
 const COLS =
-  "id, supplier_id, category, model, capacity, detected_cost_usd, previous_cost_usd, new_price_usd, original_price_usd, pricing_basis, bulk_qty, adjustment_usd, raw_line, status, review_status, corrected_cost_usd, hub_product_id, nexios_catalog_id, created_at";
+  "id, supplier_id, category, model, capacity, detected_cost_usd, previous_cost_usd, new_price_usd, original_price_usd, pricing_basis, bulk_qty, adjustment_usd, raw_line, status, review_status, confidence, corrected_cost_usd, hub_product_id, nexios_catalog_id, created_at";
 
 /** Interpretaciones de hoy (hora Argentina), las más nuevas primero. */
 export async function todaysUpdates(db: SupabaseClient, today: string): Promise<PriceUpdateRow[]> {

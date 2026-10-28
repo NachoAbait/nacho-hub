@@ -159,6 +159,23 @@ export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessa
   });
 }
 
+/**
+ * ¿Hace falta que Nacho mire este cambio, o el sistema confía solo?
+ * Para confiar: precio unitario explícito (no un escalón de cantidad inferido), confianza alta del
+ * modelo, ya había un costo previo para comparar, y el salto no es descabellado (±20%).
+ * Un modelo nuevo SIEMPRE pide revisión (se maneja aparte, nunca llega hasta acá).
+ */
+const AUTO_CONFIRM_MIN_CONFIDENCE = 0.85;
+const AUTO_CONFIRM_MAX_SWING_PCT = 0.2;
+
+function needsReview(item: ParsedItem, previousCost: number | null, cost: number): boolean {
+  if (item.pricing_basis !== "unit") return true;
+  if (item.confidence < AUTO_CONFIRM_MIN_CONFIDENCE) return true;
+  if (previousCost == null) return true;
+  const swing = Math.abs(cost - previousCost) / previousCost;
+  return swing > AUTO_CONFIRM_MAX_SWING_PCT;
+}
+
 /** Aplica un costo: NexiOS primero (fuente de verdad), después el hub. Precio = costo + margen. */
 export async function applyCost(
   db: SupabaseClient,
@@ -192,6 +209,7 @@ interface Applied {
   status: string;
   basis: string;
   discount: number;
+  reviewed: boolean;
 }
 
 /**
@@ -234,6 +252,7 @@ export const priceReader: AgentModule = {
     const unchanged: string[] = [];
     const touched = new Set<Category>();
     let itemsTotal = 0;
+    let needsAttention = 0;
 
     const supplierCache = new Map<string, SupplierRow | null>();
     async function supplierOf(id: string | null): Promise<SupplierRow | null> {
@@ -277,6 +296,7 @@ export const priceReader: AgentModule = {
           adjustment_usd: discount ? -discount : null,
           adjustment_note: discount ? `Regla del proveedor: -US$ ${discount} por unidad` : null,
           raw_line: item.raw_line,
+          confidence: item.confidence,
         };
 
         if (!entry) {
@@ -296,13 +316,15 @@ export const priceReader: AgentModule = {
 
         const previous = entry.cost_usd;
         const { status, newPrice } = await applyCost(ctx.db, entry, cost);
+        const review_status = needsReview(item, previous, cost) ? "pending" : "auto";
         await ctx.db.from("price_updates").insert({
           ...trace, model: entry.model, capacity: entry.capacity, previous_cost_usd: previous, new_price_usd: newPrice,
-          hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status, applied_at: new Date().toISOString(),
+          hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status, review_status, applied_at: new Date().toISOString(),
         });
         entry.cost_usd = cost;
         touched.add(category);
-        applied.push({ category, model: entry.model, capacity: entry.capacity, previous, cost, newPrice, previousPrice: previous != null && entry.margin_usd != null ? previous + entry.margin_usd : null, status, basis: item.pricing_basis === "bulk_min" ? `escalón x${item.bulk_qty ?? "?"}` : "unitario", discount });
+        if (review_status === "pending") needsAttention++;
+        applied.push({ category, model: entry.model, capacity: entry.capacity, previous, cost, newPrice, previousPrice: previous != null && entry.margin_usd != null ? previous + entry.margin_usd : null, status, basis: item.pricing_basis === "bulk_min" ? `escalón x${item.bulk_qty ?? "?"}` : "unitario", discount, reviewed: review_status === "auto" });
       }
     }
 
@@ -320,7 +342,7 @@ export const priceReader: AgentModule = {
       lines.push("", "## Costos actualizados");
       for (const a of applied) {
         const dir = a.previous == null ? "nuevo costo" : a.cost > a.previous ? "↑ subió" : "↓ bajó";
-        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir}, ${a.basis}${a.discount ? `, -US$ ${a.discount} de regla` : ""})${a.newPrice != null ? ` · precio de venta ${a.previousPrice != null ? `US$ ${a.previousPrice} → ` : ""}US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}`);
+        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir}, ${a.basis}${a.discount ? `, -US$ ${a.discount} de regla` : ""})${a.newPrice != null ? ` · precio de venta ${a.previousPrice != null ? `US$ ${a.previousPrice} → ` : ""}US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}${a.reviewed ? "" : " · 👀 pide tu revisión"}`);
       }
     }
     if (newModels.length) {
@@ -340,7 +362,7 @@ export const priceReader: AgentModule = {
 
     return {
       markdown: lines.join("\n"),
-      summary: `${applied.length} costos actualizados, ${newModels.length} modelos nuevos`,
+      summary: `${applied.length} costos actualizados${needsAttention || newModels.length ? `, ${needsAttention + newModels.length} piden tu revisión` : ", todo aplicado solo"}`,
       data: { messages: messages.length, items: itemsTotal, applied, new_models: newModels, unchanged, banners },
     };
   },
