@@ -4,6 +4,9 @@ import { STATUS_COLOR, STATUS_LABEL, TIERS, agentById, type AgentStatus } from "
 import type { OfficeView, SectorFocus } from "@/components/office/camera-rig";
 import { RegenerateButton } from "@/components/dashboard/regenerate-button";
 import { BRIEFS } from "@/lib/agent-briefs";
+import { RunNowButton } from "@/components/office/run-now-button";
+import { PriceReaderPanel } from "@/components/office/price-reader-panel";
+import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
 export interface DesignerBanner {
   url: string;
@@ -91,7 +94,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
 
       {/* panel del agente */}
       {agent && (
-        <aside className="absolute bottom-5 right-5 top-20 z-[100] flex w-[340px] max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md">
+        <aside className={`absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-reader" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
           <header className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">
@@ -149,11 +152,14 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             Trabaja en: {agent.contexts.join(" y ")}
           </div>
 
+          {REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "designer" && <RunNowButton agentId={agent.id} />}
+          {agent.id === "price-reader" && <PriceReaderPanel />}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Último banner</span>
-                <RegenerateButton category="iphone" onPendingChange={onDesignerWorking} />
+                <div className="flex flex-col items-end gap-2"><RunNowButton agentId="designer" onPendingChange={onDesignerWorking} /><RegenerateButton category="iphone" onPendingChange={onDesignerWorking} /></div>
               </div>
               {designerBanner ? (
                 <a href={designerBanner.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-white/10">
@@ -167,7 +173,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {!agent.live && (
+          {!agent.live && !REGISTERED_AGENT_IDS.includes(agent.id) && (
             <p className="rounded-lg border border-dashed border-white/15 p-3 text-xs text-white/50">
               Este escritorio está reservado. El agente se construye en la Fase {agent.phase}.
             </p>

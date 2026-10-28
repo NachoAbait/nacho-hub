@@ -25,6 +25,12 @@ const ItemSchema = z.object({
   condition: z.enum(["new", "used"]),
   price: z.number(),
   currency: z.enum(["USD", "ARS"]),
+  /** "unit" si el proveedor publicó precio unitario explícito; "bulk_min" si solo había escalones por cantidad. */
+  pricing_basis: z.enum(["unit", "bulk_min"]),
+  /** Cantidad del escalón usado cuando pricing_basis es bulk_min (x3 → 3). */
+  bulk_qty: z.number().nullable(),
+  /** La línea original del mensaje de la que salió el ítem. */
+  raw_line: z.string(),
   confidence: z.number(),
   note: z.string().nullable(),
 });
@@ -46,6 +52,21 @@ interface SupplierMessage {
   sender_name: string | null;
   received_at: string;
   body: string;
+  supplier_id: string | null;
+}
+
+export interface SupplierRules {
+  unit_discount_usd?: number;
+  bulk_pricing?: string;
+  notes?: string;
+  examples?: { line: string; listed_unit_price: number; model: string; capacity: string | null; at: string }[];
+}
+
+interface SupplierRow {
+  id: string;
+  phone: string;
+  name: string | null;
+  rules: SupplierRules;
 }
 
 interface CatalogEntry {
@@ -110,18 +131,54 @@ function matchEntry(index: Map<string, CatalogEntry>, item: ParsedItem): Catalog
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessage, catalogSummary: string): Promise<ParsedList> {
+function supplierPrompt(supplier: SupplierRow | null): string {
+  if (!supplier) return "";
+  const r = supplier.rules ?? {};
+  const lines: string[] = [`\nProveedor: ${supplier.name ?? supplier.phone}.`];
+  if (r.bulk_pricing) lines.push(`Cómo publica por cantidad: ${r.bulk_pricing}.`);
+  if (r.notes) lines.push(`Notas de Nacho sobre este proveedor: ${r.notes}`);
+  if (r.unit_discount_usd) lines.push(`(El sistema le va a restar US$ ${r.unit_discount_usd} a cada precio unitario después: vos devolvé el precio tal como está publicado.)`);
+  if (r.examples?.length) {
+    lines.push("Correcciones anteriores de Nacho con este proveedor (aprendé de ellas):");
+    for (const e of r.examples) lines.push(`- Línea "${e.line}" → ${e.model}${e.capacity ? " " + e.capacity : ""}: el precio unitario correcto publicado era US$ ${e.listed_unit_price}.`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessage, catalogSummary: string, supplier: SupplierRow | null): Promise<ParsedList> {
   return askJson({
     agent: "price-reader",
     role: "parser",
     system: systemPrompt("price-reader"),
-    prompt: `Catálogo actual (categoría | modelo | capacidad | costo US$):\n${catalogSummary}\n\n` +
+    prompt: `Catálogo actual (categoría | modelo | capacidad | costo US$):\n${catalogSummary}\n${supplierPrompt(supplier)}\n` +
       `Mensaje recibido el ${msg.received_at} de ${msg.sender_name ?? msg.sender ?? "desconocido"}:\n\n"""\n${msg.body}\n"""\n\n` +
       `Extraé todos los ítems con precio.`,
     schema: ParseSchema,
     usage: ctx.usage,
     maxTokens: 6000,
   });
+}
+
+/** Aplica un costo: NexiOS primero (fuente de verdad), después el hub. Precio = costo + margen. */
+export async function applyCost(
+  db: SupabaseClient,
+  entry: { nexios_id: string | null; hub_id: string | null; margin_usd: number | null },
+  cost: number,
+): Promise<{ status: string; newPrice: number | null }> {
+  let newPrice: number | null = null;
+  let status = "applied_hub_only";
+  if (entry.nexios_id && nexiosAvailable()) {
+    const r = await updateCatalogCost(entry.nexios_id, cost);
+    newPrice = r?.priceUsd ?? null;
+    status = "applied";
+  } else if (entry.nexios_id) {
+    status = "pending_nexios";
+  }
+  if (newPrice == null && entry.margin_usd != null) newPrice = cost + entry.margin_usd;
+  if (entry.hub_id) {
+    await db.from("products").update({ cost_usd: cost, ...(newPrice != null ? { price_usd: newPrice } : {}) }).eq("id", entry.hub_id);
+  }
+  return { status, newPrice };
 }
 
 interface Applied {
@@ -132,6 +189,8 @@ interface Applied {
   cost: number;
   newPrice: number | null;
   status: string;
+  basis: string;
+  discount: number;
 }
 
 /**
@@ -146,7 +205,7 @@ export const priceReader: AgentModule = {
     const since = new Date(Date.now() - 3 * 86400_000).toISOString();
     const { data: messages, error } = await ctx.db
       .from("supplier_messages")
-      .select("id, source, sender, sender_name, received_at, body")
+      .select("id, source, sender, sender_name, received_at, body, supplier_id")
       .is("parsed_at", null)
       .gte("received_at", since)
       .order("received_at", { ascending: true })
@@ -175,64 +234,74 @@ export const priceReader: AgentModule = {
     const touched = new Set<Category>();
     let itemsTotal = 0;
 
+    const supplierCache = new Map<string, SupplierRow | null>();
+    async function supplierOf(id: string | null): Promise<SupplierRow | null> {
+      if (!id) return null;
+      if (!supplierCache.has(id)) {
+        const { data } = await ctx.db.from("suppliers").select("id, phone, name, rules").eq("id", id).maybeSingle<SupplierRow>();
+        supplierCache.set(id, data ?? null);
+      }
+      return supplierCache.get(id) ?? null;
+    }
+
     for (const msg of messages) {
+      const supplier = await supplierOf(msg.supplier_id);
       let parsed: ParsedList;
       try {
-        parsed = await parseSupplierMessage(ctx, msg, catalogSummary);
+        parsed = await parseSupplierMessage(ctx, msg, catalogSummary, supplier);
       } catch (err) {
         ctx.log(`no pude parsear ${msg.id}: ${err instanceof Error ? err.message : err}`);
         await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: { error: String(err) }, run_id: ctx.runId }).eq("id", msg.id);
         continue;
       }
       await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: parsed, run_id: ctx.runId }).eq("id", msg.id);
+      const discount = Number(supplier?.rules?.unit_discount_usd ?? 0) || 0;
 
       for (const item of parsed.items) {
         itemsTotal++;
         if (item.category === "other" || item.currency !== "USD" || item.condition !== "new" || item.confidence < 0.6) continue;
         const entry = matchEntry(index, item);
         const category = item.category as Category;
-        const cost = Math.round(item.price);
+        const listed = Math.round(item.price);
+        const cost = Math.max(0, listed - discount);
+        // Registro común: precio original, base (unitario o escalón mínimo) y ajuste aplicado.
+        const trace = {
+          message_id: msg.id,
+          supplier_id: msg.supplier_id,
+          category,
+          detected_cost_usd: cost,
+          original_price_usd: listed,
+          pricing_basis: item.pricing_basis,
+          bulk_qty: item.pricing_basis === "bulk_min" ? item.bulk_qty : null,
+          adjustment_usd: discount ? -discount : null,
+          adjustment_note: discount ? `Regla del proveedor: -US$ ${discount} por unidad` : null,
+          raw_line: item.raw_line,
+        };
 
         if (!entry) {
           newModels.push({ category, model: item.model, capacity: item.capacity, cost });
-          await ctx.db.from("price_updates").insert({
-            message_id: msg.id, category, model: item.model, capacity: item.capacity,
-            detected_cost_usd: cost, status: "new_model", note: "No está en el catálogo",
-          });
+          await ctx.db.from("price_updates").insert({ ...trace, model: item.model, capacity: item.capacity, status: "new_model", note: "No está en el catálogo" });
           continue;
         }
 
         if (entry.cost_usd != null && Math.abs(entry.cost_usd - cost) < 1) {
           unchanged.push(`${entry.model} ${entry.capacity ?? ""}`.trim());
           await ctx.db.from("price_updates").insert({
-            message_id: msg.id, category, model: entry.model, capacity: entry.capacity,
-            detected_cost_usd: cost, previous_cost_usd: entry.cost_usd, hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status: "unchanged",
+            ...trace, model: entry.model, capacity: entry.capacity, previous_cost_usd: entry.cost_usd,
+            hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status: "unchanged",
           });
           continue;
         }
 
-        // Aplicar: NexiOS primero (fuente de verdad), después el hub.
-        let newPrice: number | null = null;
-        let status = "applied_hub_only";
-        if (entry.nexios_id && nexiosAvailable()) {
-          const r = await updateCatalogCost(entry.nexios_id, cost);
-          newPrice = r?.priceUsd ?? null;
-          status = "applied";
-        } else if (entry.nexios_id) {
-          status = "pending_nexios";
-        }
-        if (newPrice == null && entry.margin_usd != null) newPrice = cost + entry.margin_usd;
-        if (entry.hub_id) {
-          await ctx.db.from("products").update({ cost_usd: cost, ...(newPrice != null ? { price_usd: newPrice } : {}) }).eq("id", entry.hub_id);
-        }
+        const previous = entry.cost_usd;
+        const { status, newPrice } = await applyCost(ctx.db, entry, cost);
         await ctx.db.from("price_updates").insert({
-          message_id: msg.id, category, model: entry.model, capacity: entry.capacity,
-          detected_cost_usd: cost, previous_cost_usd: entry.cost_usd, new_price_usd: newPrice,
+          ...trace, model: entry.model, capacity: entry.capacity, previous_cost_usd: previous, new_price_usd: newPrice,
           hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status, applied_at: new Date().toISOString(),
         });
         entry.cost_usd = cost;
         touched.add(category);
-        applied.push({ category, model: entry.model, capacity: entry.capacity, previous: entry.cost_usd, cost, newPrice, status });
+        applied.push({ category, model: entry.model, capacity: entry.capacity, previous, cost, newPrice, status, basis: item.pricing_basis === "bulk_min" ? `escalón x${item.bulk_qty ?? "?"}` : "unitario", discount });
       }
     }
 
@@ -250,7 +319,7 @@ export const priceReader: AgentModule = {
       lines.push("", "## Costos actualizados");
       for (const a of applied) {
         const dir = a.previous == null ? "nuevo costo" : a.cost > a.previous ? "↑ subió" : "↓ bajó";
-        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir})${a.newPrice != null ? ` · precio de venta US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}`);
+        lines.push(`- **${a.model}${a.capacity ? " " + a.capacity : ""}**: ${a.previous != null ? `US$ ${a.previous} → ` : ""}US$ ${a.cost} (${dir}, ${a.basis}${a.discount ? `, -US$ ${a.discount} de regla` : ""})${a.newPrice != null ? ` · precio de venta US$ ${a.newPrice}` : ""}${a.status === "pending_nexios" ? " · pendiente de aplicar en NexiOS" : ""}`);
       }
     }
     if (newModels.length) {
@@ -275,25 +344,5 @@ export const priceReader: AgentModule = {
     };
   },
 };
-
-/** Guarda un mensaje crudo de proveedor. Lo usan el puente de WhatsApp y el panel. */
-export async function ingestSupplierMessage(
-  db: SupabaseClient,
-  input: { source: "whatsapp" | "manual"; sender?: string | null; sender_name?: string | null; body: string; received_at?: string },
-): Promise<string> {
-  const { data, error } = await db
-    .from("supplier_messages")
-    .insert({
-      source: input.source,
-      sender: input.sender ?? null,
-      sender_name: input.sender_name ?? null,
-      body: input.body,
-      received_at: input.received_at ?? new Date().toISOString(),
-    })
-    .select("id")
-    .single<{ id: string }>();
-  if (error || !data) throw new Error(`No pude guardar el mensaje: ${error?.message}`);
-  return data.id;
-}
 
 export { CATEGORY_TO_DEVICE };

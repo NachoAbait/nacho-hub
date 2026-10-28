@@ -4,6 +4,9 @@ import { agentStatuses } from "@/lib/office/status";
 import { latestBanner } from "@/lib/designer/generate";
 import { OfficeCanvas } from "@/components/office/office-canvas";
 
+// Las server actions del panel (correr agentes, regenerar historias) corren en esta ruta.
+export const maxDuration = 60;
+
 export const metadata = { title: "NACHO Hub" };
 
 async function OfficeLoader() {

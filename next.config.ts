@@ -14,6 +14,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/designer/generate": PLAYWRIGHT_FILES,
     "/dashboard": PLAYWRIGHT_FILES,
+    "/": PLAYWRIGHT_FILES,
+    "/api/agents/[id]": PLAYWRIGHT_FILES,
+    "/api/agents/price-reader/ingest": PLAYWRIGHT_FILES,
+    "/api/cron/[tier]": PLAYWRIGHT_FILES,
   },
   turbopack: {
     rules: {

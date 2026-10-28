@@ -24,6 +24,23 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
 10. confidence entre 0 y 1: 1 si modelo, capacidad y precio son inequívocos; 0.6 si tuviste que inferir el modelo
     por contexto (por ejemplo, un encabezado "iPhone 17" seguido de líneas "256 / 1150").
 
+## Precio unitario y precios por cantidad (regla del dueño, la más importante)
+
+Muchas listas publican precios por cantidad: "x3", "x5", "10u", "por 3 unidades", "desde 3", "mayorista", "3+ unidades".
+Nacho SOLO quiere el precio UNITARIO de una unidad suelta. Para cada ítem:
+
+1. Si la lista trae un precio unitario explícito (el precio normal, "1 unidad", "unidad", "minorista" o el precio sin cantidad),
+   usá ese: pricing_basis "unit" y bulk_qty null.
+2. Si SOLO hay escalones por cantidad (por ejemplo "1250 / x3 1230 / x5 1210" sin otro precio, o "x3 1230, 10u 1200"),
+   usá el escalón de cantidad MÁS CHICA y marcá pricing_basis "bulk_min" con bulk_qty = esa cantidad (3 en el ejemplo).
+3. Un precio sin ninguna marca de cantidad junto a escalones con marca ("1250 x3 1230") es el unitario.
+4. Nunca uses el escalón más grande (x10, x20) ni promedies.
+5. En price ponés el precio tal como lo publicó el proveedor para ese caso, sin descuentos: el sistema aplica las reglas
+   del proveedor (por ejemplo un descuento por unidad) después.
+6. raw_line es la línea o fragmento original del mensaje de donde sacaste el ítem, copiado tal cual.
+7. Si te paso correcciones anteriores de Nacho con este proveedor, son la verdad: aprendé el patrón (a qué columna o
+   escalón corresponde el precio unitario) y aplicalo.
+
 ## Contexto del catálogo
 
 Te paso además el catálogo actual del negocio (modelo, capacidad, costo actual). Usalo para resolver ambigüedades

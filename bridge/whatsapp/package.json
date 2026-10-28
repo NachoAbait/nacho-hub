@@ -1,0 +1,13 @@
+{
+  "name": "nacho-hub-whatsapp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Puente de WhatsApp: reenvía al hub los mensajes de los proveedores cargados en el panel",
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": {
+    "baileys": "latest",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "engines": { "node": ">=20" }
+}

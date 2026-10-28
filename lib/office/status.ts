@@ -24,10 +24,13 @@ export async function agentStatuses(): Promise<Record<string, AgentStatus>> {
   const db = supabaseAdmin();
   const today = todayArt();
 
-  const [reports, banners] = await Promise.all([
+  const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+  const [reports, banners, running] = await Promise.all([
     db.from("agent_reports").select("agent_name").eq("date", today),
     db.from("banners").select("generated_at").gte("generated_at", `${today}T00:00:00-03:00`).limit(1),
+    db.from("agent_runs").select("agent_id").eq("status", "running").gte("started_at", tenMinAgo),
   ]);
+  const runningNow = new Set((running.data ?? []).map((r) => r.agent_id as string));
 
   const reported = new Set((reports.data ?? []).map((r) => r.agent_name as string));
   const bannerToday = (banners.data ?? []).length > 0;
@@ -37,6 +40,10 @@ export async function agentStatuses(): Promise<Record<string, AgentStatus>> {
   for (const agent of AGENTS) {
     if (!agent.live) {
       out[agent.id] = "idle";
+      continue;
+    }
+    if (runningNow.has(agent.id)) {
+      out[agent.id] = "working";
       continue;
     }
     const done = agent.id === "designer" ? bannerToday : reported.has(agent.id);

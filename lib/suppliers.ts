@@ -1,0 +1,97 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Proveedores. Regla del dueño: SOLO se procesan los remitentes que Nacho cargó a mano
+ * (tabla suppliers con active = true, o hub_settings.supplier_senders). Todo lo demás se ignora.
+ */
+
+export interface Supplier {
+  id: string;
+  phone: string;
+  name: string | null;
+  rules: Record<string, unknown>;
+  active: boolean;
+  first_seen_at: string;
+  last_seen_at: string;
+  messages_count: number;
+}
+
+/** "5492257123456:12@s.whatsapp.net" → "5492257123456". */
+export function normalizePhone(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw.split("@")[0].split(":")[0].replace(/\D/g, "");
+}
+
+/** Clave de comparación: los últimos 10 dígitos (iguala +54 9 2257…, 54 2257… y 2257… sin prefijos). */
+export function phoneKey(raw: string | null | undefined): string {
+  return normalizePhone(raw).slice(-10);
+}
+
+export async function listSuppliers(db: SupabaseClient): Promise<Supplier[]> {
+  const { data } = await db.from("suppliers").select("*").order("name", { ascending: true, nullsFirst: false }).returns<Supplier[]>();
+  return data ?? [];
+}
+
+/** ¿Este remitente es un proveedor cargado por Nacho? Devuelve la fila (creándola si solo estaba en supplier_senders). */
+export async function findAllowedSupplier(db: SupabaseClient, sender: string): Promise<Supplier | null> {
+  const key = phoneKey(sender);
+  if (key.length < 8) return null;
+  const all = await listSuppliers(db);
+  const hit = all.find((s) => phoneKey(s.phone) === key);
+  if (hit) return hit.active ? hit : null;
+
+  const { data: setting } = await db.from("hub_settings").select("value").eq("key", "supplier_senders").maybeSingle<{ value: unknown }>();
+  const senders = Array.isArray(setting?.value) ? (setting.value as unknown[]).map(String) : [];
+  if (!senders.some((n) => phoneKey(n) === key)) return null;
+  const { data: created } = await db
+    .from("suppliers")
+    .upsert({ phone: normalizePhone(sender), active: true }, { onConflict: "phone" })
+    .select("*")
+    .single<Supplier>();
+  return created ?? null;
+}
+
+/**
+ * Guarda la lista que Nacho edita en el panel: una línea por proveedor, "número" o "número, nombre".
+ * Los de la lista quedan activos; los que se sacaron quedan inactivos (no se borran: conservan reglas e historial).
+ * hub_settings.supplier_senders queda sincronizado con los números activos.
+ */
+export async function saveSupplierList(db: SupabaseClient, text: string): Promise<{ active: number; deactivated: number }> {
+  const entries = new Map<string, { phone: string; name: string | null }>();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(/^([+\d][\d\s\-().+]*)(?:[,;:\t]\s*(.+))?$/);
+    if (!m) continue;
+    const phone = normalizePhone(m[1]);
+    if (phoneKey(phone).length < 8) continue;
+    entries.set(phoneKey(phone), { phone, name: m[2]?.trim() || null });
+  }
+  const existing = await listSuppliers(db);
+  const byKey = new Map(existing.map((s) => [phoneKey(s.phone), s]));
+
+  for (const [key, e] of entries) {
+    const prev = byKey.get(key);
+    if (prev) {
+      await db.from("suppliers").update({ active: true, ...(e.name ? { name: e.name } : {}) }).eq("id", prev.id);
+    } else {
+      await db.from("suppliers").insert({ phone: e.phone, name: e.name, active: true });
+    }
+  }
+  const toOff = existing.filter((s) => s.active && !entries.has(phoneKey(s.phone)));
+  if (toOff.length) await db.from("suppliers").update({ active: false }).in("id", toOff.map((s) => s.id));
+
+  await db.from("hub_settings").upsert({ key: "supplier_senders", value: [...entries.values()].map((e) => e.phone), updated_at: new Date().toISOString() });
+  return { active: entries.size, deactivated: toOff.length };
+}
+
+/** Reglas editables de un proveedor (descuento por unidad y notas). */
+export async function saveSupplierRules(db: SupabaseClient, id: string, input: { unit_discount_usd?: number | null; bulk_pricing?: string; notes?: string }) {
+  const { data } = await db.from("suppliers").select("rules").eq("id", id).single<{ rules: Record<string, unknown> }>();
+  const rules = { ...(data?.rules ?? {}) };
+  if (input.unit_discount_usd == null || Number.isNaN(input.unit_discount_usd) || input.unit_discount_usd === 0) delete rules.unit_discount_usd;
+  else rules.unit_discount_usd = input.unit_discount_usd;
+  if (input.bulk_pricing !== undefined) rules.bulk_pricing = input.bulk_pricing;
+  if (input.notes !== undefined) rules.notes = input.notes;
+  await db.from("suppliers").update({ rules }).eq("id", id);
+}

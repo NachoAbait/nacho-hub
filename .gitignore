@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# puente de WhatsApp (sesión y secretos)
+bridge/whatsapp/auth
+bridge/whatsapp/.env
+bridge/whatsapp/node_modules

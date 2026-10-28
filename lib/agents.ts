@@ -35,7 +35,7 @@ export interface AgentDef {
 /** Los 13 agentes de CLAUDE.md. El orden define la posición del escritorio dentro del sector. */
 export const AGENTS: AgentDef[] = [
   // TIER 1 — READERS
-  { id: "price-reader", task: "Lee precios de proveedores", persona: "Lucas", name: "Price Reader", tier: "readers", contexts: ["BNB"], phase: 2, live: false,
+  { id: "price-reader", task: "Lee precios de proveedores", persona: "Lucas", name: "Price Reader", tier: "readers", contexts: ["BNB"], phase: 2, live: true,
     description: "Lee WhatsApp de proveedores Apple/Samsung, extrae modelo, capacidad y precio USD, actualiza products." },
   { id: "competitor-scraper", task: "Espía precios de la competencia", persona: "Sofía", name: "Competitor Scraper", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Scrapea Instagram de la competencia y guarda posts, precios y promos." },
@@ -107,3 +107,6 @@ export const TIER_WINDOW: Record<Tier, [number, number]> = {
   creators: [6, 7],
   chief: [7, 7.5],
 };
+
+/** Agentes con módulo programado (espejo de lib/agents/registry.ts, usable desde el cliente). */
+export const REGISTERED_AGENT_IDS = ["price-reader", "designer"];
