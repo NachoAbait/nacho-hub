@@ -8,7 +8,7 @@ export const maxDuration = 60;
 /**
  * POST /api/agents/price-reader/ingest
  * Authorization: Bearer <CRON_SECRET>
- * Body: { sender, sender_name, body, received_at, source, broadcast? }
+ * Body: { sender, sender_name, body, received_at, source, broadcast?, group? }
  * Solo procesa remitentes que Nacho cargó como proveedores; el resto responde { ignored: true }.
  */
 export async function POST(request: Request) {
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       body: b.body,
       received_at: typeof b.received_at === "string" ? b.received_at : undefined,
       broadcast: b.broadcast === true,
+      group: b.group === true,
     });
     return NextResponse.json(result);
   } catch (err) {

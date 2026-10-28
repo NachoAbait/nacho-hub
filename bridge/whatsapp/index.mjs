@@ -99,10 +99,13 @@ async function start() {
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
       const jid = msg.key.remoteJid ?? "";
-      if (jid.endsWith("@g.us") || jid === "status@broadcast") continue; // grupos y estados: nunca
+      if (jid === "status@broadcast") continue; // estados: nunca
+      // Las Comunidades de WhatsApp son grupos por dentro (jid termina en @g.us): NO se descartan más.
+      // Quien manda el mensaje dentro del grupo/comunidad siempre viaja en participant/participantPn.
+      const isGroup = jid.endsWith("@g.us");
       const body = extractText(msg.message).trim();
       if (!body) continue;
-      // En chats con LID el número real viene en senderPn / participantPn.
+      // En chats con LID, y siempre dentro de un grupo, el número real viene en senderPn / participantPn.
       const sender = (msg.key.senderPn ?? msg.key.participantPn ?? msg.key.participant ?? jid).toString();
       await sendToHub({
         sender,
@@ -112,6 +115,7 @@ async function start() {
         source: "whatsapp",
         // Señal extra, nunca filtro único: el hub decide por la lista de proveedores.
         broadcast: msg.broadcast === true,
+        group: isGroup,
       });
     }
   });

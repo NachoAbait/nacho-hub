@@ -201,22 +201,20 @@ function UpdateRow({ u, onDone }: { u: PriceUpdateRow; onDone: () => void }) {
   );
 }
 
-function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
+/**
+ * Números o canales que escribieron sin estar aprobados (fuera de grupos: eso puede ser cualquiera,
+ * no solo proveedores, y es tema de otro agente). Va compacto, adentro de "Proveedores".
+ */
+function NewSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
   const [pending, start] = useTransition();
   const [names, setNames] = useState<Record<string, string>>({});
   if (data.pendingSenders.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2 rounded-xl border border-sky-400/30 bg-sky-400/5 p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-sky-300">
-        Remitentes nuevos ({data.pendingSenders.length})
-      </h3>
-      <p className="text-[11px] leading-snug text-white/60">
-        Llegaron mensajes de estos números o canales, pero todavía no están sumados: no se leyeron precios.
-        Sumalo si es un proveedor, o descartalo si es una consulta de cliente.
-      </p>
+    <div className="flex flex-col gap-2 rounded-lg border border-sky-400/25 bg-sky-400/5 p-2 text-[11px]">
+      <div className="font-semibold uppercase tracking-wider text-sky-300">¿Te escribió alguien nuevo? ({data.pendingSenders.length})</div>
       <ul className="flex flex-col gap-2">
         {data.pendingSenders.map((p) => (
-          <li key={p.sender} className="rounded-lg border border-white/10 bg-black/30 p-2 text-[12px]">
+          <li key={p.sender} className="rounded-md border border-white/10 bg-black/30 p-2">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/60">
                 {p.kind === "channel" ? "canal" : "número"}
@@ -227,7 +225,7 @@ function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDon
             {p.last_body && <div className="mt-1 truncate text-white/35" title={p.last_body}>“{p.last_body}”</div>}
             <div className="mt-2 flex items-center gap-2">
               <input
-                className={input + " !w-40"}
+                className={input + " !w-36"}
                 placeholder="Nombre del proveedor"
                 value={names[p.sender] ?? p.sender_name ?? ""}
                 onChange={(e) => setNames((n) => ({ ...n, [p.sender]: e.target.value }))}
@@ -237,7 +235,7 @@ function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDon
                 disabled={pending}
                 onClick={() => start(async () => { await approveSender(p.sender, names[p.sender] ?? p.sender_name ?? null); onDone(); })}
               >
-                Sumar como proveedor
+                Sumar
               </button>
               <button
                 className={btn}
@@ -250,7 +248,7 @@ function PendingSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDon
           </li>
         ))}
       </ul>
-    </section>
+    </div>
   );
 }
 
@@ -292,24 +290,29 @@ function AddSupplierForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+/** Todo lo de proveedores (sumar, quitar, reglas, números nuevos sin aprobar) atrás de un solo botón. */
 function SuppliersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
   const active = data.suppliers.filter((s) => s.active);
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-300">Proveedores (solo estos se leen)</h3>
-      <p className="text-[11px] leading-snug text-white/60">
-        Número con código de país, sin +. Los canales de difusión no se pueden cargar acá de antemano (WhatsApp no te da
-        su código hasta que llega el primer mensaje): cuando llegue uno nuevo lo vas a ver abajo, en &quot;Remitentes
-        nuevos&quot;, para sumarlo con un toque.
-      </p>
-      <AddSupplierForm onDone={onDone} />
-      {active.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {active.map((s) => <SupplierRules key={s.id} s={s} onDone={onDone} />)}
-        </ul>
-      )}
-      <ReplaceAllBox active={active} onDone={onDone} />
-    </section>
+    <details className="group rounded-xl border border-amber-400/30 bg-amber-400/5">
+      <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-[12px] font-bold text-amber-300">
+        <span>Proveedores ({active.length} activos{data.pendingSenders.length ? ` · ${data.pendingSenders.length} nuevos sin sumar` : ""})</span>
+        <span className="text-amber-300/50 transition group-open:rotate-180">⌄</span>
+      </summary>
+      <div className="flex flex-col gap-3 px-3 pb-3 pt-1">
+        <p className="text-[11px] leading-snug text-white/60">
+          Solo se leen los números que sumes acá. Número con código de país, sin +.
+        </p>
+        <AddSupplierForm onDone={onDone} />
+        <NewSendersBox data={data} onDone={onDone} />
+        {active.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {active.map((s) => <SupplierRules key={s.id} s={s} onDone={onDone} />)}
+          </ul>
+        )}
+        <ReplaceAllBox active={active} onDone={onDone} />
+      </div>
+    </details>
   );
 }
 
@@ -409,7 +412,6 @@ export function PriceReaderPanel() {
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
       <SupplierTodayBox data={data} />
-      <PendingSendersBox data={data} onDone={reload} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />
       <section className="flex flex-col gap-2">

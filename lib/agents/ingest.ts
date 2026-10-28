@@ -11,6 +11,8 @@ export interface IngestInput {
   source: "whatsapp" | "manual";
   /** Llegó por difusión (señal extra del puente; nunca alcanza solo). */
   broadcast?: boolean;
+  /** Llegó dentro de un grupo o comunidad de WhatsApp (el remitente real es quien escribió adentro). */
+  group?: boolean;
   /** Solo para pegado manual: proveedor elegido en el panel (para aplicar sus reglas). */
   supplier_id?: string | null;
 }
@@ -36,9 +38,11 @@ export async function ingestPriceList(input: IngestInput): Promise<IngestResult>
   if (input.source === "whatsapp") {
     const supplier = input.sender ? await findAllowedSupplier(db, input.sender) : null;
     if (!supplier) {
-      // No toca precios: solo deja registro para que Nacho lo sume desde el panel (sirve tanto para
-      // un número que escribió mal como para un canal, cuyo identificador no se puede cargar de antemano).
-      if (input.sender) await notePendingSender(db, input.sender, input.sender_name ?? null, body);
+      // No toca precios: deja registro para que Nacho lo sume como proveedor desde el panel (un
+      // número mal cargado, o un canal cuyo identificador no se puede cargar de antemano). Dentro de
+      // un grupo/comunidad NO se registra: ahí puede escribir cualquiera de los miembros, no solo
+      // proveedores, y eso es trabajo de otro agente (el que atiende mensajes de clientes), no de Lucas.
+      if (input.sender && !input.group) await notePendingSender(db, input.sender, input.sender_name ?? null, body);
       return { ok: true, ignored: true, reason: "remitente que no es proveedor cargado" };
     }
     supplierId = supplier.id;
