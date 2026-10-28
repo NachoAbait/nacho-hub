@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Markdown from "react-markdown";
 import {
   addSupplier,
+  applyAllRecommended,
   approveSender,
   confirmPriceUpdate,
   correctPriceUpdate,
@@ -134,6 +135,25 @@ function SupplierTodayBox({ data }: { data: PriceReaderPanelData }) {
         revisaste lo que interpretó cada proveedor.
       </p>
     </section>
+  );
+}
+
+/** El paso que de verdad modifica la app: una sola aprobación para todo lo que está esperando. */
+function ApplyAllButton({ onDone }: { onDone: () => void }) {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-bold text-black transition hover:bg-amber-300 disabled:opacity-50"
+        disabled={pending}
+        onClick={() => start(async () => { const r = await applyAllRecommended(); setMsg(r.message); onDone(); })}
+      >
+        {pending ? "Aplicando…" : "Aplicar todo lo recomendado"}
+      </button>
+      {msg && <span className="text-[11px] text-white/50">{msg}</span>}
+    </div>
   );
 }
 
@@ -405,29 +425,31 @@ export function PriceReaderPanel() {
 
   if (err) return <p className="text-xs text-red-300">{err}</p>;
   if (!data) return <p className="text-xs text-white/50">Cargando…</p>;
-  // El Price Reader ya aplicó todo solo; esto es sin revisar = de verdad necesita tu ojo
-  // (baja confianza, salto de precio grande, precio inferido por cantidad, o un modelo nuevo).
-  const needsReview = data.updates.filter((u) => u.review_status === "pending" && u.status !== "unchanged");
-  const rest = data.updates.filter((u) => !(u.review_status === "pending" && u.status !== "unchanged"));
+  // Martín nunca aplica solo: todo lo que recomienda queda acá esperando tu aprobación, chico o grande.
+  const waiting = data.updates.filter((u) => u.review_status === "pending" && u.status !== "unchanged" && u.status !== "new_model");
+  const rest = data.updates.filter((u) => !(u.review_status === "pending" && u.status !== "unchanged" && u.status !== "new_model"));
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
       <SupplierTodayBox data={data} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />
       <section className="flex flex-col gap-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">
-          {needsReview.length > 0 ? `Pide tu revisión (${needsReview.length})` : "Interpretaciones de hoy"}
-        </h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">
+            {waiting.length > 0 ? `Esperando tu aprobación (${waiting.length})` : "Interpretaciones de hoy"}
+          </h3>
+          {waiting.length > 0 && <ApplyAllButton onDone={reload} />}
+        </div>
         {data.updates.length === 0 ? (
           <p className="text-xs text-white/50">Todavía no llegó nada hoy.</p>
-        ) : needsReview.length === 0 ? (
-          <p className="text-xs text-white/50">Nada para revisar: todo lo que llegó hoy se aplicó solo.</p>
+        ) : waiting.length === 0 ? (
+          <p className="text-xs text-white/50">Nada esperando: no hay recomendaciones nuevas de Martín.</p>
         ) : (
-          <ul className="flex flex-col gap-2">{needsReview.map((u) => <UpdateRow key={u.id} u={u} onDone={reload} />)}</ul>
+          <ul className="flex flex-col gap-2">{waiting.map((u) => <UpdateRow key={u.id} u={u} onDone={reload} />)}</ul>
         )}
         {rest.length > 0 && (
           <details className="mt-1">
-            <summary className="cursor-pointer text-[11px] text-white/40">Ver el resto ({rest.length}, ya aplicado o sin cambios)</summary>
+            <summary className="cursor-pointer text-[11px] text-white/40">Ver el resto ({rest.length}, ya aplicado, sin cambios o modelos nuevos)</summary>
             <ul className="mt-2 flex flex-col gap-2">{rest.map((u) => <UpdateRow key={u.id} u={u} onDone={reload} />)}</ul>
           </details>
         )}

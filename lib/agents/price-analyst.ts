@@ -1,9 +1,6 @@
 import type { AgentModule } from "@/lib/agents/runtime";
-import { applyCost, entryKey, loadCatalogIndex, matchCatalog, needsReview, type CatalogEntry } from "@/lib/agents/catalog-match";
-import { generateAllBanners } from "@/lib/designer/generate";
-import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { nexiosAvailable } from "@/lib/nexios";
-import { CATEGORIES, CATEGORY_LABEL, type Category } from "@/lib/types";
+import { entryKey, loadCatalogIndex, matchCatalog, needsReview, type CatalogEntry } from "@/lib/agents/catalog-match";
+import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 interface Quote {
   id: string;
@@ -30,7 +27,7 @@ interface Decision {
   competitors: number;
   bestRejectedBy: string | null;
   bestRejectedCost: number | null;
-  result: "applied" | "pending" | "unchanged" | "new_model";
+  result: "routine" | "pending" | "unchanged" | "new_model";
   newPrice: number | null;
   previousPrice: number | null;
 }
@@ -85,7 +82,6 @@ export const priceAnalyst: AgentModule = {
 
     const index = await loadCatalogIndex(ctx.db);
     const decisions: Decision[] = [];
-    const touched = new Set<Category>();
 
     for (const [, group] of groups) {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
@@ -128,68 +124,41 @@ export const priceAnalyst: AgentModule = {
         continue;
       }
 
-      const review = needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd });
-
-      if (!review) {
-        const { status, newPrice } = await applyCost(ctx.db, entry, best.cost_usd);
-        await ctx.db.from("price_updates").insert({
-          category: best.category, model: entry.model, capacity: entry.capacity,
-          detected_cost_usd: best.cost_usd, previous_cost_usd: previous, new_price_usd: newPrice,
-          original_price_usd: best.original_price_usd, pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty,
-          confidence: best.confidence, raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
-          hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status, review_status: "auto",
-          applied_at: new Date().toISOString(),
-        });
-        entry.cost_usd = best.cost_usd;
-        touched.add(best.category);
-        decisions.push({
-          category: best.category, model: entry.model, capacity: entry.capacity, cost: best.cost_usd, previous,
-          winnerSupplier: nameOf(best.supplier_id), competitors: group.length,
-          bestRejectedBy: second ? nameOf(second.supplier_id) : null, bestRejectedCost: second?.cost_usd ?? null,
-          result: "applied", newPrice, previousPrice: previous != null && entry.margin_usd != null ? previous + entry.margin_usd : null,
-        });
-      } else {
-        // Pide revisión: NO se toca NexiOS ni el hub todavía. Nacho decide con OK o Corregir en el panel.
-        await ctx.db.from("price_updates").insert({
-          category: best.category, model: entry.model, capacity: entry.capacity,
-          detected_cost_usd: best.cost_usd, previous_cost_usd: previous,
-          original_price_usd: best.original_price_usd, pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty,
-          confidence: best.confidence, raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
-          hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status: "detected", review_status: "pending",
-        });
-        decisions.push({
-          category: best.category, model: entry.model, capacity: entry.capacity, cost: best.cost_usd, previous,
-          winnerSupplier: nameOf(best.supplier_id), competitors: group.length,
-          bestRejectedBy: second ? nameOf(second.supplier_id) : null, bestRejectedCost: second?.cost_usd ?? null,
-          result: "pending", newPrice: null, previousPrice: null,
-        });
-      }
+      // Martín NUNCA aplica solo: decide y queda recomendado. Lo que modifica la app es la
+      // aprobación de Nacho (uno por uno o con "Aplicar todo lo recomendado"), sin excepción.
+      const isRoutine = !needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd });
+      await ctx.db.from("price_updates").insert({
+        category: best.category, model: entry.model, capacity: entry.capacity,
+        detected_cost_usd: best.cost_usd, previous_cost_usd: previous,
+        original_price_usd: best.original_price_usd, pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty,
+        confidence: best.confidence, raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
+        hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status: "detected", review_status: "pending",
+      });
+      decisions.push({
+        category: best.category, model: entry.model, capacity: entry.capacity, cost: best.cost_usd, previous,
+        winnerSupplier: nameOf(best.supplier_id), competitors: group.length,
+        bestRejectedBy: second ? nameOf(second.supplier_id) : null, bestRejectedCost: second?.cost_usd ?? null,
+        result: isRoutine ? "routine" : "pending", newPrice: null, previousPrice: null,
+      });
     }
 
-    let banners: { category: Category; ok: boolean; url: string | null }[] = [];
-    if (touched.size) {
-      if (nexiosAvailable()) await syncProductsFromNexios(ctx.db);
-      const results = await generateAllBanners([...touched].filter((c) => (CATEGORIES as readonly string[]).includes(c)));
-      banners = results.map((r) => ({ category: r.category, ok: r.ok, url: r.banner?.image_url ?? null }));
-    }
-
-    const applied = decisions.filter((d) => d.result === "applied");
+    const routine = decisions.filter((d) => d.result === "routine");
     const pending = decisions.filter((d) => d.result === "pending");
     const newModels = decisions.filter((d) => d.result === "new_model");
     const unchanged = decisions.filter((d) => d.result === "unchanged");
 
     const lines: string[] = ["# Comparación de precios", ""];
-    lines.push(`Comparé ${quotes.length} cotizaciones de ${supplierIds.length || 1} ${supplierIds.length === 1 ? "proveedor" : "proveedores"} en ${groups.size} productos. Para cada uno, elegí el precio más barato.`);
+    lines.push(`Comparé ${quotes.length} cotizaciones de ${supplierIds.length || 1} ${supplierIds.length === 1 ? "proveedor" : "proveedores"} en ${groups.size} productos. Para cada uno, elegí el precio más barato. Todavía no toqué nada: queda esperando tu aprobación.`);
 
-    if (applied.length) {
-      lines.push("", "## Apliqué (el más barato ganó y el cambio es razonable)");
-      for (const d of applied) {
+    if (routine.length) {
+      lines.push("", "## Recomendados, el cambio es chico y confiable");
+      for (const d of routine) {
         const vs = d.competitors > 1 && d.bestRejectedBy ? ` · le gané a ${d.bestRejectedBy} (US$ ${d.bestRejectedCost})` : "";
-        lines.push(`- **${d.model}${d.capacity ? " " + d.capacity : ""}**: ${d.previous != null ? `US$ ${d.previous} → ` : ""}US$ ${d.cost} de ${d.winnerSupplier}${d.newPrice != null ? ` · venta ${d.previousPrice != null ? `US$ ${d.previousPrice} → ` : ""}US$ ${d.newPrice}` : ""}${vs}`);
+        lines.push(`- **${d.model}${d.capacity ? " " + d.capacity : ""}**: US$ ${d.previous ?? "?"} → US$ ${d.cost} de ${d.winnerSupplier}${vs}`);
       }
     }
     if (pending.length) {
-      lines.push("", "## 👀 Piden tu revisión (todavía no los apliqué)");
+      lines.push("", "## 👀 Mirá estos con más cuidado");
       for (const d of pending) {
         const pct = d.previous ? Math.round(((d.cost - d.previous) / d.previous) * 100) : null;
         lines.push(`- **${d.model}${d.capacity ? " " + d.capacity : ""}**: US$ ${d.previous ?? "?"} → US$ ${d.cost} de ${d.winnerSupplier}${pct != null ? ` (${pct > 0 ? "+" : ""}${pct}%)` : ""}`);
@@ -200,19 +169,15 @@ export const priceAnalyst: AgentModule = {
       for (const d of newModels) lines.push(`- ${CATEGORY_LABEL[d.category]}: ${d.model}${d.capacity ? " " + d.capacity : ""} a US$ ${d.cost} de ${d.winnerSupplier}`);
     }
     if (unchanged.length) lines.push("", `Sin cambios: ${unchanged.length} productos ya estaban al precio más barato del día.`);
-    if (banners.length) {
-      lines.push("", "## Historias regeneradas");
-      for (const b of banners) lines.push(`- ${CATEGORY_LABEL[b.category]}: ${b.ok ? `[ver](${b.url})` : "falló"}`);
-    }
     lines.push("", "## Para hoy");
-    if (pending.length) lines.push(`- Mirá los ${pending.length} que piden revisión: tocá a Lucas, abajo vas a poder confirmar o corregir cada uno.`);
+    if (routine.length || pending.length) lines.push(`- Tocá a Lucas y aprobá: "Aplicar todo lo recomendado" para los ${routine.length} chicos, o uno por uno si querés mirarlos primero.`);
     if (newModels.length) lines.push(`- Decidí si sumás al catálogo los ${newModels.length} modelos nuevos.`);
-    if (!pending.length && !newModels.length) lines.push("- Nada: ya está todo al mejor precio del día.");
+    if (!routine.length && !pending.length && !newModels.length) lines.push("- Nada: ya está todo al mejor precio del día.");
 
     return {
       markdown: lines.join("\n"),
-      summary: `${applied.length} aplicados${pending.length ? `, ${pending.length} piden revisión` : ""}${newModels.length ? `, ${newModels.length} nuevos` : ""}`,
-      data: { quotes: quotes.length, products: groups.size, decisions, banners },
+      summary: `${routine.length + pending.length} recomendados esperando tu aprobación${newModels.length ? `, ${newModels.length} nuevos` : ""}`,
+      data: { quotes: quotes.length, products: groups.size, decisions },
     };
   },
 };

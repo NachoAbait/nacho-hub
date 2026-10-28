@@ -87,7 +87,9 @@ export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessa
       `Extraé todos los ítems con precio.`,
     schema: ParseSchema,
     usage: ctx.usage,
-    maxTokens: 6000,
+    // Listas largas (muchos modelos, formato con emojis) necesitan más lugar: con 6000 se cortaba
+    // a mitad del JSON en catálogos grandes (Kondor) y la respuesta quedaba inválida por completo.
+    maxTokens: 16000,
   });
 }
 

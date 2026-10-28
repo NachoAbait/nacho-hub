@@ -22,7 +22,7 @@ import {
   type SupplierQuote,
   type SupplierToday,
 } from "@/lib/suppliers";
-import { confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
+import { confirmAllUpdates, confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
 import { latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
@@ -160,6 +160,27 @@ export async function saveRules(id: string, discount: string, notes: string): Pr
     const n = discount.trim() === "" ? null : Number(discount.replace(",", "."));
     await saveSupplierRules(supabaseAdmin(), id, { unit_discount_usd: n, notes });
     return { ok: true, message: "Reglas guardadas" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * "Aplicar todo lo recomendado": una sola aprobación para todo lo que Martín dejó esperando hoy.
+ * Es el paso que de verdad modifica NexiOS y el hub; nada se aplica sin pasar por acá o por el OK de a uno.
+ */
+export async function applyAllRecommended(): Promise<ActionResult> {
+  try {
+    const db = supabaseAdmin();
+    const r = await confirmAllUpdates(db, todayArt());
+    if (r.categories.length) {
+      await syncProductsFromNexios(db);
+      await generateAllBanners(r.categories.filter(isCategory));
+    }
+    revalidatePath("/");
+    return r.applied === 0
+      ? { ok: true, message: "No había nada esperando" }
+      : { ok: true, message: `${r.applied} aplicados, ${r.categories.length} ${r.categories.length === 1 ? "historia" : "historias"} actualizadas` };
   } catch (err) {
     return fail(err);
   }

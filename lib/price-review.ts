@@ -73,6 +73,42 @@ export async function confirmUpdate(db: SupabaseClient, id: string): Promise<{ c
 }
 
 /**
+ * "Aplicar todo lo recomendado": la aprobación en bloque. Es el único lugar que modifica NexiOS y el
+ * hub para todo lo que Martín dejó pendiente hoy (lo rutinario y lo que pedía atención por igual) —
+ * nada se aplica sin que Nacho lo apruebe, ni uno por uno ni todo junto sin pasar por acá.
+ */
+export async function confirmAllUpdates(db: SupabaseClient, today: string): Promise<{ applied: number; categories: string[] }> {
+  const { data: rows } = await db
+    .from("price_updates")
+    .select(COLS)
+    .eq("review_status", "pending")
+    .eq("status", "detected")
+    .gte("created_at", `${today}T00:00:00-03:00`)
+    .returns<PriceUpdateRow[]>();
+
+  const categories = new Set<string>();
+  for (const u of rows ?? []) {
+    if (!u.hub_product_id && !u.nexios_catalog_id) continue;
+    let margin: number | null = null;
+    if (u.nexios_catalog_id) {
+      const { data } = await nexios()?.from("price_catalog").select("margin_usd").eq("id", u.nexios_catalog_id).maybeSingle<{ margin_usd: number | null }>() ?? { data: null };
+      margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+    }
+    if (margin == null && u.hub_product_id) {
+      const { data } = await db.from("products").select("margin_usd").eq("id", u.hub_product_id).maybeSingle<{ margin_usd: number | null }>();
+      margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+    }
+    const r = await applyCost(db, { nexios_id: u.nexios_catalog_id, hub_id: u.hub_product_id, margin_usd: margin }, u.detected_cost_usd);
+    await db
+      .from("price_updates")
+      .update({ review_status: "confirmed", reviewed_at: new Date().toISOString(), status: r.status, new_price_usd: r.newPrice, applied_at: new Date().toISOString() })
+      .eq("id", u.id);
+    if (u.category) categories.add(u.category);
+  }
+  return { applied: rows?.length ?? 0, categories: [...categories] };
+}
+
+/**
  * Corrección de Nacho: `listedUnitPrice` es el precio unitario correcto TAL COMO lo publicó el proveedor.
  * Se aplica la regla de descuento del proveedor, se actualiza el costo (NexiOS + hub) y se guarda
  * el ejemplo en suppliers.rules.examples (máx. 10) para el próximo prompt.
