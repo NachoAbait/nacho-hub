@@ -39,7 +39,7 @@ export const globalAnalyst: AgentModule = {
       system: systemPrompt("global-analyst"),
       prompt,
       maxSearches: isWeekly ? 18 : 10,
-      maxTokens: isWeekly ? 3000 : 2200,
+      maxTokens: isWeekly ? 3600 : 3000,
       usage: ctx.usage,
     });
 
