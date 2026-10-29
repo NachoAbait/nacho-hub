@@ -8,6 +8,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface Supplier {
   id: string;
   phone: string;
+  /** Canal, comunidad o número alternativo del mismo proveedor (normalizado, sin "@..."). Nunca se adivina: se vincula a mano la primera vez que escribe. */
+  channel_id: string | null;
   name: string | null;
   rules: Record<string, unknown>;
   active: boolean;
@@ -32,13 +34,19 @@ export async function listSuppliers(db: SupabaseClient): Promise<Supplier[]> {
   return data ?? [];
 }
 
-/** ¿Este remitente es un proveedor cargado por Nacho? Devuelve la fila (creándola si solo estaba en supplier_senders). */
+/**
+ * ¿Este remitente es un proveedor cargado por Nacho? Devuelve la fila (creándola si solo estaba en
+ * supplier_senders). Matchea por teléfono O por channel_id: un canal de WhatsApp no tiene teléfono
+ * (WhatsApp no lo expone hasta el primer mensaje) y un proveedor puede postear desde un número
+ * distinto al que Nacho tiene cargado; en ambos casos se vincula a mano una vez desde el panel.
+ */
 export async function findAllowedSupplier(db: SupabaseClient, sender: string): Promise<Supplier | null> {
+  const channelId = normalizePhone(sender);
   const key = phoneKey(sender);
-  if (key.length < 8) return null;
   const all = await listSuppliers(db);
-  const hit = all.find((s) => phoneKey(s.phone) === key);
+  const hit = all.find((s) => (channelId && s.channel_id === channelId) || (key.length >= 8 && phoneKey(s.phone) === key));
   if (hit) return hit.active ? hit : null;
+  if (key.length < 8) return null;
 
   const { data: setting } = await db.from("hub_settings").select("value").eq("key", "supplier_senders").maybeSingle<{ value: unknown }>();
   const senders = Array.isArray(setting?.value) ? (setting.value as unknown[]).map(String) : [];
@@ -166,6 +174,18 @@ export async function saveDraftReply(
 export async function approvePendingSender(db: SupabaseClient, sender: string, name: string | null): Promise<void> {
   await db.from("suppliers").upsert({ phone: sender, name, active: true }, { onConflict: "phone" });
   await db.from("pending_senders").delete().eq("sender", sender);
+}
+
+/**
+ * Vincula este remitente (canal, comunidad o número alternativo) a un proveedor YA cargado, en vez
+ * de crear uno nuevo. Es la forma correcta de sumar el canal de un proveedor que ya tenés por su
+ * número personal: a partir de acá, sus mensajes por ese canal cuentan como del mismo proveedor,
+ * con las mismas reglas e historial.
+ */
+export async function linkPendingSenderToSupplier(db: SupabaseClient, sender: string, supplierId: string): Promise<void> {
+  const channelId = normalizePhone(sender);
+  await db.from("suppliers").update({ channel_id: channelId, active: true }).eq("id", supplierId);
+  await db.from("pending_senders").delete().eq("sender", channelId);
 }
 
 /** Lo descarta sin sumarlo (para una consulta de cliente que entró por error). */

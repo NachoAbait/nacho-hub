@@ -9,6 +9,7 @@ import {
   confirmPriceUpdate,
   correctPriceUpdate,
   dismissSender,
+  linkSender,
   loadPriceReaderPanel,
   pasteSupplierList,
   removeSupplier,
@@ -194,6 +195,8 @@ function UpdateRow({ u, onDone }: { u: PriceUpdateRow; onDone: () => void }) {
 function NewSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
   const [pending, start] = useTransition();
   const [names, setNames] = useState<Record<string, string>>({});
+  const [linkTo, setLinkTo] = useState<Record<string, string>>({});
+  const active = data.suppliers.filter((s) => s.active);
   if (data.pendingSenders.length === 0) return null;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-sky-400/25 bg-sky-400/5 p-2 text-[11px]">
@@ -210,10 +213,30 @@ function NewSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: (
             </div>
             {p.last_body && <div className="mt-1 truncate text-white/35" title={p.last_body}>“{p.last_body}”</div>}
             <DraftBox p={p} />
+            {/* Si es el canal o un número alternativo de un proveedor que ya tenés, vinculalo: no crea uno nuevo. */}
+            {active.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <select
+                  className={input + " !w-36"}
+                  value={linkTo[p.sender] ?? ""}
+                  onChange={(e) => setLinkTo((l) => ({ ...l, [p.sender]: e.target.value }))}
+                >
+                  <option value="">Es un proveedor que ya tenés…</option>
+                  {active.map((s) => <option key={s.id} value={s.id}>{s.name ?? s.phone}</option>)}
+                </select>
+                <button
+                  className={btn}
+                  disabled={pending || !linkTo[p.sender]}
+                  onClick={() => start(async () => { await linkSender(p.sender, linkTo[p.sender]); onDone(); })}
+                >
+                  Vincular
+                </button>
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-2">
               <input
                 className={input + " !w-36"}
-                placeholder="Nombre del proveedor"
+                placeholder="O nombre de un proveedor nuevo"
                 value={names[p.sender] ?? p.sender_name ?? ""}
                 onChange={(e) => setNames((n) => ({ ...n, [p.sender]: e.target.value }))}
               />
@@ -222,7 +245,7 @@ function NewSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: (
                 disabled={pending}
                 onClick={() => start(async () => { await approveSender(p.sender, names[p.sender] ?? p.sender_name ?? null); onDone(); })}
               >
-                Sumar
+                Sumar como nuevo
               </button>
               <button
                 className={btn}
@@ -313,7 +336,7 @@ function SupplierRules({ s, onDone }: { s: PriceReaderPanelData["suppliers"][num
     <li>
       <details className="rounded-lg border border-white/10 p-2 text-[12px]">
         <summary className="flex cursor-pointer items-center gap-2 text-white/80">
-          <span className="flex-1">{s.name ?? s.phone} · {s.messages_count} mensajes · {rules.examples?.length ?? 0} correcciones aprendidas</span>
+          <span className="flex-1">{s.name ?? s.phone}</span>
           <button
             type="button"
             className="flex-none rounded-full px-2 py-0.5 text-[10px] text-white/40 hover:bg-white/10 hover:text-red-300"
@@ -324,6 +347,7 @@ function SupplierRules({ s, onDone }: { s: PriceReaderPanelData["suppliers"][num
           </button>
         </summary>
         <div className="mt-2 flex flex-col gap-2">
+          <p className="text-white/40">{s.messages_count} mensajes · {rules.examples?.length ?? 0} correcciones aprendidas</p>
           <label className="flex items-center gap-2 text-white/60">Descuento por unidad US$
             <input className={input + " !w-16"} inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value)} />
           </label>

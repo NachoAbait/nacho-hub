@@ -10,6 +10,7 @@ import {
   approvePendingSender,
   correctQuote,
   dismissPendingSender,
+  linkPendingSenderToSupplier,
   listPendingSenders,
   listSuppliers,
   removeSupplier as removeSupplierDb,
@@ -123,6 +124,16 @@ export async function approveSender(sender: string, name: string | null): Promis
   try {
     await approvePendingSender(supabaseAdmin(), sender, name?.trim() || null);
     return { ok: true, message: "Sumado como proveedor" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Vincula un remitente nuevo (canal, comunidad o número alternativo) a un proveedor que ya tenías cargado. */
+export async function linkSender(sender: string, supplierId: string): Promise<ActionResult> {
+  try {
+    await linkPendingSenderToSupplier(supabaseAdmin(), sender, supplierId);
+    return { ok: true, message: "Vinculado al proveedor" };
   } catch (err) {
     return fail(err);
   }
