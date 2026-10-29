@@ -22,9 +22,13 @@ export const globalAnalyst: AgentModule = {
 
     const prompt =
       `Hoy es ${ctx.today}.\n\n` +
-      `Escribí el "Resumen de hoy": economía de EE.UU. (Fed, inflación, empleo, mercados), cripto (BTC/ETH y ` +
-      `regulación relevante), guerras y geopolítica con efecto económico, y cualquier otra noticia económica ` +
-      `mundial que importe hoy. Buscá y citá fuente y fecha de cada dato.` +
+      `Escribí el "Resumen de hoy". Tenés ${isWeekly ? 18 : 10} búsquedas disponibles: repartilas entre estos ` +
+      `cuatro temas, 2 o 3 cada uno, no las gastes todas en el primero:\n` +
+      `1. Economía de EE.UU.: Fed (tasas, próxima reunión), inflación, empleo, S&P 500 / Nasdaq.\n` +
+      `2. Cripto: precio de Bitcoin y Ethereum hoy, regulación relevante.\n` +
+      `3. Guerras y geopolítica con efecto económico (energía, granos, rutas comerciales, sanciones).\n` +
+      `4. Agenda económica mundial del día (comercio, aranceles, commodities, bancos centrales fuera de EE.UU.).\n\n` +
+      `Citá fuente y fecha de cada dato. Si un tema no tiene nada nuevo hoy, decilo en una línea y seguí.` +
       (isWeekly
         ? `\n\nDespués agregá el "Resumen de la semana": mirá los últimos 7 días y marcá los 3 o 4 cambios de ` +
           `fondo (no un repaso día por día), y qué hay que mirar la semana que viene.`
@@ -34,8 +38,8 @@ export const globalAnalyst: AgentModule = {
       agent: "global-analyst",
       system: systemPrompt("global-analyst"),
       prompt,
-      maxSearches: isWeekly ? 12 : 7,
-      maxTokens: isWeekly ? 3000 : 1800,
+      maxSearches: isWeekly ? 18 : 10,
+      maxTokens: isWeekly ? 3000 : 2200,
       usage: ctx.usage,
     });
 
