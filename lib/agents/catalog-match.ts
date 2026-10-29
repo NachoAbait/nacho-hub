@@ -15,8 +15,16 @@ export interface CatalogEntry {
   hub_id: string | null;
 }
 
+/**
+ * Clave para agrupar "es el mismo producto": cada proveedor escribe el modelo en un orden de
+ * palabras distinto ("Air 13 M5" vs "Air M5 13”", "Pro 14 M5 Pro" vs "Pro M5 Pro 14”"), así que acá
+ * SÍ se ordenan las palabras alfabéticamente para que el orden no rompa el agrupamiento entre
+ * proveedores. (matchCatalog, que compara contra el catálogo real, usa normalizeModel sin ordenar:
+ * ahí el orden de palabras importa para su lógica de prefijo/sufijo y no hay que tocarlo.)
+ */
 export function entryKey(category: Category, model: string, capacity: string | null | undefined): string {
-  return `${category}|${normalizeModel(model)}|${normalizeCapacity(capacity)}`;
+  const tokens = normalizeModel(model).split(/\s+/).filter(Boolean).sort();
+  return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
 /** Índice del catálogo: NexiOS si está, y siempre los products del hub. */

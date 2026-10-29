@@ -162,6 +162,15 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
           {REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "designer" && <RunNowButton agentId={agent.id} />}
           {agent.id === "price-reader" && <PriceReaderPanel />}
 
+          {agent.id === "price-analyst" && (
+            <a
+              href="/api/reports/price-matrix"
+              className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-center text-xs font-semibold text-amber-300 transition hover:bg-amber-400/20"
+            >
+              Descargar comparativa de hoy (Excel)
+            </a>
+          )}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
