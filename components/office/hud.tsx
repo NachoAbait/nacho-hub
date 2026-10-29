@@ -81,7 +81,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
           onClick={onClearFocus}
           className="absolute left-1/2 top-5 z-[100] -translate-x-1/2 rounded-full border border-amber-400/40 bg-black/75 px-4 py-1.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-black"
         >
-          ← Equipo {TIERS.find((t) => t.id === focus.tier)?.label} · {focus.floor} · volver al piso
+          ← Equipo {TIERS.find((t) => t.id === focus.tier)?.label} · {CONTEXT_LABEL[focus.floor]} · volver al piso
         </button>
       )}
 
