@@ -10,10 +10,12 @@ import { contentCreator } from "@/lib/agents/content-creator";
 import { copyWriter } from "@/lib/agents/copy-writer";
 import { chiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { globalAnalyst } from "@/lib/agents/global-analyst";
+import { dmHandler } from "@/lib/agents/dm-handler";
 
 /**
- * Agentes con módulo programado. Los otros 3 de lib/agents.ts se suman acá cuando existan
- * (basta con importar el módulo y agregarlo a la lista; el cron y /api/agents/[id] lo toman solos).
+ * Agentes con módulo programado. Los otros 3 de lib/agents.ts (Social Collector, Ads Analyst,
+ * Content Analyst) necesitan un token de Meta/Instagram Graph API que todavía no tenemos: sus
+ * playbooks ya están listos en lib/agents/skills, falta solo la credencial para darles módulo.
  */
 const MODULES: AgentModule[] = [
   priceReader,
@@ -24,6 +26,7 @@ const MODULES: AgentModule[] = [
   designer,
   contentCreator,
   copyWriter,
+  dmHandler,
   chiefOfStaff,
   globalAnalyst,
 ];

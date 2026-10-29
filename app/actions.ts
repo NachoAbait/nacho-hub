@@ -26,7 +26,7 @@ import { confirmAllUpdates, confirmUpdate, correctUpdate, todaysUpdates, type Pr
 import { latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { isCategory } from "@/lib/types";
+import { isCategory, type BusinessContext } from "@/lib/types";
 
 export interface ActionResult {
   ok: boolean;
@@ -88,6 +88,18 @@ export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
     pendingSenders,
     today: todayStatus,
   };
+}
+
+export interface AgentReportData {
+  markdown: string;
+  date: string;
+  summary: string | null;
+}
+
+/** Último informe de cualquier agente registrado, para el panel genérico de la oficina. */
+export async function loadAgentReport(agentId: string, context: BusinessContext): Promise<AgentReportData | null> {
+  const rep = await latestReport(supabaseAdmin(), agentId, context);
+  return rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null;
 }
 
 /** Lo que Lucas interpretó hoy de un proveedor puntual, para revisar antes de mandarlo a Martín. */

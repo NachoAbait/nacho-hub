@@ -6,6 +6,7 @@ import { RegenerateButton } from "@/components/dashboard/regenerate-button";
 import { BRIEFS } from "@/lib/agent-briefs";
 import { RunNowButton } from "@/components/office/run-now-button";
 import { PriceReaderPanel } from "@/components/office/price-reader-panel";
+import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
 export interface DesignerBanner {
@@ -177,6 +178,10 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
               )}
               <a href="/dashboard" className="text-xs text-amber-300 hover:underline">Ver todos los banners →</a>
             </div>
+          )}
+
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && (
+            <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 
           {!agent.live && !REGISTERED_AGENT_IDS.includes(agent.id) && (

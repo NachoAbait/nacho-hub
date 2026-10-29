@@ -102,6 +102,8 @@ export async function saveSupplierRules(db: SupabaseClient, id: string, input: {
 // que llega el primer mensaje). Se muestran en el panel para sumarlos con un toque.
 // ---------------------------------------------------------------------------
 
+export type DmClassification = "rutinario" | "venta_caliente" | "derivar";
+
 export interface PendingSender {
   sender: string;
   kind: "phone" | "channel";
@@ -110,6 +112,11 @@ export interface PendingSender {
   messages_count: number;
   first_seen_at: string;
   last_seen_at: string;
+  /** Lo que preparó Micaela (DM Handler) para este mensaje; nunca se manda solo. */
+  draft_reply: string | null;
+  draft_classification: DmClassification | null;
+  draft_note: string | null;
+  draft_generated_at: string | null;
 }
 
 /** "120363...@newsletter" → canal (WhatsApp Channels); el resto es un número. */
@@ -136,6 +143,23 @@ export async function notePendingSender(db: SupabaseClient, raw: string, senderN
 export async function listPendingSenders(db: SupabaseClient): Promise<PendingSender[]> {
   const { data } = await db.from("pending_senders").select("*").order("last_seen_at", { ascending: false }).limit(20).returns<PendingSender[]>();
   return data ?? [];
+}
+
+/** Guarda lo que Micaela preparó para este mensaje. Nunca se envía solo: queda para que Nacho lo copie o lo corrija. */
+export async function saveDraftReply(
+  db: SupabaseClient,
+  sender: string,
+  draft: { classification: DmClassification; note: string; reply: string | null },
+): Promise<void> {
+  await db
+    .from("pending_senders")
+    .update({
+      draft_reply: draft.reply,
+      draft_classification: draft.classification,
+      draft_note: draft.note,
+      draft_generated_at: new Date().toISOString(),
+    })
+    .eq("sender", sender);
 }
 
 /** Lo suma como proveedor activo y lo saca de la lista de pendientes. */

@@ -142,17 +142,6 @@ export const BRIEFS: Record<string, AgentBrief> = {
     delivers: "Textos listos para copiar y pegar.",
     schedule: "06:00, junto con los otros Creators.",
   },
-  "dm-handler": {
-    summary: "Respondo los mensajes rutinarios de Instagram para que vos atiendas solo los importantes.",
-    steps: [
-      "Leo los DMs nuevos y clasifico: precio, stock, envío, garantía u otro.",
-      "Respondo los rutinarios con los textos de Facundo y los precios del catálogo.",
-      "Derivo a vos los que necesitan una decisión o una negociación.",
-    ],
-    sources: ["DMs de Instagram", "Catálogo", "Respuestas modelo"],
-    delivers: "DMs rutinarios respondidos y una lista de los que requieren atención.",
-    schedule: "Varias veces por día (Fase 3).",
-  },
   "chief-of-staff": {
     summary: "Leo el trabajo de todo el equipo y te dejo un resumen con tres acciones para hoy.",
     steps: [
@@ -164,6 +153,18 @@ export const BRIEFS: Record<string, AgentBrief> = {
     sources: ["Informes de todos los agentes del día"],
     delivers: "Daily Brief con tres acciones concretas.",
     schedule: "07:00, cuando terminaron todos los demás.",
+  },
+  "dm-handler": {
+    summary: "Preparo un borrador de respuesta para cada consulta de cliente, nunca la mando sola.",
+    steps: [
+      "Reviso los mensajes de WhatsApp que no son de un proveedor cargado (los mismos que ves en el panel de Lucas).",
+      "Los clasifico: rutinario (precio, horario, garantía, envío), venta caliente (quiere comprar ya) o a derivar (reclamo, canje, negociación: eso lo escribís vos).",
+      "Para rutinario y venta caliente redacto un borrador corto con los datos reales del catálogo, nunca un precio inventado.",
+      "Dejo todo listo en la tarjeta de ese contacto para que lo copies, lo corrijas o lo descartes.",
+    ],
+    sources: ["pending_senders (WhatsApp)", "Catálogo activo de BNB Store"],
+    delivers: "Un borrador o un aviso de \"contestalo vos\" por cada consulta nueva. Nada se envía solo.",
+    schedule: "11:15, junto con los otros Creators.",
   },
   "global-analyst": {
     summary: "Sigo la macro mundial para que te enteres de lo que importa sin leer veinte fuentes.",

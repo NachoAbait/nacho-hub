@@ -61,8 +61,8 @@ export const AGENTS: AgentDef[] = [
     description: "3 ideas diarias de posts, reels y stories, basadas en lo que pasó hoy en el negocio." },
   { id: "copy-writer", task: "Escribe captions y respuestas", persona: "Facundo", name: "Copy Writer", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: true,
     description: "Captions para las historias del día (BNB) o para una funcionalidad real de AgroScan." },
-  { id: "dm-handler", task: "Responde DMs rutinarios", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: false,
-    description: "Responde DMs rutinarios. Bonus de Fase 3." },
+  { id: "dm-handler", task: "Prepara respuestas a clientes", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: true,
+    description: "Clasifica y redacta un borrador para cada consulta de cliente por WhatsApp. Nunca manda nada: lo aprobás vos desde el panel de Lucas." },
 
   // TIER 4 — CHIEF
   { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: true,
@@ -121,6 +121,7 @@ export const REGISTERED_AGENT_IDS = [
   "competitor-scraper",
   "content-creator",
   "copy-writer",
+  "dm-handler",
   "chief-of-staff",
   "global-analyst",
   "designer",

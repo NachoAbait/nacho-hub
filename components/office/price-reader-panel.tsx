@@ -18,13 +18,47 @@ import {
   type PriceReaderPanelData,
 } from "@/app/actions";
 import type { PriceUpdateRow } from "@/lib/price-review";
-import type { SupplierToday } from "@/lib/suppliers";
+import type { PendingSender, SupplierToday } from "@/lib/suppliers";
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
 const input = "w-full rounded-lg border border-white/15 bg-black/50 p-2 text-xs text-white placeholder:text-white/30";
 
 const STATE_DOT: Record<SupplierToday["state"], string> = { esperando: "bg-white/20", leyendo: "bg-amber-400 animate-pulse", leido_enviado: "bg-green-500" };
 const STATE_LABEL: Record<SupplierToday["state"], string> = { esperando: "esperando", leyendo: "leyendo", leido_enviado: "leído y enviado" };
+
+const DRAFT_LABEL: Record<"rutinario" | "venta_caliente" | "derivar", string> = {
+  rutinario: "Micaela: borrador listo",
+  venta_caliente: "Micaela: venta caliente 🔥",
+  derivar: "Micaela: contestalo vos",
+};
+const DRAFT_COLOR: Record<"rutinario" | "venta_caliente" | "derivar", string> = {
+  rutinario: "border-sky-400/25 bg-sky-400/5 text-sky-300",
+  venta_caliente: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  derivar: "border-white/15 bg-white/5 text-white/60",
+};
+
+/** Lo que preparó Micaela para este mensaje: nunca se manda sola, Nacho copia o escribe la suya. */
+function DraftBox({ p }: { p: PendingSender }) {
+  const [copied, setCopied] = useState(false);
+  if (!p.draft_classification) return null;
+  return (
+    <div className={`mt-2 rounded-md border p-2 ${DRAFT_COLOR[p.draft_classification]}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-wider">{DRAFT_LABEL[p.draft_classification]}</div>
+      {p.draft_note && <div className="mt-1 text-white/70">{p.draft_note}</div>}
+      {p.draft_reply && (
+        <>
+          <div className="mt-1.5 rounded bg-black/30 p-2 text-white/85">{p.draft_reply}</div>
+          <button
+            className={btn + " mt-1.5"}
+            onClick={() => { navigator.clipboard.writeText(p.draft_reply ?? ""); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+          >
+            {copied ? "Copiado ✓" : "Copiar respuesta"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** Lo único que importa de cada proveedor hoy: nombre, estado, y cuántos productos sacó. */
 function SupplierTodayRow({ s }: { s: SupplierToday }) {
@@ -175,6 +209,7 @@ function NewSendersBox({ data, onDone }: { data: PriceReaderPanelData; onDone: (
               <span className="ml-auto flex-none text-white/40">{p.messages_count} msj</span>
             </div>
             {p.last_body && <div className="mt-1 truncate text-white/35" title={p.last_body}>“{p.last_body}”</div>}
+            <DraftBox p={p} />
             <div className="mt-2 flex items-center gap-2">
               <input
                 className={input + " !w-36"}
