@@ -49,7 +49,7 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
     setSelectedId(id);
     const agent = id ? agentById(id) : undefined;
     if (agent) {
-      // "Ambos" solo cubre BNB + AgroScan (el piso Mundo no es "de ningún negocio" y se ve solo en su propia vista).
+      // "Ambos" solo cubre BNB + AgroScan (el piso Economía no es "de ningún negocio" y se ve solo en su propia vista).
       const floor = view === "AMBOS" ? (agent.contexts.includes("BNB") ? "BNB" : "AgroScan") : view;
       setFocus({ floor, tier: agent.tier });
     }

@@ -45,7 +45,7 @@ export const FLOORS: FloorTheme[] = [
   },
   {
     id: "GLOBAL",
-    name: "Mundo",
+    name: "Economía",
     subtitle: "Segundo piso · Macro global · EE.UU. · Cripto · Geopolítica",
     y: FLOOR_GAP * 2,
     floor: "#1b2436",

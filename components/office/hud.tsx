@@ -26,12 +26,12 @@ interface Props {
   designerBanner: DesignerBanner | null;
 }
 
-const CONTEXT_LABEL: Record<string, string> = { BNB: "BNB", AgroScan: "AgroScan", GLOBAL: "Mundo" };
+const CONTEXT_LABEL: Record<string, string> = { BNB: "BNB", AgroScan: "AgroScan", GLOBAL: "Economía" };
 
 const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
   { id: "BNB", label: "BNB", hint: "Planta baja" },
   { id: "AgroScan", label: "AgroScan", hint: "Primer piso" },
-  { id: "GLOBAL", label: "Mundo", hint: "Segundo piso" },
+  { id: "GLOBAL", label: "Economía", hint: "Segundo piso" },
   { id: "AMBOS", label: "Ambos", hint: "Vista general (BNB + AgroScan)" },
 ];
 
