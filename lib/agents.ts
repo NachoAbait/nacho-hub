@@ -57,10 +57,10 @@ export const AGENTS: AgentDef[] = [
   // TIER 3 — CREATORS
   { id: "designer", task: "Arma los banners de precios", persona: "Nico", name: "Designer", tier: "creators", contexts: ["BNB"], phase: 1, live: true,
     description: "Banners automáticos con HTML + Playwright. Pipeline validado y en producción." },
-  { id: "content-creator", task: "Propone 3 ideas por día", persona: "Agustina", name: "Content Creator", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
-    description: "3 ideas diarias de posts, reels y stories." },
-  { id: "copy-writer", task: "Escribe captions y respuestas", persona: "Facundo", name: "Copy Writer", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
-    description: "Captions, descripciones y respuestas a DMs frecuentes." },
+  { id: "content-creator", task: "Propone 3 ideas por día", persona: "Agustina", name: "Content Creator", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: true,
+    description: "3 ideas diarias de posts, reels y stories, basadas en lo que pasó hoy en el negocio." },
+  { id: "copy-writer", task: "Escribe captions y respuestas", persona: "Facundo", name: "Copy Writer", tier: "creators", contexts: ["BNB", "AgroScan"], phase: 3, live: true,
+    description: "Captions para las historias del día (BNB) o para una funcionalidad real de AgroScan." },
   { id: "dm-handler", task: "Responde DMs rutinarios", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: false,
     description: "Responde DMs rutinarios. Bonus de Fase 3." },
 
@@ -115,6 +115,8 @@ export const REGISTERED_AGENT_IDS = [
   "stock-analyst",
   "market-watcher",
   "competitor-scraper",
+  "content-creator",
+  "copy-writer",
   "chief-of-staff",
   "designer",
 ];
