@@ -14,6 +14,7 @@ import { CONTENT_CREATOR } from "./content-creator";
 import { COPY_WRITER } from "./copy-writer";
 import { DM_HANDLER } from "./dm-handler";
 import { CHIEF_OF_STAFF } from "./chief-of-staff";
+import { GLOBAL_ANALYST } from "./global-analyst";
 
 /** Reglas comunes a todos los informes: tono, idioma, formato. */
 export const HOUSE_STYLE = `
@@ -54,6 +55,7 @@ const SKILLS: Record<string, string> = {
   "copy-writer": COPY_WRITER,
   "dm-handler": DM_HANDLER,
   "chief-of-staff": CHIEF_OF_STAFF,
+  "global-analyst": GLOBAL_ANALYST,
 };
 
 /** System prompt completo de un agente: playbook + contexto de negocio + estilo. */

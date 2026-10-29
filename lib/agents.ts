@@ -67,6 +67,10 @@ export const AGENTS: AgentDef[] = [
   // TIER 4 — CHIEF
   { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: true,
     description: "Lee a los 11 anteriores y arma un Daily Brief con 3 acciones concretas." },
+
+  // PISO 3 — GLOBAL (economía y actualidad mundial, no pertenece a ningún negocio)
+  { id: "global-analyst", task: "Resume la macro mundial", persona: "Mateo", name: "Global Analyst", tier: "chief", contexts: ["GLOBAL"], phase: 5, live: true,
+    description: "Economía de EE.UU., cripto, guerras y actualidad económica mundial. Resumen diario y, los domingos, semanal." },
 ];
 
 export function agentsFor(context: BusinessContext): AgentDef[] {
@@ -118,5 +122,6 @@ export const REGISTERED_AGENT_IDS = [
   "content-creator",
   "copy-writer",
   "chief-of-staff",
+  "global-analyst",
   "designer",
 ];

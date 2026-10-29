@@ -30,7 +30,7 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
 
   function changeView(next: OfficeView) {
     if (next === view) return;
-    const level = (v: OfficeView) => (v === "BNB" ? 0 : v === "AgroScan" ? 1 : 0.5);
+    const level = (v: OfficeView) => (v === "BNB" ? 0 : v === "AgroScan" ? 1 : v === "GLOBAL" ? 2 : 0.5);
     const dir = next === "AMBOS" || view === "AMBOS" ? "zoom" : level(next) > level(view) ? "up" : "down";
     setView(next);
     setSelectedId(null);
@@ -49,7 +49,8 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
     setSelectedId(id);
     const agent = id ? agentById(id) : undefined;
     if (agent) {
-      const floor = view === "AgroScan" || (view === "AMBOS" && !agent.contexts.includes("BNB")) ? "AgroScan" : "BNB";
+      // "Ambos" solo cubre BNB + AgroScan (el piso Mundo no es "de ningún negocio" y se ve solo en su propia vista).
+      const floor = view === "AMBOS" ? (agent.contexts.includes("BNB") ? "BNB" : "AgroScan") : view;
       setFocus({ floor, tier: agent.tier });
     }
   }

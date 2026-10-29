@@ -165,4 +165,16 @@ export const BRIEFS: Record<string, AgentBrief> = {
     delivers: "Daily Brief con tres acciones concretas.",
     schedule: "07:00, cuando terminaron todos los demás.",
   },
+  "global-analyst": {
+    summary: "Sigo la macro mundial para que te enteres de lo que importa sin leer veinte fuentes.",
+    steps: [
+      "Busco qué pasó en EE.UU. (Fed, inflación, empleo, mercados), cripto, guerras con efecto económico y la agenda económica mundial del día.",
+      "Cito la fuente y la fecha de cada dato; separo lo confirmado de lo que es proyección.",
+      "Si algo pega directo en BNB (dólar, costo de importar, cripto) o en AgroScan (precio de la carne, exportación), lo marco en una línea.",
+      "Los domingos agrego además el resumen de la semana: los 3 o 4 cambios de fondo, no un repaso día por día.",
+    ],
+    sources: ["Búsqueda web de Claude, con fuente citada"],
+    delivers: "Resumen diario de macro mundial; los domingos, también el semanal.",
+    schedule: "11:30, junto con el Chief of Staff.",
+  },
 };

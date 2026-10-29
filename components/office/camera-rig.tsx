@@ -10,7 +10,7 @@ import type { Tier } from "@/lib/agents";
 import { FLOOR_GAP, SECTORS, floorTheme } from "@/lib/office/layout";
 import type { BusinessContext } from "@/lib/types";
 
-export type OfficeView = "BNB" | "AgroScan" | "AMBOS";
+export type OfficeView = "BNB" | "AgroScan" | "GLOBAL" | "AMBOS";
 
 /** Sector enfocado: piso + tier. */
 export interface SectorFocus {
@@ -25,6 +25,7 @@ interface Shot { position: Vec; target: Vec }
 const VIEWS: Record<OfficeView, Shot> = {
   BNB: { position: [0, 13.5, 31], target: [0, 1.2, -1] },
   AgroScan: { position: [0, 13.5 + FLOOR_GAP, 31], target: [0, 1.2 + FLOOR_GAP, -1] },
+  GLOBAL: { position: [0, 13.5 + FLOOR_GAP * 2, 31], target: [0, 1.2 + FLOOR_GAP * 2, -1] },
   AMBOS: { position: [0, 19, 48], target: [0, FLOOR_GAP / 2 + 1.5, -1] },
 };
 

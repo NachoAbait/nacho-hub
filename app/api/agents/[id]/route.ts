@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 /**
  * POST /api/agents/[id]   (Bearer CRON_SECRET)
- * Body opcional: { "context": "BNB" | "AgroScan" }. Sin body corre en todos los contextos del agente.
+ * Body opcional: { "context": "BNB" | "AgroScan" | "GLOBAL" }. Sin body corre en todos los contextos del agente.
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isAuthorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -19,7 +19,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   let wanted: BusinessContext | undefined;
   try {
     const b = (await request.json()) as { context?: string };
-    if (b.context === "BNB" || b.context === "AgroScan") wanted = b.context;
+    if (b.context === "BNB" || b.context === "AgroScan" || b.context === "GLOBAL") wanted = b.context;
   } catch {
     /* sin body */
   }

@@ -136,8 +136,11 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
     if (shown !== labelsShown) setLabelsShown(shown);
   });
   const total = layout.reduce((n, s) => n + s.desks.length, 0);
-  const wood = useMemo(() => woodTexture(theme.floor, [7, 4.5], theme.id === "BNB" ? 2 : 5), [theme.floor, theme.id]);
-  const city = useMemo(() => cityTexture(theme.id === "BNB" ? 7 : 9), [theme.id]);
+  const wood = useMemo(
+    () => woodTexture(theme.floor, [7, 4.5], theme.id === "BNB" ? 2 : theme.id === "AgroScan" ? 5 : 8),
+    [theme.floor, theme.id],
+  );
+  const city = useMemo(() => cityTexture(theme.id === "BNB" ? 7 : theme.id === "AgroScan" ? 9 : 11), [theme.id]);
 
   function clearFocus(e: ThreeEvent<MouseEvent>) {
     e.stopPropagation();
@@ -246,7 +249,7 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
       <Html transform position={[0, 3.2, -FLOOR_D / 2 + 0.2]} distanceFactor={7} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
         <div className="flex items-center gap-4 rounded-xl border px-6 py-3 shadow-2xl" style={{ visibility: labelsShown ? "visible" : "hidden", background: "#0b0b0d", borderColor: theme.accent }}>
           <div className="grid h-14 w-14 place-items-center rounded-lg text-3xl font-black" style={{ background: theme.accent, color: "#0b0b0d" }}>
-            {theme.id === "BNB" ? "B" : "A"}
+            {theme.id === "BNB" ? "B" : theme.id === "AgroScan" ? "A" : "M"}
           </div>
           <div>
             <div className="text-3xl font-black uppercase leading-none tracking-tight text-white">{theme.name}</div>

@@ -43,6 +43,17 @@ export const FLOORS: FloorTheme[] = [
     desk: "#d7b485",
     rugs: { readers: "#9fd3b4", analysts: "#bcd9e8", creators: "#f0d9a3", chief: "#e3c4b0" },
   },
+  {
+    id: "GLOBAL",
+    name: "Mundo",
+    subtitle: "Segundo piso · Macro global · EE.UU. · Cripto · Geopolítica",
+    y: FLOOR_GAP * 2,
+    floor: "#1b2436",
+    wall: "#0e1420",
+    accent: "#4fd1c5",
+    desk: "#2a3a52",
+    rugs: { readers: "#1f3a4a", analysts: "#1f3a4a", creators: "#1f3a4a", chief: "#234a52" },
+  },
 ];
 
 export function floorTheme(id: BusinessContext): FloorTheme {

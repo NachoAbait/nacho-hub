@@ -22,7 +22,7 @@ export function isCategory(value: unknown): value is Category {
   return typeof value === "string" && (CATEGORIES as readonly string[]).includes(value);
 }
 
-export type BusinessContext = "BNB" | "AgroScan";
+export type BusinessContext = "BNB" | "AgroScan" | "GLOBAL";
 
 export interface Product {
   id: string;

@@ -43,6 +43,7 @@ async function fetchNews(query: string, limit = 8): Promise<NewsItem[]> {
 const QUERIES: Record<BusinessContext, string[]> = {
   BNB: ["iPhone Argentina precio", "Apple lanzamiento nuevo", "aranceles importación celulares Argentina"],
   AgroScan: ["SENASA trazabilidad bovina caravana", "precio hacienda Cañuelas INMAG", "retenciones ganadería Argentina"],
+  GLOBAL: [],
 };
 
 /**

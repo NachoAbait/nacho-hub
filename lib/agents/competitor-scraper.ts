@@ -10,6 +10,7 @@ const FALLBACK_QUERIES: Record<BusinessContext, string[]> = {
     "reventa Apple Chascomús Castelli Lezama precio",
   ],
   AgroScan: ["software gestión ganadera Argentina precio caravanas electrónicas"],
+  GLOBAL: [],
 };
 
 /**
@@ -25,6 +26,7 @@ export const competitorScraper: AgentModule = {
     const competitors = await getSetting<Record<BusinessContext, string[]>>(ctx.db, "competitors", {
       BNB: [],
       AgroScan: [],
+      GLOBAL: [],
     });
     const named = competitors[ctx.context] ?? [];
     const seeds = named.length ? named.map((c) => `"${c}"`).join(", ") : FALLBACK_QUERIES[ctx.context].join(" / ");

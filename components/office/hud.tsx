@@ -26,10 +26,13 @@ interface Props {
   designerBanner: DesignerBanner | null;
 }
 
+const CONTEXT_LABEL: Record<string, string> = { BNB: "BNB", AgroScan: "AgroScan", GLOBAL: "Mundo" };
+
 const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
   { id: "BNB", label: "BNB", hint: "Planta baja" },
   { id: "AgroScan", label: "AgroScan", hint: "Primer piso" },
-  { id: "AMBOS", label: "Ambos", hint: "Vista general" },
+  { id: "GLOBAL", label: "Mundo", hint: "Segundo piso" },
+  { id: "AMBOS", label: "Ambos", hint: "Vista general (BNB + AgroScan)" },
 ];
 
 
@@ -146,7 +149,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
                   </div>
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Trabaja en</div>
-                    <div className="mt-1 text-white/80">{agent.contexts.join(" y ")}</div>
+                    <div className="mt-1 text-white/80">{agent.contexts.map((c) => CONTEXT_LABEL[c]).join(" y ")}</div>
                   </div>
                 </div>
               </div>

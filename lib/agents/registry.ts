@@ -9,9 +9,10 @@ import { competitorScraper } from "@/lib/agents/competitor-scraper";
 import { contentCreator } from "@/lib/agents/content-creator";
 import { copyWriter } from "@/lib/agents/copy-writer";
 import { chiefOfStaff } from "@/lib/agents/chief-of-staff";
+import { globalAnalyst } from "@/lib/agents/global-analyst";
 
 /**
- * Agentes con módulo programado. Los otros 4 de lib/agents.ts se suman acá cuando existan
+ * Agentes con módulo programado. Los otros 3 de lib/agents.ts se suman acá cuando existan
  * (basta con importar el módulo y agregarlo a la lista; el cron y /api/agents/[id] lo toman solos).
  */
 const MODULES: AgentModule[] = [
@@ -24,6 +25,7 @@ const MODULES: AgentModule[] = [
   contentCreator,
   copyWriter,
   chiefOfStaff,
+  globalAnalyst,
 ];
 
 export const REGISTRY: Record<string, AgentModule> = Object.fromEntries(MODULES.map((m) => [m.id, m]));
