@@ -15,15 +15,22 @@ export interface CatalogEntry {
   hub_id: string | null;
 }
 
+/** Modelo + chip como un solo texto, para comparar: el catálogo (NexiOS/hub) no tiene un campo de
+ * chip separado, lo trae adentro del nombre del modelo ("MacBook Air M5 13"), así que las cotizaciones
+ * (que sí separan chip de modelo) arman el mismo texto completo acá para poder compararse contra eso. */
+function fullModelText(model: string, chip: string | null | undefined): string {
+  return chip ? `${model} ${chip}` : model;
+}
+
 /**
- * Clave para agrupar "es el mismo producto": cada proveedor escribe el modelo en un orden de
- * palabras distinto ("Air 13 M5" vs "Air M5 13”", "Pro 14 M5 Pro" vs "Pro M5 Pro 14”"), así que acá
- * SÍ se ordenan las palabras alfabéticamente para que el orden no rompa el agrupamiento entre
- * proveedores. (matchCatalog, que compara contra el catálogo real, usa normalizeModel sin ordenar:
- * ahí el orden de palabras importa para su lógica de prefijo/sufijo y no hay que tocarlo.)
+ * Clave para agrupar "es el mismo producto": cada proveedor escribe el modelo (y el chip, si lo separa)
+ * en un orden de palabras distinto ("Air 13 M5" vs "Air M5 13”", "Pro 14 M5 Pro" vs "Pro M5 Pro 14”"),
+ * así que acá SÍ se ordenan las palabras alfabéticamente para que el orden no rompa el agrupamiento
+ * entre proveedores. (matchCatalog, que compara contra el catálogo real, usa normalizeModel sin
+ * ordenar: ahí el orden de palabras importa para su lógica de prefijo/sufijo y no hay que tocarlo.)
  */
-export function entryKey(category: Category, model: string, capacity: string | null | undefined): string {
-  const tokens = normalizeModel(model).split(/\s+/).filter(Boolean).sort();
+export function entryKey(category: Category, model: string, capacity: string | null | undefined, chip?: string | null): string {
+  const tokens = normalizeModel(fullModelText(model, chip)).split(/\s+/).filter(Boolean).sort();
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
@@ -65,10 +72,11 @@ export function matchCatalog(
   category: Category,
   model: string,
   capacity: string | null,
+  chip?: string | null,
 ): CatalogEntry | null {
-  const exact = index.get(entryKey(category, model, capacity));
+  const exact = index.get(entryKey(category, model, capacity, chip));
   if (exact) return exact;
-  const wantModel = normalizeModel(model);
+  const wantModel = normalizeModel(fullModelText(model, chip));
   const wantCap = normalizeCapacity(capacity);
   const candidates = [...index.values()].filter(
     (e) => e.category === category && normalizeCapacity(e.capacity) === wantCap &&

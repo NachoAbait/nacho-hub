@@ -8,7 +8,11 @@ import type { Category } from "@/lib/types";
 const ItemSchema = z.object({
   category: z.enum(["iphone", "ipad", "macbook", "watch", "airpods", "samsung", "other"]),
   model: z.string(),
+  /** Chip/procesador (M5, M5 Pro, A18 Pro…), SIEMPRE separado del modelo. Null si no lo menciona. */
+  chip: z.string().nullable(),
   capacity: z.string().nullable(),
+  /** RAM en GB, solo si el proveedor la menciona por separado del almacenamiento. Null si no. */
+  ram_gb: z.number().nullable(),
   color: z.string().nullable(),
   condition: z.enum(["new", "used"]),
   price: z.number(),
@@ -173,7 +177,9 @@ export const priceReader: AgentModule = {
           supplier_id: msg.supplier_id,
           category: item.category as Category,
           model: item.model,
+          chip: item.chip,
           capacity: item.capacity,
+          ram_gb: item.ram_gb,
           cost_usd: cost,
           original_price_usd: listed,
           pricing_basis: item.pricing_basis,

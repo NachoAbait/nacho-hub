@@ -11,11 +11,18 @@ import { CATEGORY_LABEL, type Category } from "@/lib/types";
  */
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
 
+/** Modelo, chip, capacidad y RAM van en columnas separadas: no es solo prolijidad, es lo que permite
+ * que dos proveedores que escriben el mismo producto en distinto orden ("Air 13 M5" vs "Air M5 13”")
+ * terminen en la misma fila en vez de en dos filas que parecen productos distintos. */
+const LABEL_COLS = 4;
+
 interface QuoteRow {
   supplier_id: string | null;
   category: Category;
   model: string;
+  chip: string | null;
   capacity: string | null;
+  ram_gb: number | null;
   cost_usd: number;
 }
 
@@ -27,7 +34,7 @@ const CHEAPEST_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor
 export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string): Promise<ExcelJS.Workbook> {
   const { data: quotes, error } = await db
     .from("price_quotes")
-    .select("supplier_id, category, model, capacity, cost_usd")
+    .select("supplier_id, category, model, chip, capacity, ram_gb, cost_usd")
     .eq("quote_date", date)
     .returns<QuoteRow[]>();
   if (error) throw new Error(`price_quotes: ${error.message}`);
@@ -40,22 +47,21 @@ export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string)
     (supplierName.get(a) ?? "").localeCompare(supplierName.get(b) ?? ""),
   );
 
-  // Filas: un producto (categoría + modelo + capacidad, agrupados sin importar el orden de palabras
-  // de cada proveedor) con lo que cotizó cada uno. Para el título de la fila usamos el nombre más
-  // descriptivo que haya escrito algún proveedor (el más largo), no el del catálogo: matchCatalog es
-  // una búsqueda difusa pensada para aplicar precios, no para elegir una etiqueta para mostrar, y
-  // podía juntar bajo un mismo nombre genérico cosas que en realidad son productos distintos.
-  interface Row { category: Category; label: string; sortKey: string; bySupplier: Map<string, number> }
+  // Filas: un producto (categoría + modelo + chip + capacidad, agrupados sin importar el orden de
+  // palabras de cada proveedor) con lo que cotizó cada uno. Si dentro del mismo grupo algún proveedor
+  // dio el chip o la RAM y otro no, nos quedamos con el dato que sí vino (nunca lo inventamos).
+  interface Row { category: Category; model: string; chip: string | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, number> }
   const rows = new Map<string, Row>();
   for (const q of quotes ?? []) {
-    const key = entryKey(q.category, q.model, q.capacity);
+    const key = entryKey(q.category, q.model, q.capacity, q.chip);
     let row = rows.get(key);
-    const label = `${q.model}${q.capacity ? ` ${q.capacity}` : ""}`;
     if (!row) {
-      row = { category: q.category, label, sortKey: q.model.toLowerCase(), bySupplier: new Map() };
+      row = { category: q.category, model: q.model, chip: q.chip, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
       rows.set(key, row);
-    } else if (label.length > row.label.length) {
-      row.label = label;
+    } else {
+      if (!row.chip && q.chip) row.chip = q.chip;
+      if (!row.ramGb && q.ram_gb) row.ramGb = q.ram_gb;
+      if (q.model.length > row.model.length) row.model = q.model;
     }
     if (q.supplier_id) {
       const prev = row.bySupplier.get(q.supplier_id);
@@ -66,33 +72,45 @@ export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string)
   const wb = new ExcelJS.Workbook();
   wb.creator = "NACHO Hub · Martín (Price Analyst)";
   wb.created = new Date();
-  const sheet = wb.addWorksheet(`Comparativa ${date}`, { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
+  const sheet = wb.addWorksheet(`Comparativa ${date}`, { views: [{ state: "frozen", xSplit: LABEL_COLS, ySplit: 1 }] });
 
-  sheet.getColumn(1).width = 34;
-  for (let i = 0; i < supplierIds.length; i++) sheet.getColumn(i + 2).width = 16;
+  sheet.getColumn(1).width = 22; // Modelo
+  sheet.getColumn(2).width = 12; // Chip
+  sheet.getColumn(3).width = 12; // Capacidad
+  sheet.getColumn(4).width = 8; // RAM
+  for (let i = 0; i < supplierIds.length; i++) sheet.getColumn(i + LABEL_COLS + 1).width = 16;
 
-  const header = sheet.addRow(["Producto", ...supplierIds.map((id) => supplierName.get(id) ?? id)]);
+  const header = sheet.addRow(["Modelo", "Chip", "Capacidad", "RAM", ...supplierIds.map((id) => supplierName.get(id) ?? id)]);
   header.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = HEADER_FILL;
     cell.alignment = { vertical: "middle", horizontal: "center" };
   });
 
+  const totalCols = LABEL_COLS + supplierIds.length;
   for (const category of CATEGORY_ORDER) {
-    const inCategory = [...rows.values()].filter((r) => r.category === category).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    const inCategory = [...rows.values()]
+      .filter((r) => r.category === category)
+      .sort((a, b) => `${a.model} ${a.chip ?? ""} ${a.capacity ?? ""}`.localeCompare(`${b.model} ${b.chip ?? ""} ${b.capacity ?? ""}`));
     if (!inCategory.length) continue;
 
     const title = sheet.addRow([CATEGORY_LABEL[category]]);
-    sheet.mergeCells(title.number, 1, title.number, supplierIds.length + 1);
+    sheet.mergeCells(title.number, 1, title.number, totalCols);
     title.getCell(1).font = { bold: true };
     title.getCell(1).fill = CATEGORY_FILL;
 
     for (const row of inCategory) {
       const cheapest = row.bySupplier.size ? Math.min(...row.bySupplier.values()) : null;
-      const excelRow = sheet.addRow([row.label, ...supplierIds.map((id) => row.bySupplier.get(id) ?? null)]);
-      excelRow.getCell(1).font = { bold: true };
+      const excelRow = sheet.addRow([
+        row.model,
+        row.chip ?? "",
+        row.capacity ?? "",
+        row.ramGb ? `${row.ramGb}GB` : "",
+        ...supplierIds.map((id) => row.bySupplier.get(id) ?? null),
+      ]);
+      for (let c = 1; c <= LABEL_COLS; c++) excelRow.getCell(c).font = { bold: c === 1 };
       for (let i = 0; i < supplierIds.length; i++) {
-        const cell = excelRow.getCell(i + 2);
+        const cell = excelRow.getCell(i + LABEL_COLS + 1);
         const value = row.bySupplier.get(supplierIds[i]);
         if (value == null) continue;
         cell.numFmt = '"US$ "#,##0';

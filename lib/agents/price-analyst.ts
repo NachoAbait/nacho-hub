@@ -43,6 +43,7 @@ interface Quote {
   supplier_id: string | null;
   category: Category;
   model: string;
+  chip: string | null;
   capacity: string | null;
   cost_usd: number;
   original_price_usd: number;
@@ -85,7 +86,7 @@ export const priceAnalyst: AgentModule = {
     const today = todayArt();
     const { data: quotes, error } = await ctx.db
       .from("price_quotes")
-      .select("id, supplier_id, category, model, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("id, supplier_id, category, model, chip, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<Quote[]>();
     if (error) throw new Error(`price_quotes: ${error.message}`);
@@ -107,10 +108,12 @@ export const priceAnalyst: AgentModule = {
     }
     const nameOf = (id: string | null) => (id ? supplierNames.get(id) ?? "proveedor" : "proveedor sin identificar");
 
-    // Agrupar por producto (categoría + modelo + capacidad normalizados) y quedarse con la cotización más barata.
+    // Agrupar por producto (categoría + modelo + chip + capacidad normalizados) y quedarse con la
+    // cotización más barata. El chip entra en la clave para que "Air 13 M5" y "Air M5 13" (mismo
+    // producto, orden de palabras distinto) se comparen juntos.
     const groups = new Map<string, Quote[]>();
     for (const q of quotes) {
-      const key = entryKey(q.category, q.model, q.capacity);
+      const key = entryKey(q.category, q.model, q.capacity, q.chip);
       const list = groups.get(key) ?? [];
       list.push(q);
       groups.set(key, list);
@@ -123,18 +126,21 @@ export const priceAnalyst: AgentModule = {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
       const best = sorted[0];
       const second = sorted[1];
-      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity);
+      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip);
 
       if (!entry) {
-        await upsertDecision(ctx.db, today, { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: best.model, capacity: best.capacity }, {
-          category: best.category, model: best.model, capacity: best.capacity,
+        // Sin match en el catálogo: mostramos el modelo con el chip pegado (el catálogo no tiene un
+        // campo de chip separado, así que acá tampoco hay dónde más ponerlo).
+        const fullModel = best.chip ? `${best.model} ${best.chip}` : best.model;
+        await upsertDecision(ctx.db, today, { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: fullModel, capacity: best.capacity }, {
+          category: best.category, model: fullModel, capacity: best.capacity,
           detected_cost_usd: best.cost_usd, original_price_usd: best.original_price_usd,
           pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty, confidence: best.confidence,
           raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
           status: "new_model", review_status: "pending",
         });
         decisions.push({
-          category: best.category, model: best.model, capacity: best.capacity, cost: best.cost_usd, previous: null,
+          category: best.category, model: fullModel, capacity: best.capacity, cost: best.cost_usd, previous: null,
           winnerSupplier: nameOf(best.supplier_id), competitors: group.length,
           bestRejectedBy: second ? nameOf(second.supplier_id) : null, bestRejectedCost: second?.cost_usd ?? null,
           result: "new_model", newPrice: null, previousPrice: null,
