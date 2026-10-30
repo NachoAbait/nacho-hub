@@ -15,11 +15,11 @@ export interface CatalogEntry {
   hub_id: string | null;
 }
 
-/** Modelo + chip como un solo texto, para comparar: el catálogo (NexiOS/hub) no tiene un campo de
- * chip separado, lo trae adentro del nombre del modelo ("MacBook Air M5 13"), así que las cotizaciones
- * (que sí separan chip de modelo) arman el mismo texto completo acá para poder compararse contra eso. */
-function fullModelText(model: string, chip: string | null | undefined): string {
-  return chip ? `${model} ${chip}` : model;
+/** Modelo + chip + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no tiene esos
+ * campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que las
+ * cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso. */
+function fullModelText(model: string, chip: string | null | undefined, inches?: number | null): string {
+  return [model, chip, inches ? `${inches}"` : null].filter(Boolean).join(" ");
 }
 
 /**
@@ -29,8 +29,14 @@ function fullModelText(model: string, chip: string | null | undefined): string {
  * entre proveedores. (matchCatalog, que compara contra el catálogo real, usa normalizeModel sin
  * ordenar: ahí el orden de palabras importa para su lógica de prefijo/sufijo y no hay que tocarlo.)
  */
-export function entryKey(category: Category, model: string, capacity: string | null | undefined, chip?: string | null): string {
-  const tokens = normalizeModel(fullModelText(model, chip)).split(/\s+/).filter(Boolean).sort();
+export function entryKey(
+  category: Category,
+  model: string,
+  capacity: string | null | undefined,
+  chip?: string | null,
+  inches?: number | null,
+): string {
+  const tokens = normalizeModel(fullModelText(model, chip, inches)).split(/\s+/).filter(Boolean).sort();
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
@@ -73,10 +79,11 @@ export function matchCatalog(
   model: string,
   capacity: string | null,
   chip?: string | null,
+  inches?: number | null,
 ): CatalogEntry | null {
-  const exact = index.get(entryKey(category, model, capacity, chip));
+  const exact = index.get(entryKey(category, model, capacity, chip, inches));
   if (exact) return exact;
-  const wantModel = normalizeModel(fullModelText(model, chip));
+  const wantModel = normalizeModel(fullModelText(model, chip, inches));
   const wantCap = normalizeCapacity(capacity);
   const candidates = [...index.values()].filter(
     (e) => e.category === category && normalizeCapacity(e.capacity) === wantCap &&

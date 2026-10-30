@@ -10,6 +10,8 @@ const ItemSchema = z.object({
   model: z.string(),
   /** Chip/procesador (M5, M5 Pro, A18 Pro…), SIEMPRE separado del modelo. Null si no lo menciona. */
   chip: z.string().nullable(),
+  /** Tamaño de pantalla en pulgadas (solo MacBook/iPad). Null si no aplica o es ambiguo. */
+  inches: z.number().nullable(),
   capacity: z.string().nullable(),
   /** RAM en GB, solo si el proveedor la menciona por separado del almacenamiento. Null si no. */
   ram_gb: z.number().nullable(),
@@ -178,6 +180,7 @@ export const priceReader: AgentModule = {
           category: item.category as Category,
           model: item.model,
           chip: item.chip,
+          inches: item.inches,
           capacity: item.capacity,
           ram_gb: item.ram_gb,
           cost_usd: cost,

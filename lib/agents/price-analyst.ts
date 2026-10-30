@@ -44,6 +44,7 @@ interface Quote {
   category: Category;
   model: string;
   chip: string | null;
+  inches: number | null;
   capacity: string | null;
   cost_usd: number;
   original_price_usd: number;
@@ -86,7 +87,7 @@ export const priceAnalyst: AgentModule = {
     const today = todayArt();
     const { data: quotes, error } = await ctx.db
       .from("price_quotes")
-      .select("id, supplier_id, category, model, chip, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("id, supplier_id, category, model, chip, inches, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<Quote[]>();
     if (error) throw new Error(`price_quotes: ${error.message}`);
@@ -113,7 +114,7 @@ export const priceAnalyst: AgentModule = {
     // producto, orden de palabras distinto) se comparen juntos.
     const groups = new Map<string, Quote[]>();
     for (const q of quotes) {
-      const key = entryKey(q.category, q.model, q.capacity, q.chip);
+      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches);
       const list = groups.get(key) ?? [];
       list.push(q);
       groups.set(key, list);
@@ -126,12 +127,12 @@ export const priceAnalyst: AgentModule = {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
       const best = sorted[0];
       const second = sorted[1];
-      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip);
+      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches);
 
       if (!entry) {
-        // Sin match en el catálogo: mostramos el modelo con el chip pegado (el catálogo no tiene un
-        // campo de chip separado, así que acá tampoco hay dónde más ponerlo).
-        const fullModel = best.chip ? `${best.model} ${best.chip}` : best.model;
+        // Sin match en el catálogo: mostramos el modelo con el chip y las pulgadas pegados (el
+        // catálogo no tiene esos campos separados, así que acá tampoco hay dónde más ponerlos).
+        const fullModel = [best.model, best.chip, best.inches ? `${best.inches}"` : null].filter(Boolean).join(" ");
         await upsertDecision(ctx.db, today, { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: fullModel, capacity: best.capacity }, {
           category: best.category, model: fullModel, capacity: best.capacity,
           detected_cost_usd: best.cost_usd, original_price_usd: best.original_price_usd,

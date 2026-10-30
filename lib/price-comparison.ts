@@ -19,6 +19,7 @@ export interface ComparisonRow {
   category: Category;
   model: string;
   chip: string | null;
+  inches: number | null;
   capacity: string | null;
   ramGb: number | null;
   quotes: ComparisonQuote[];
@@ -33,6 +34,7 @@ interface RawQuote {
   category: Category;
   model: string;
   chip: string | null;
+  inches: number | null;
   capacity: string | null;
   ram_gb: number | null;
   cost_usd: number;
@@ -59,7 +61,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
   const [{ data: quotes }, { data: suppliers }, { data: updates }] = await Promise.all([
     db
       .from("price_quotes")
-      .select("supplier_id, category, model, chip, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("supplier_id, category, model, chip, inches, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<RawQuote[]>(),
     db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>(),
@@ -79,17 +81,18 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
   // así que acá se arma la clave SIN pasar chip aparte: el texto completo ya lo tiene adentro.
   const updateByKey = new Map((updates ?? []).map((u) => [entryKey((u.category ?? "other") as Category, u.model, u.capacity), u]));
 
-  interface Row { category: Category; model: string; chip: string | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
+  interface Row { category: Category; model: string; chip: string | null; inches: number | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
   const rows = new Map<string, Row>();
   for (const q of quotes ?? []) {
     if (!q.supplier_id) continue;
-    const key = entryKey(q.category, q.model, q.capacity, q.chip);
+    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches);
     let row = rows.get(key);
     if (!row) {
-      row = { category: q.category, model: q.model, chip: q.chip, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
+      row = { category: q.category, model: q.model, chip: q.chip, inches: q.inches, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
       rows.set(key, row);
     } else {
       if (!row.chip && q.chip) row.chip = q.chip;
+      if (!row.inches && q.inches) row.inches = q.inches;
       if (!row.ramGb && q.ram_gb) row.ramGb = q.ram_gb;
       if (q.model.length > row.model.length) row.model = q.model;
     }
@@ -115,6 +118,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
       category: row.category,
       model: row.model,
       chip: row.chip,
+      inches: row.inches,
       capacity: row.capacity,
       ramGb: row.ramGb,
       quotes: [...row.bySupplier.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName)),
