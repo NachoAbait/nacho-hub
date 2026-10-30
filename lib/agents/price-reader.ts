@@ -93,6 +93,10 @@ export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessa
       `Extraé todos los ítems con precio.`,
     schema: ParseSchema,
     usage: ctx.usage,
+    // Con muchos ítems en un solo mensaje (lista completa de un proveedor, 40-50+ productos), el
+    // effort por defecto ("low") empezó a aflojar reglas nuevas y finas (separar pulgadas del
+    // modelo, la excepción del iPad A16): a "medium" las sigue mejor sin perder mucha velocidad.
+    effort: "medium",
     // Listas largas (muchos modelos, formato con emojis) necesitan más lugar: con 6000 se cortaba
     // a mitad del JSON en catálogos grandes (Kondor) y la respuesta quedaba inválida por completo.
     maxTokens: 16000,
