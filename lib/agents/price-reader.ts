@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJson } from "@/lib/claude";
-import type { AgentContext, AgentModule } from "@/lib/agents/runtime";
+import { getSetting, type AgentContext, type AgentModule } from "@/lib/agents/runtime";
 import { systemPrompt } from "@/lib/agents/skills";
 import type { Category } from "@/lib/types";
 
@@ -85,12 +85,26 @@ async function catalogNames(db: SupabaseClient): Promise<string> {
   return (data ?? []).map((p) => `${p.category} | ${p.model} | ${p.capacity ?? "-"}`).join("\n");
 }
 
-export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessage, catalogSummary: string, supplier: SupplierRow | null): Promise<ParsedList> {
+/** "Lo que ya aprendimos": correcciones de Nacho sobre modelos concretos, en lenguaje llano, que se
+ * suman al prompt de todos los proveedores. Vive en hub_settings.model_hints, así que un hallazgo
+ * nuevo (como "el MacBook NEO es siempre A18 Pro") se aprende con una fila en la base, sin deploy. */
+function modelHintsBlock(hints: string[]): string {
+  if (!hints.length) return "";
+  return `\n\nLo que ya aprendimos de correcciones anteriores (aplicalo siempre, no son del catálogo):\n${hints.map((h) => `- ${h}`).join("\n")}`;
+}
+
+export async function parseSupplierMessage(
+  ctx: AgentContext,
+  msg: SupplierMessage,
+  catalogSummary: string,
+  supplier: SupplierRow | null,
+  modelHints: string[],
+): Promise<ParsedList> {
   return askJson({
     agent: "price-reader",
     role: "parser",
     system: systemPrompt("price-reader"),
-    prompt: `Catálogo actual, para reconocer nombres (categoría | modelo | capacidad):\n${catalogSummary}\n${supplierPrompt(supplier)}\n` +
+    prompt: `Catálogo actual, para reconocer nombres (categoría | modelo | capacidad):\n${catalogSummary}\n${supplierPrompt(supplier)}${modelHintsBlock(modelHints)}\n` +
       `Mensaje recibido el ${msg.received_at} de ${msg.sender_name ?? msg.sender ?? "desconocido"}:\n\n"""\n${msg.body}\n"""\n\n` +
       `Extraé todos los ítems con precio.`,
     schema: ParseSchema,
@@ -142,6 +156,7 @@ export const priceReader: AgentModule = {
     }
 
     const catalogSummary = await catalogNames(ctx.db);
+    const modelHints = await getSetting<string[]>(ctx.db, "model_hints", []);
     const today = todayArt();
 
     const supplierCache = new Map<string, SupplierRow | null>();
@@ -163,7 +178,7 @@ export const priceReader: AgentModule = {
         const supplierLabel = supplier?.name ?? supplier?.phone ?? msg.sender_name ?? "proveedor sin identificar";
         let parsed: ParsedList;
         try {
-          parsed = await parseSupplierMessage(ctx, msg, catalogSummary, supplier);
+          parsed = await parseSupplierMessage(ctx, msg, catalogSummary, supplier, modelHints);
         } catch (err) {
           ctx.log(`no pude parsear ${msg.id}: ${err instanceof Error ? err.message : err}`);
           await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: { error: String(err) }, run_id: ctx.runId }).eq("id", msg.id);

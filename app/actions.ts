@@ -25,7 +25,7 @@ import {
 } from "@/lib/suppliers";
 import { confirmAllUpdates, confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
-import { latestReport, todayArt } from "@/lib/agents/runtime";
+import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
 import { isCategory, type BusinessContext } from "@/lib/types";
@@ -71,17 +71,19 @@ export interface PriceReaderPanelData {
   suppliers: Supplier[];
   pendingSenders: PendingSender[];
   today: SupplierToday[];
+  modelHints: string[];
 }
 
 export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
   const db = supabaseAdmin();
   const today = todayArt();
-  const [rep, updates, suppliers, pendingSenders, todayStatus] = await Promise.all([
+  const [rep, updates, suppliers, pendingSenders, todayStatus, modelHints] = await Promise.all([
     latestReport(db, "price-reader"),
     todaysUpdates(db, today),
     listSuppliers(db),
     listPendingSenders(db),
     suppliersToday(db, today),
+    getSetting<string[]>(db, "model_hints", []),
   ]);
   return {
     report: rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null,
@@ -89,7 +91,23 @@ export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
     suppliers,
     pendingSenders,
     today: todayStatus,
+    modelHints,
   };
+}
+
+/**
+ * "Lo que ya aprendimos": correcciones de Nacho sobre modelos concretos ("el MacBook NEO es siempre
+ * A18 Pro"), una por línea. Lucas las lee en cada corrida. Guardar acá no necesita deploy.
+ */
+export async function saveModelHints(text: string): Promise<ActionResult> {
+  try {
+    const hints = text.split("\n").map((h) => h.trim()).filter(Boolean);
+    await supabaseAdmin().from("hub_settings").upsert({ key: "model_hints", value: hints, updated_at: new Date().toISOString() });
+    revalidatePath("/");
+    return { ok: true, message: `Guardado (${hints.length} ${hints.length === 1 ? "pista" : "pistas"})` };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 export interface AgentReportData {

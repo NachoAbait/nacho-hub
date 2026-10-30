@@ -14,6 +14,7 @@ import {
   pasteSupplierList,
   removeSupplier,
   runAgentNow,
+  saveModelHints,
   saveRules,
   saveSuppliers,
   type PriceReaderPanelData,
@@ -408,6 +409,34 @@ function PasteBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => 
   );
 }
 
+/** Correcciones de modelos que Lucas ya aprendió (p. ej. "el MacBook NEO es siempre A18 Pro"), una
+ * por línea. Se guarda sin deploy: la próxima corrida ya la usa. */
+function ModelHintsBox({ hints, onDone }: { hints: string[]; onDone: () => void }) {
+  const [text, setText] = useState(hints.join("\n"));
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <details className="rounded-lg border border-white/10 p-2 text-[11px]">
+      <summary className="cursor-pointer text-white/50">Lo que ya aprendimos ({hints.length})</summary>
+      <div className="mt-2 flex flex-col gap-2">
+        <p className="text-white/50">Una corrección por línea. Lucas las lee en cada lista que procesa.</p>
+        <textarea
+          className={input + " h-28 font-mono"}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="El MacBook NEO siempre usa chip A18 Pro (6 CPU, 5 GPU)."
+        />
+        <div className="flex items-center gap-2">
+          <button className={btn} disabled={pending} onClick={() => start(async () => { const r = await saveModelHints(text); setMsg(r.message); onDone(); })}>
+            Guardar
+          </button>
+          {msg && <span className="text-white/60">{msg}</span>}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export function PriceReaderPanel() {
   const [data, setData] = useState<PriceReaderPanelData | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -424,6 +453,7 @@ export function PriceReaderPanel() {
       <SupplierTodayBox data={data} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />
+      <ModelHintsBox hints={data.modelHints} onDone={reload} />
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">
