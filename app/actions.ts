@@ -180,6 +180,26 @@ export async function loadCaptionSets(context: BusinessContext): Promise<{ date:
   return { date: rep.date, sets: raw.sets ?? [] };
 }
 
+export interface Highlight { label: string; value: string }
+
+/** Los datos sueltos (dólar, BTC, Fed...) que Mateo sacó de su propio informe, más el informe completo. */
+export async function loadGlobalHighlights(): Promise<{ date: string; highlights: Highlight[]; markdown: string } | null> {
+  const rep = await latestReport(supabaseAdmin(), "global-analyst", "GLOBAL");
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as { highlights?: Highlight[] };
+  return { date: rep.date, highlights: raw.highlights ?? [], markdown: rep.content_markdown };
+}
+
+export interface CompetitorPrice { competitor: string; item: string; price: string }
+
+/** Los precios comparables que Sofía sacó de su propio informe, más el informe completo. */
+export async function loadCompetitorPrices(context: BusinessContext): Promise<{ date: string; prices: CompetitorPrice[]; markdown: string } | null> {
+  const rep = await latestReport(supabaseAdmin(), "competitor-scraper", context);
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as { prices?: CompetitorPrice[] };
+  return { date: rep.date, prices: raw.prices ?? [], markdown: rep.content_markdown };
+}
+
 /** Nacho elige a mano qué proveedor gana para este producto, aunque no sea el más barato. Aplica al toque, como "Corregir". */
 export async function selectSupplierForProduct(updateId: string, quote: ComparisonQuote): Promise<ActionResult> {
   try {

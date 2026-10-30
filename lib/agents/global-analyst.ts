@@ -1,5 +1,6 @@
+import { z } from "zod";
 import type { AgentModule } from "@/lib/agents/runtime";
-import { askWithWeb } from "@/lib/claude";
+import { askWithWeb, askJson } from "@/lib/claude";
 import { systemPrompt } from "@/lib/agents/skills";
 
 function weekdayArt(today: string): string {
@@ -7,6 +8,10 @@ function weekdayArt(today: string): string {
     new Date(`${today}T12:00:00-03:00`),
   );
 }
+
+const HighlightsSchema = z.object({
+  highlights: z.array(z.object({ label: z.string(), value: z.string() })).max(6),
+});
 
 /**
  * Global Analyst (Mateo): resumen diario de macro mundial (EE.UU., cripto, geopolítica, actualidad
@@ -43,10 +48,28 @@ export const globalAnalyst: AgentModule = {
       usage: ctx.usage,
     });
 
+    // Segunda pasada, chica y barata: saca 4-6 datos sueltos del informe para mostrar como tarjetas
+    // arriba del panel (dólar, BTC, Fed...). El informe completo con fuentes sigue abajo, intacto.
+    let highlights: { label: string; value: string }[] = [];
+    try {
+      const extracted = await askJson({
+        agent: "global-analyst-highlights",
+        role: "parser",
+        system: "Extraé los 4 a 6 datos numéricos más importantes de este informe (cotizaciones, tasas, índices), como pares corto label/value. No inventes nada que no esté en el texto.",
+        prompt: markdown,
+        schema: HighlightsSchema,
+        usage: ctx.usage,
+        maxTokens: 500,
+      });
+      highlights = extracted.highlights;
+    } catch {
+      // Si falla la extracción, el panel se apoya en el markdown completo igual.
+    }
+
     return {
       markdown,
       summary: isWeekly ? "resumen diario + semanal de macro mundial" : "resumen diario de macro mundial",
-      data: { weekly: isWeekly },
+      data: { weekly: isWeekly, highlights },
     };
   },
 };

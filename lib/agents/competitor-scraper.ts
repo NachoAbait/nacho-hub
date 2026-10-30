@@ -1,6 +1,7 @@
+import { z } from "zod";
 import type { AgentModule } from "@/lib/agents/runtime";
 import { getSetting } from "@/lib/agents/runtime";
-import { askWithWeb } from "@/lib/claude";
+import { askWithWeb, askJson } from "@/lib/claude";
 import { systemPrompt } from "@/lib/agents/skills";
 import type { BusinessContext } from "@/lib/types";
 
@@ -12,6 +13,10 @@ const FALLBACK_QUERIES: Record<BusinessContext, string[]> = {
   AgroScan: ["software gestión ganadera Argentina precio caravanas electrónicas"],
   GLOBAL: [],
 };
+
+const PricesSchema = z.object({
+  prices: z.array(z.object({ competitor: z.string(), item: z.string(), price: z.string() })).max(8),
+});
 
 /**
  * Competitor Scraper (Sofía): investiga precios y movimientos de la competencia.
@@ -47,10 +52,28 @@ export const competitorScraper: AgentModule = {
       usage: ctx.usage,
     });
 
+    // Segunda pasada, chica y barata: saca la tabla de precios comparables del informe para mostrarla
+    // como tarjetas arriba del panel. El informe completo con fuentes sigue abajo, intacto.
+    let prices: { competitor: string; item: string; price: string }[] = [];
+    try {
+      const extracted = await askJson({
+        agent: "competitor-scraper-prices",
+        role: "parser",
+        system: "Extraé del informe la tabla de precios comparables (competidor, producto, precio). Si no hay ninguno con precio y fuente claros, devolvé una lista vacía: no inventes.",
+        prompt: markdown,
+        schema: PricesSchema,
+        usage: ctx.usage,
+        maxTokens: 500,
+      });
+      prices = extracted.prices;
+    } catch {
+      // Si falla la extracción, el panel se apoya en el markdown completo igual.
+    }
+
     return {
       markdown,
       summary: named.length ? `investigó ${named.length} competidores` : "investigó el mercado sin lista curada todavía",
-      data: { competitors: named },
+      data: { competitors: named, prices },
     };
   },
 };
