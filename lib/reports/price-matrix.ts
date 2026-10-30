@@ -5,16 +5,12 @@ import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 /**
  * Orden de categorías pedido para la comparativa (distinto del orden interno de CATEGORIES).
+ * Cada una es su propia hoja del Excel (pestaña aparte), no una sección dentro de una hoja grande.
  * "Xiaomi" y otras marcas todavía no son una categoría propia: hoy esos ítems se descartan al
  * leerlos (price-reader los clasifica "other" y los salta), así que no hay nada que listar ahí
  * todavía — si Nacho empieza a vender Xiaomi, hay que sumar la categoría primero.
  */
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
-
-/** Modelo, chip, capacidad y RAM van en columnas separadas: no es solo prolijidad, es lo que permite
- * que dos proveedores que escriben el mismo producto en distinto orden ("Air 13 M5" vs "Air M5 13”")
- * terminen en la misma fila en vez de en dos filas que parecen productos distintos. */
-const LABEL_COLS = 4;
 
 interface QuoteRow {
   supplier_id: string | null;
@@ -27,10 +23,18 @@ interface QuoteRow {
 }
 
 const HEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F2937" } };
-const CATEGORY_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
 const CHEAPEST_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFBBF7D0" } };
 
-/** Comparativa de precios del día: productos en filas (agrupados por categoría), proveedores en columnas. */
+/** Todo en una sola celda: modelo, chip, capacidad y RAM juntos, tal como lo pidió Nacho. */
+function fullLabel(model: string, chip: string | null, capacity: string | null, ramGb: number | null): string {
+  const parts = [model];
+  if (chip) parts.push(chip);
+  if (capacity) parts.push(capacity);
+  if (ramGb) parts.push(`${ramGb}GB RAM`);
+  return parts.join(" ");
+}
+
+/** Comparativa de precios del día: una hoja por categoría, productos en filas, proveedores en columnas. */
 export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string): Promise<ExcelJS.Workbook> {
   const { data: quotes, error } = await db
     .from("price_quotes")
@@ -42,7 +46,8 @@ export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string)
   const { data: suppliers } = await db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>();
   const supplierName = new Map((suppliers ?? []).map((s) => [s.id, s.name ?? s.phone]));
 
-  // Columnas: solo proveedores que cotizaron algo hoy, en el orden en que los cargó Nacho (por nombre).
+  // Mismas columnas de proveedor en todas las hojas, aunque un proveedor no tenga nada en esa
+  // categoría (esas celdas quedan vacías): así se puede comparar la misma columna entre pestañas.
   const supplierIds = [...new Set((quotes ?? []).map((q) => q.supplier_id).filter((v): v is string => !!v))].sort((a, b) =>
     (supplierName.get(a) ?? "").localeCompare(supplierName.get(b) ?? ""),
   );
@@ -72,45 +77,33 @@ export async function buildPriceMatrixWorkbook(db: SupabaseClient, date: string)
   const wb = new ExcelJS.Workbook();
   wb.creator = "NACHO Hub · Martín (Price Analyst)";
   wb.created = new Date();
-  const sheet = wb.addWorksheet(`Comparativa ${date}`, { views: [{ state: "frozen", xSplit: LABEL_COLS, ySplit: 1 }] });
 
-  sheet.getColumn(1).width = 22; // Modelo
-  sheet.getColumn(2).width = 12; // Chip
-  sheet.getColumn(3).width = 12; // Capacidad
-  sheet.getColumn(4).width = 8; // RAM
-  for (let i = 0; i < supplierIds.length; i++) sheet.getColumn(i + LABEL_COLS + 1).width = 16;
-
-  const header = sheet.addRow(["Modelo", "Chip", "Capacidad", "RAM", ...supplierIds.map((id) => supplierName.get(id) ?? id)]);
-  header.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = HEADER_FILL;
-    cell.alignment = { vertical: "middle", horizontal: "center" };
-  });
-
-  const totalCols = LABEL_COLS + supplierIds.length;
   for (const category of CATEGORY_ORDER) {
     const inCategory = [...rows.values()]
       .filter((r) => r.category === category)
-      .sort((a, b) => `${a.model} ${a.chip ?? ""} ${a.capacity ?? ""}`.localeCompare(`${b.model} ${b.chip ?? ""} ${b.capacity ?? ""}`));
+      .sort((a, b) => fullLabel(a.model, a.chip, a.capacity, a.ramGb).localeCompare(fullLabel(b.model, b.chip, b.capacity, b.ramGb)));
     if (!inCategory.length) continue;
 
-    const title = sheet.addRow([CATEGORY_LABEL[category]]);
-    sheet.mergeCells(title.number, 1, title.number, totalCols);
-    title.getCell(1).font = { bold: true };
-    title.getCell(1).fill = CATEGORY_FILL;
+    const sheet = wb.addWorksheet(CATEGORY_LABEL[category], { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
+    sheet.getColumn(1).width = 36;
+    for (let i = 0; i < supplierIds.length; i++) sheet.getColumn(i + 2).width = 16;
+
+    const header = sheet.addRow(["Producto", ...supplierIds.map((id) => supplierName.get(id) ?? id)]);
+    header.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = HEADER_FILL;
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
 
     for (const row of inCategory) {
       const cheapest = row.bySupplier.size ? Math.min(...row.bySupplier.values()) : null;
       const excelRow = sheet.addRow([
-        row.model,
-        row.chip ?? "",
-        row.capacity ?? "",
-        row.ramGb ? `${row.ramGb}GB` : "",
+        fullLabel(row.model, row.chip, row.capacity, row.ramGb),
         ...supplierIds.map((id) => row.bySupplier.get(id) ?? null),
       ]);
-      for (let c = 1; c <= LABEL_COLS; c++) excelRow.getCell(c).font = { bold: c === 1 };
+      excelRow.getCell(1).font = { bold: true };
       for (let i = 0; i < supplierIds.length; i++) {
-        const cell = excelRow.getCell(i + LABEL_COLS + 1);
+        const cell = excelRow.getCell(i + 2);
         const value = row.bySupplier.get(supplierIds[i]);
         if (value == null) continue;
         cell.numFmt = '"US$ "#,##0';
