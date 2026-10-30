@@ -99,7 +99,8 @@ export async function parseSupplierMessage(ctx: AgentContext, msg: SupplierMessa
     effort: "medium",
     // Listas largas (muchos modelos, formato con emojis) necesitan más lugar: con 6000 se cortaba
     // a mitad del JSON en catálogos grandes (Kondor) y la respuesta quedaba inválida por completo.
-    maxTokens: 16000,
+    // Al sumar chip/inches/ram_gb y subir a effort "medium" volvió a pasar con 16000 (Kondor otra vez).
+    maxTokens: 24000,
   });
 }
 
