@@ -47,10 +47,15 @@ async function fetchNews(query: string, limit = 8): Promise<NewsItem[]> {
 const QUERIES: Record<BusinessContext, string[]> = {
   BNB: ["iPhone Argentina precio", "Apple lanzamiento nuevo", "aranceles importación celulares Argentina"],
   AgroScan: ["SENASA trazabilidad bovina caravana", "precio hacienda Cañuelas INMAG", "retenciones ganadería Argentina"],
-  GLOBAL: [],
+  GLOBAL: [
+    "Reserva Federal Wall Street economía Estados Unidos",
+    "Bitcoin criptomonedas noticias hackeo",
+    "geopolítica economía guerra aranceles comercio",
+    "economía mundial mercados financieros",
+  ],
 };
 
-/** Lo mismo que lee Tomás (Market Watcher): dólar del día + noticias. Compartido con el panel visual, siempre en vivo. */
+/** Lo mismo que lee Tomás (Market Watcher): dólar del día + noticias. También lo usa Mateo (Global Analyst) para GLOBAL, solo las noticias. Compartido con el panel visual, siempre en vivo. */
 export async function computeMarketReport(context: BusinessContext): Promise<MarketReport> {
   const [dolares, ...newsLists] = await Promise.all([
     fetchDolares(),
