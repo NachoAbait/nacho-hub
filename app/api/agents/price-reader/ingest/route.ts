@@ -3,7 +3,7 @@ import { isAuthorized } from "@/lib/auth";
 import { ingestPriceList } from "@/lib/agents/ingest";
 
 // Parseo con Claude + actualización de NexiOS + banners: hasta 60 s en Vercel Hobby.
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/agents/price-reader/ingest

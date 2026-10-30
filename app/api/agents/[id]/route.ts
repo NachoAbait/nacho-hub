@@ -4,7 +4,7 @@ import { getAgentModule } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
 import type { BusinessContext } from "@/lib/types";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/agents/[id]   (Bearer CRON_SECRET)

@@ -4,7 +4,7 @@ import { modulesOfTier } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
 import type { Tier } from "@/lib/agents";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const TIERS: Tier[] = ["readers", "analysts", "creators", "chief"];
 

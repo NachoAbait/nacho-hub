@@ -151,57 +151,62 @@ export const priceReader: AgentModule = {
       return supplierCache.get(id) ?? null;
     }
 
+    // Un mensaje por proveedor, cada uno independiente: en paralelo para no sumar sus tiempos
+    // (con varios proveedores en la misma corrida, secuencial se acercaba al límite de 60s de la función).
+    interface MsgResult { supplierLabel: string; items: number; skipped: number; quotes: number }
+    const results = await Promise.all(
+      messages.map(async (msg): Promise<MsgResult> => {
+        const supplier = await supplierOf(msg.supplier_id);
+        const supplierLabel = supplier?.name ?? supplier?.phone ?? msg.sender_name ?? "proveedor sin identificar";
+        let parsed: ParsedList;
+        try {
+          parsed = await parseSupplierMessage(ctx, msg, catalogSummary, supplier);
+        } catch (err) {
+          ctx.log(`no pude parsear ${msg.id}: ${err instanceof Error ? err.message : err}`);
+          await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: { error: String(err) }, run_id: ctx.runId }).eq("id", msg.id);
+          return { supplierLabel, items: 0, skipped: 0, quotes: 0 };
+        }
+        await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: parsed, run_id: ctx.runId }).eq("id", msg.id);
+        const discount = Number(supplier?.rules?.unit_discount_usd ?? 0) || 0;
+
+        const rows: Record<string, unknown>[] = [];
+        for (const item of parsed.items) {
+          if (item.category === "other" || item.currency !== "USD" || item.condition !== "new" || item.confidence < 0.6) continue;
+          const listed = Math.round(item.price);
+          const cost = Math.max(0, listed - discount);
+          rows.push({
+            message_id: msg.id,
+            supplier_id: msg.supplier_id,
+            category: item.category as Category,
+            model: item.model,
+            chip: item.chip,
+            inches: item.inches,
+            capacity: item.capacity,
+            ram_gb: item.ram_gb,
+            cost_usd: cost,
+            original_price_usd: listed,
+            pricing_basis: item.pricing_basis,
+            bulk_qty: item.pricing_basis === "bulk_min" ? item.bulk_qty : null,
+            confidence: item.confidence,
+            raw_line: item.raw_line,
+            quote_date: today,
+          });
+        }
+        if (rows.length) await ctx.db.from("price_quotes").insert(rows);
+        return { supplierLabel, items: parsed.items.length, skipped: parsed.skipped.length, quotes: rows.length };
+      }),
+    );
+
     const bySupplier = new Map<string, { name: string; items: number; skipped: number }>();
     let itemsTotal = 0;
     let quotesTotal = 0;
-
-    for (const msg of messages) {
-      const supplier = await supplierOf(msg.supplier_id);
-      const supplierLabel = supplier?.name ?? supplier?.phone ?? msg.sender_name ?? "proveedor sin identificar";
-      let parsed: ParsedList;
-      try {
-        parsed = await parseSupplierMessage(ctx, msg, catalogSummary, supplier);
-      } catch (err) {
-        ctx.log(`no pude parsear ${msg.id}: ${err instanceof Error ? err.message : err}`);
-        await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: { error: String(err) }, run_id: ctx.runId }).eq("id", msg.id);
-        continue;
-      }
-      await ctx.db.from("supplier_messages").update({ parsed_at: new Date().toISOString(), parse_json: parsed, run_id: ctx.runId }).eq("id", msg.id);
-      const discount = Number(supplier?.rules?.unit_discount_usd ?? 0) || 0;
-
-      const stat = bySupplier.get(supplierLabel) ?? { name: supplierLabel, items: 0, skipped: 0 };
-      stat.skipped += parsed.skipped.length;
-
-      const rows: Record<string, unknown>[] = [];
-      for (const item of parsed.items) {
-        itemsTotal++;
-        if (item.category === "other" || item.currency !== "USD" || item.condition !== "new" || item.confidence < 0.6) continue;
-        const listed = Math.round(item.price);
-        const cost = Math.max(0, listed - discount);
-        rows.push({
-          message_id: msg.id,
-          supplier_id: msg.supplier_id,
-          category: item.category as Category,
-          model: item.model,
-          chip: item.chip,
-          inches: item.inches,
-          capacity: item.capacity,
-          ram_gb: item.ram_gb,
-          cost_usd: cost,
-          original_price_usd: listed,
-          pricing_basis: item.pricing_basis,
-          bulk_qty: item.pricing_basis === "bulk_min" ? item.bulk_qty : null,
-          confidence: item.confidence,
-          raw_line: item.raw_line,
-          quote_date: today,
-        });
-      }
-      if (rows.length) {
-        await ctx.db.from("price_quotes").insert(rows);
-        quotesTotal += rows.length;
-      }
-      stat.items += rows.length;
-      bySupplier.set(supplierLabel, stat);
+    for (const r of results) {
+      itemsTotal += r.items;
+      quotesTotal += r.quotes;
+      const stat = bySupplier.get(r.supplierLabel) ?? { name: r.supplierLabel, items: 0, skipped: 0 };
+      stat.items += r.quotes;
+      stat.skipped += r.skipped;
+      bySupplier.set(r.supplierLabel, stat);
     }
 
     const lines: string[] = ["# Listas de proveedores", ""];
