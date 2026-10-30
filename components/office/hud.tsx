@@ -7,6 +7,7 @@ import { BRIEFS } from "@/lib/agent-briefs";
 import { RunNowButton } from "@/components/office/run-now-button";
 import { PriceReaderPanel } from "@/components/office/price-reader-panel";
 import { PriceAnalystPanel } from "@/components/office/price-analyst-panel";
+import { StockAnalystPanel } from "@/components/office/stock-analyst-panel";
 import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
@@ -99,7 +100,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
 
       {/* panel del agente */}
       {agent && (
-        <aside className={`absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" ? "w-[680px]" : agent.id === "price-reader" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
+        <aside className={`absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
           <header className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">
@@ -169,6 +170,12 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "stock-analyst" && (
+            <div className="border-t border-white/10 pt-4">
+              <StockAnalystPanel />
+            </div>
+          )}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
@@ -187,7 +194,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 

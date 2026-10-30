@@ -25,6 +25,7 @@ import {
 } from "@/lib/suppliers";
 import { confirmAllUpdates, confirmUpdate, correctUpdate } from "@/lib/price-review";
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
+import { computeStockReport, type StockReport } from "@/lib/stock-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
@@ -126,6 +127,13 @@ export type { ComparisonQuote, ComparisonRow };
 /** El cuadro de Martín: productos x proveedores de HOY, solo de hoy (a las 00 arranca vacío de nuevo). */
 export async function loadPriceComparison(): Promise<ComparisonRow[]> {
   return loadComparisonRows(supabaseAdmin(), todayArt());
+}
+
+export type { StockReport } from "@/lib/stock-report";
+
+/** El cuadro visual de Julieta: siempre en vivo contra NexiOS, no espera a la próxima corrida programada. */
+export async function loadStockReport(): Promise<StockReport> {
+  return computeStockReport();
 }
 
 /** Nacho elige a mano qué proveedor gana para este producto, aunque no sea el más barato. Aplica al toque, como "Corregir". */
