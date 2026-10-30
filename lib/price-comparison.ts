@@ -51,6 +51,7 @@ interface RawUpdate {
   capacity: string | null;
   supplier_id: string | null;
   review_status: string;
+  created_at: string;
 }
 
 /** El mismo cuadro que la comparativa Excel, pero con el detalle completo de cada cotización (para poder aplicar) y cruzado con lo que ya decidió Martín hoy. */
@@ -62,11 +63,14 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
       .eq("quote_date", today)
       .returns<RawQuote[]>(),
     db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>(),
+    // A diferencia de Martín (que no quiere duplicar una decisión ya aprobada), acá SÍ queremos ver
+    // la fila aunque ya esté "corrected" o "confirmed": si no, el ganador que Nacho eligió a mano
+    // desaparece de la tabla apenas lo aplica.
     db
       .from("price_updates")
-      .select("id, category, model, capacity, supplier_id, review_status")
+      .select("id, category, model, capacity, supplier_id, review_status, created_at")
       .gte("created_at", `${today}T00:00:00-03:00`)
-      .not("review_status", "in", "(confirmed,corrected)")
+      .order("created_at", { ascending: true })
       .returns<RawUpdate[]>(),
   ]);
 

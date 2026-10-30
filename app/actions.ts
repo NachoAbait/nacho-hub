@@ -24,6 +24,7 @@ import {
   type SupplierToday,
 } from "@/lib/suppliers";
 import { confirmAllUpdates, confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
+import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
 import { latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
@@ -101,6 +102,24 @@ export interface AgentReportData {
 export async function loadAgentReport(agentId: string, context: BusinessContext): Promise<AgentReportData | null> {
   const rep = await latestReport(supabaseAdmin(), agentId, context);
   return rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null;
+}
+
+export type { ComparisonQuote, ComparisonRow };
+
+/** El cuadro de Martín: productos x proveedores de HOY, solo de hoy (a las 00 arranca vacío de nuevo). */
+export async function loadPriceComparison(): Promise<ComparisonRow[]> {
+  return loadComparisonRows(supabaseAdmin(), todayArt());
+}
+
+/** Nacho elige a mano qué proveedor gana para este producto, aunque no sea el más barato. Aplica al toque, como "Corregir". */
+export async function selectSupplierForProduct(updateId: string, quote: ComparisonQuote): Promise<ActionResult> {
+  try {
+    await selectSupplierForProductDb(supabaseAdmin(), updateId, quote);
+    revalidatePath("/");
+    return { ok: true, message: `Aplicado: ${quote.supplierName} US$ ${quote.cost}` };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 /** Lo que Lucas interpretó hoy de un proveedor puntual, para revisar antes de mandarlo a Martín. */
