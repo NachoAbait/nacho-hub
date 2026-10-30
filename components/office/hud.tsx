@@ -8,6 +8,10 @@ import { RunNowButton } from "@/components/office/run-now-button";
 import { PriceReaderPanel } from "@/components/office/price-reader-panel";
 import { PriceAnalystPanel } from "@/components/office/price-analyst-panel";
 import { StockAnalystPanel } from "@/components/office/stock-analyst-panel";
+import { MarketWatcherPanel } from "@/components/office/market-watcher-panel";
+import { ChiefOfStaffPanel } from "@/components/office/chief-of-staff-panel";
+import { ContentCreatorPanel } from "@/components/office/content-creator-panel";
+import { CopyWriterPanel } from "@/components/office/copy-writer-panel";
 import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
@@ -176,6 +180,30 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "market-watcher" && focus && (
+            <div className="border-t border-white/10 pt-4">
+              <MarketWatcherPanel context={focus.floor} />
+            </div>
+          )}
+
+          {agent.id === "chief-of-staff" && focus && (
+            <div className="border-t border-white/10 pt-4">
+              <ChiefOfStaffPanel context={focus.floor} />
+            </div>
+          )}
+
+          {agent.id === "content-creator" && focus && (
+            <div className="border-t border-white/10 pt-4">
+              <ContentCreatorPanel context={focus.floor} />
+            </div>
+          )}
+
+          {agent.id === "copy-writer" && focus && (
+            <div className="border-t border-white/10 pt-4">
+              <CopyWriterPanel context={focus.floor} />
+            </div>
+          )}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
@@ -194,7 +222,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 

@@ -26,6 +26,7 @@ import {
 import { confirmAllUpdates, confirmUpdate, correctUpdate } from "@/lib/price-review";
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
 import { computeStockReport, type StockReport } from "@/lib/stock-report";
+import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
@@ -134,6 +135,49 @@ export type { StockReport } from "@/lib/stock-report";
 /** El cuadro visual de Julieta: siempre en vivo contra NexiOS, no espera a la próxima corrida programada. */
 export async function loadStockReport(): Promise<StockReport> {
   return computeStockReport();
+}
+
+export type { MarketReport } from "@/lib/market-report";
+
+/** El cuadro visual de Tomás: dólar + noticias, siempre en vivo. */
+export async function loadMarketReport(context: BusinessContext): Promise<MarketReport> {
+  return computeMarketReport(context);
+}
+
+export interface ChiefBriefData {
+  date: string;
+  brief: { summary: string; actions: { title: string; why: string; time: string }[]; alerts: string[] } | null;
+  reported: string[];
+  missing: string[];
+}
+
+/** El brief de Ernesto, ya estructurado (lo arma en su última corrida, no en vivo). */
+export async function loadChiefBrief(context: BusinessContext): Promise<ChiefBriefData | null> {
+  const rep = await latestReport(supabaseAdmin(), "chief-of-staff", context);
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as Partial<ChiefBriefData>;
+  return { date: rep.date, brief: raw.brief ?? null, reported: raw.reported ?? [], missing: raw.missing ?? [] };
+}
+
+export interface ContentIdea { format: string; hook: string; steps: string[]; cta: string; needs: string }
+
+/** Las 3 ideas de Agustina, ya estructuradas (de su última corrida). */
+export async function loadContentIdeas(context: BusinessContext): Promise<{ date: string; ideas: ContentIdea[] } | null> {
+  const rep = await latestReport(supabaseAdmin(), "content-creator", context);
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as { ideas?: ContentIdea[] };
+  return { date: rep.date, ideas: raw.ideas ?? [] };
+}
+
+export interface CaptionVariant { label: "corta" | "completa"; text: string; hashtags: string[] }
+export interface CaptionSetData { title: string; variants: CaptionVariant[] }
+
+/** Los captions de Facundo, ya estructurados (de su última corrida). */
+export async function loadCaptionSets(context: BusinessContext): Promise<{ date: string; sets: CaptionSetData[] } | null> {
+  const rep = await latestReport(supabaseAdmin(), "copy-writer", context);
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as { sets?: CaptionSetData[] };
+  return { date: rep.date, sets: raw.sets ?? [] };
 }
 
 /** Nacho elige a mano qué proveedor gana para este producto, aunque no sea el más barato. Aplica al toque, como "Corregir". */
