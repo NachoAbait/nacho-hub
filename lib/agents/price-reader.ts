@@ -10,6 +10,8 @@ const ItemSchema = z.object({
   model: z.string(),
   /** Chip/procesador (M5, M5 Pro, A18 Pro…), SIEMPRE separado del modelo. Null si no lo menciona. */
   chip: z.string().nullable(),
+  /** Conectividad celular/eSIM (iPad, Apple Watch): producto distinto del WiFi-only. */
+  cellular: z.boolean(),
   /** Tamaño de pantalla en pulgadas (solo MacBook/iPad). Null si no aplica o es ambiguo. */
   inches: z.number().nullable(),
   capacity: z.string().nullable(),
@@ -181,6 +183,7 @@ export const priceReader: AgentModule = {
             category: item.category as Category,
             model: item.model,
             chip: item.chip,
+            cellular: item.cellular,
             inches: item.inches,
             capacity: item.capacity,
             ram_gb: item.ram_gb,

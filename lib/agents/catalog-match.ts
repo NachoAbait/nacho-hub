@@ -15,11 +15,11 @@ export interface CatalogEntry {
   hub_id: string | null;
 }
 
-/** Modelo + chip + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no tiene esos
- * campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que las
- * cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso. */
-function fullModelText(model: string, chip: string | null | undefined, inches?: number | null): string {
-  return [model, chip, inches ? `${inches}"` : null].filter(Boolean).join(" ");
+/** Modelo + chip + celular + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no
+ * tiene esos campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que
+ * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso. */
+function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null): string {
+  return [model, chip, cellular ? "Cell" : null, inches ? `${inches}"` : null].filter(Boolean).join(" ");
 }
 
 /**
@@ -35,8 +35,9 @@ export function entryKey(
   capacity: string | null | undefined,
   chip?: string | null,
   inches?: number | null,
+  cellular?: boolean | null,
 ): string {
-  const tokens = normalizeModel(fullModelText(model, chip, inches)).split(/\s+/).filter(Boolean).sort();
+  const tokens = normalizeModel(fullModelText(model, chip, cellular, inches)).split(/\s+/).filter(Boolean).sort();
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
@@ -80,10 +81,11 @@ export function matchCatalog(
   capacity: string | null,
   chip?: string | null,
   inches?: number | null,
+  cellular?: boolean | null,
 ): CatalogEntry | null {
-  const exact = index.get(entryKey(category, model, capacity, chip, inches));
+  const exact = index.get(entryKey(category, model, capacity, chip, inches, cellular));
   if (exact) return exact;
-  const wantModel = normalizeModel(fullModelText(model, chip, inches));
+  const wantModel = normalizeModel(fullModelText(model, chip, cellular, inches));
   const wantCap = normalizeCapacity(capacity);
   const candidates = [...index.values()].filter(
     (e) => e.category === category && normalizeCapacity(e.capacity) === wantCap &&

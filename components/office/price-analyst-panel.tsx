@@ -6,10 +6,11 @@ import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
 
-/** Orden pedido: modelo - chip - pulgadas - memoria - RAM, separado con "-" para que se lea rápido. */
+/** Orden pedido: modelo - chip - (+Cell si tiene) - pulgadas - memoria - RAM, separado con "-". */
 function fullLabel(row: ComparisonRow): string {
   const parts = [row.model];
   if (row.chip) parts.push(row.chip);
+  if (row.cellular) parts.push("+Cell");
   if (row.inches) parts.push(`${row.inches}"`);
   if (row.capacity) parts.push(row.capacity);
   if (row.ramGb) parts.push(`${row.ramGb}GB RAM`);
