@@ -23,7 +23,7 @@ import {
   type SupplierQuote,
   type SupplierToday,
 } from "@/lib/suppliers";
-import { confirmAllUpdates, confirmUpdate, correctUpdate, todaysUpdates, type PriceUpdateRow } from "@/lib/price-review";
+import { confirmAllUpdates, confirmUpdate, correctUpdate } from "@/lib/price-review";
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
@@ -67,19 +67,19 @@ export async function pasteSupplierList(body: string, supplierId: string | null)
 
 export interface PriceReaderPanelData {
   report: { markdown: string; date: string; summary: string | null } | null;
-  updates: PriceUpdateRow[];
   suppliers: Supplier[];
   pendingSenders: PendingSender[];
   today: SupplierToday[];
   modelHints: string[];
 }
 
+// Lucas solo lee: las recomendaciones de Martín (lo que espera tu aprobación) viven en su propio
+// panel, no acá. Ver loadPriceComparison / selectSupplierForProduct.
 export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
   const db = supabaseAdmin();
   const today = todayArt();
-  const [rep, updates, suppliers, pendingSenders, todayStatus, modelHints] = await Promise.all([
+  const [rep, suppliers, pendingSenders, todayStatus, modelHints] = await Promise.all([
     latestReport(db, "price-reader"),
-    todaysUpdates(db, today),
     listSuppliers(db),
     listPendingSenders(db),
     suppliersToday(db, today),
@@ -87,7 +87,6 @@ export async function loadPriceReaderPanel(): Promise<PriceReaderPanelData> {
   ]);
   return {
     report: rep ? { markdown: rep.content_markdown, date: rep.date, summary: rep.summary } : null,
-    updates,
     suppliers,
     pendingSenders,
     today: todayStatus,

@@ -4,10 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Markdown from "react-markdown";
 import {
   addSupplier,
-  applyAllRecommended,
   approveSender,
-  confirmPriceUpdate,
-  correctPriceUpdate,
   dismissSender,
   linkSender,
   loadPriceReaderPanel,
@@ -19,7 +16,6 @@ import {
   saveSuppliers,
   type PriceReaderPanelData,
 } from "@/app/actions";
-import type { PriceUpdateRow } from "@/lib/price-review";
 import type { PendingSender, SupplierToday } from "@/lib/suppliers";
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
@@ -103,89 +99,6 @@ function SupplierTodayBox({ data }: { data: PriceReaderPanelData }) {
         Martín para comparar. Este botón es para forzarlo antes si hace falta.
       </p>
     </section>
-  );
-}
-
-/** El paso que de verdad modifica la app: una sola aprobación para todo lo que está esperando. */
-function ApplyAllButton({ onDone }: { onDone: () => void }) {
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-bold text-black transition hover:bg-amber-300 disabled:opacity-50"
-        disabled={pending}
-        onClick={() => start(async () => { const r = await applyAllRecommended(); setMsg(r.message); onDone(); })}
-      >
-        {pending ? "Aplicando…" : "Aplicar todo lo recomendado"}
-      </button>
-      {msg && <span className="text-[11px] text-white/50">{msg}</span>}
-    </div>
-  );
-}
-
-const REVIEW_LABEL: Record<PriceUpdateRow["review_status"], string> = {
-  pending: "sin revisar",
-  auto: "aplicado automático",
-  confirmed: "confirmado",
-  corrected: "corregido",
-};
-
-function UpdateRow({ u, onDone }: { u: PriceUpdateRow; onDone: () => void }) {
-  const [pending, start] = useTransition();
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(String(u.original_price_usd ?? ""));
-  const [msg, setMsg] = useState<string | null>(null);
-  const label = `${u.model}${u.capacity ? " " + u.capacity : ""}`;
-  // Confirmado o corregido por Nacho: ya no hay nada para hacer acá.
-  const humanActed = u.review_status === "confirmed" || u.review_status === "corrected";
-  return (
-    <li className="rounded-lg border border-white/10 bg-white/5 p-2 text-[12px]">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-semibold text-white/90">{label}</div>
-          <div className="text-white/60">
-            Costo US$ {u.review_status === "corrected" ? u.corrected_cost_usd : u.detected_cost_usd}
-            {u.original_price_usd != null && u.original_price_usd !== u.detected_cost_usd && ` (publicado ${u.original_price_usd}${u.adjustment_usd ? `, ajuste ${u.adjustment_usd}` : ""})`}
-            {u.pricing_basis === "bulk_min" && ` · escalón x${u.bulk_qty ?? "?"}`}
-            {u.new_price_usd != null && ` · venta US$ ${u.new_price_usd}`}
-          </div>
-          {u.raw_line && <div className="mt-0.5 truncate text-white/35" title={u.raw_line}>“{u.raw_line}”</div>}
-          <div className="text-[10px] uppercase tracking-wider text-white/40">
-            {u.status === "new_model" ? "no está en el catálogo" : u.status === "unchanged" ? "sin cambios" : u.status}
-            {" · "}{REVIEW_LABEL[u.review_status]}
-          </div>
-        </div>
-        {!humanActed && !editing && (
-          <div className="flex flex-none gap-1">
-            {/* OK solo tiene sentido en lo que de verdad está sin revisar; lo aplicado solo ya quedó hecho. */}
-            {u.review_status === "pending" && (
-              <button className={btn} disabled={pending} onClick={() => start(async () => { await confirmPriceUpdate(u.id); onDone(); })}>OK</button>
-            )}
-            <button className={btn} disabled={pending} onClick={() => setEditing(true)}>Corregir</button>
-          </div>
-        )}
-      </div>
-      {editing && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-white/60">Precio unitario correcto US$</span>
-          <input className={input + " !w-20"} inputMode="numeric" value={val} onChange={(e) => setVal(e.target.value)} />
-          <button
-            className={btn}
-            disabled={pending}
-            onClick={() => start(async () => {
-              const r = await correctPriceUpdate(u.id, Number(val.replace(",", ".")));
-              setMsg(r.message);
-              if (r.ok) { setEditing(false); onDone(); }
-            })}
-          >
-            {pending ? "Aplicando…" : "Aplicar"}
-          </button>
-        </div>
-      )}
-      {msg && <p className="mt-1 text-white/60">{msg}</p>}
-    </li>
   );
 }
 
@@ -445,36 +358,14 @@ export function PriceReaderPanel() {
 
   if (err) return <p className="text-xs text-red-300">{err}</p>;
   if (!data) return <p className="text-xs text-white/50">Cargando…</p>;
-  // Martín nunca aplica solo: todo lo que recomienda queda acá esperando tu aprobación, chico o grande.
-  const waiting = data.updates.filter((u) => u.review_status === "pending" && u.status !== "unchanged" && u.status !== "new_model");
-  const rest = data.updates.filter((u) => !(u.review_status === "pending" && u.status !== "unchanged" && u.status !== "new_model"));
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
       <SupplierTodayBox data={data} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} />
       <ModelHintsBox hints={data.modelHints} onDone={reload} />
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">
-            {waiting.length > 0 ? `Esperando tu aprobación (${waiting.length})` : "Interpretaciones de hoy"}
-          </h3>
-          {waiting.length > 0 && <ApplyAllButton onDone={reload} />}
-        </div>
-        {data.updates.length === 0 ? (
-          <p className="text-xs text-white/50">Todavía no llegó nada hoy.</p>
-        ) : waiting.length === 0 ? (
-          <p className="text-xs text-white/50">Nada esperando: no hay recomendaciones nuevas de Martín.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">{waiting.map((u) => <UpdateRow key={u.id} u={u} onDone={reload} />)}</ul>
-        )}
-        {rest.length > 0 && (
-          <details className="mt-1">
-            <summary className="cursor-pointer text-[11px] text-white/40">Ver el resto ({rest.length}, ya aplicado, sin cambios o modelos nuevos)</summary>
-            <ul className="mt-2 flex flex-col gap-2">{rest.map((u) => <UpdateRow key={u.id} u={u} onDone={reload} />)}</ul>
-          </details>
-        )}
-      </section>
+      {/* Las recomendaciones de Martín (lo que espera tu aprobación) viven en su propio panel: Lucas
+          solo lee, no decide nada sobre precios. */}
       <section className="flex flex-col gap-2">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Último informe{data.report ? ` · ${data.report.date}` : ""}</h3>
         {data.report ? (
