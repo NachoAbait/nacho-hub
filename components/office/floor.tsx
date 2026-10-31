@@ -8,7 +8,7 @@ import type { ThreeEvent } from "@react-three/fiber";
 import type { AgentStatus, Tier } from "@/lib/agents";
 import { TIERS } from "@/lib/agents";
 import { FLOOR_D, FLOOR_W, WALL_H, floorLayout, type FloorTheme } from "@/lib/office/layout";
-import { cityTexture, woodTexture } from "@/lib/office/textures";
+import { woodTexture } from "@/lib/office/textures";
 import { Desk } from "@/components/office/desk";
 
 interface Props {
@@ -38,26 +38,6 @@ function Plant({ position, scale = 1 }: { position: [number, number, number]; sc
           <meshStandardMaterial color={i % 2 ? "#3f9a4f" : "#2f7d3f"} roughness={0.8} />
         </mesh>
       ))}
-    </group>
-  );
-}
-
-function Window({ x, accent, city }: { x: number; accent: string; city: ReturnType<typeof cityTexture> }) {
-  return (
-    <group position={[x, 2.5, -FLOOR_D / 2 + 0.12]}>
-      <mesh castShadow>
-        <boxGeometry args={[5.4, 2.8, 0.1]} />
-        <meshStandardMaterial color={accent} roughness={0.5} metalness={0.2} />
-      </mesh>
-      <mesh position={[0, 0, 0.06]}>
-        <planeGeometry args={[5.05, 2.45]} />
-        <meshStandardMaterial map={city} emissiveMap={city} emissive="#ffffff" emissiveIntensity={0.55} roughness={0.1} metalness={0.1} />
-      </mesh>
-      {/* parantes */}
-      <mesh position={[0, 0, 0.07]}>
-        <boxGeometry args={[0.06, 2.45, 0.02]} />
-        <meshStandardMaterial color={accent} />
-      </mesh>
     </group>
   );
 }
@@ -140,7 +120,6 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
     () => woodTexture(theme.floor, [7, 4.5], theme.id === "BNB" ? 2 : theme.id === "AgroScan" ? 5 : 8),
     [theme.floor, theme.id],
   );
-  const city = useMemo(() => cityTexture(theme.id === "BNB" ? 7 : theme.id === "AgroScan" ? 9 : 11), [theme.id]);
 
   function clearFocus(e: ThreeEvent<MouseEvent>) {
     e.stopPropagation();
@@ -180,9 +159,6 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
           <meshStandardMaterial color="#111" roughness={0.6} />
         </mesh>
       ))}
-      <Window x={-8.5} accent={theme.accent} city={city} />
-      <Window x={8.5} accent={theme.accent} city={city} />
-
       {/* sectores */}
       {layout.map(({ sector, desks }) => {
         const [cx, cz] = sector.center;
@@ -209,15 +185,20 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               </mesh>
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
-            {/* Cartel al frente de la alfombra: con el pasillo que se agrandó entre sectores (ver
-                SECTORS en lib/office/layout.ts) ya no llega a la línea de los carteles del sector de
-                adelante. Siempre con el borde completo y brillo propio, para que se note como el
-                cartel del sector aunque no esté en foco. */}
+            {/* Cartel por encima del sector, no adelante de los escritorios: centrado en X/Z del
+                sector (no al frente ni atrás, que ahí sí chocaba con el cartel de marca o con el
+                sector vecino) y bien arriba, por encima de las cabezas de todos los carteles de
+                agentes. Con el sector en foco la cámara queda muy cerca: a esa altura el cartel se
+                ve enorme y tapa hasta el header, así que ahí vuelve a la posición baja y al frente,
+                que a esa distancia de cámara ya se ve clara y separada de todo.
+                Nota: en la vista "Ambos" (los dos pisos a la vez, cámara bien lejos) algún par de
+                carteles de sectores vecinos todavía queda un poco justo — no se resolvió del todo,
+                queda para una vuelta aparte si hace falta pulirlo más. */}
             <Html
               transform
-              position={[cx, 1.3, cz + d / 2 - 0.5]}
-              rotation={[-0.4, 0, 0]}
-              distanceFactor={5}
+              position={focused ? [cx, 1.3, cz + d / 2 - 0.5] : [cx, 3.8, cz]}
+              rotation={focused ? [-0.4, 0, 0] : [0, 0, 0]}
+              distanceFactor={focused ? 5 : 6}
               zIndexRange={[10, 0]}
               style={{ pointerEvents: "none" }}
             >
@@ -261,9 +242,9 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
           <div className="grid h-14 w-14 place-items-center rounded-lg text-3xl font-black" style={{ background: theme.accent, color: "#0b0b0d" }}>
             {theme.id === "BNB" ? "B" : theme.id === "AgroScan" ? "A" : "E"}
           </div>
-          <div>
+          <div className="max-w-[300px]">
             <div className="text-3xl font-black uppercase leading-none tracking-tight text-white">{theme.name}</div>
-            <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.3em]" style={{ color: theme.accent }}>
+            <div className="mt-1 text-[11px] font-semibold uppercase leading-snug tracking-[0.2em]" style={{ color: theme.accent }}>
               {theme.subtitle} · {total} agentes
             </div>
           </div>
