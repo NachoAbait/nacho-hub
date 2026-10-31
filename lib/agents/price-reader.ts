@@ -146,12 +146,19 @@ export const priceReader: AgentModule = {
     if (error) throw new Error(`supplier_messages: ${error.message}`);
 
     if (!messages?.length) {
+      const today0 = todayArt();
+      const { count: todayTotal0 } = await ctx.db
+        .from("price_quotes")
+        .select("id", { count: "exact", head: true })
+        .eq("quote_date", today0);
+      const already = todayTotal0 ?? 0;
       return {
-        markdown: `# Listas de proveedores\n\nNo llegaron listas nuevas en los últimos 3 días.\n\n` +
-          `Para que lleguen solas, el puente de WhatsApp tiene que estar corriendo en la Mac (carpeta bridge/whatsapp). ` +
-          `También podés pegar una lista a mano desde mi panel.\n\n## Para hoy\n- Nada que leer.`,
-        summary: "en espera, sin listas nuevas",
-        data: { messages: 0, quotes: 0 },
+        markdown: `# Listas de proveedores\n\nNo llegaron listas nuevas en los últimos 3 días.` +
+          (already ? ` Ya tengo ${already} cotizaciones guardadas hoy de corridas anteriores.` : "") +
+          `\n\nPara que lleguen solas, el puente de WhatsApp tiene que estar corriendo en la Mac (carpeta bridge/whatsapp). ` +
+          `También podés pegar una lista a mano desde mi panel.\n\n## Para hoy\n- Nada nuevo que leer.`,
+        summary: already ? `en espera, ${already} cotizaciones guardadas hoy en total` : "en espera, sin listas nuevas",
+        data: { messages: 0, quotes: 0, quotes_today_total: already },
       };
     }
 
@@ -228,17 +235,29 @@ export const priceReader: AgentModule = {
       bySupplier.set(r.supplierLabel, stat);
     }
 
+    // Si corrí más de una vez hoy (listas que llegan en tandas), "quotesTotal" es solo lo nuevo de esta
+    // corrida. El total acumulado del día es lo que Martín compara después, así que lo reporto explícito
+    // para que Ernesto (Chief of Staff) no marque como discrepancia dos números que miden cosas distintas.
+    const { count: todayTotal } = await ctx.db
+      .from("price_quotes")
+      .select("id", { count: "exact", head: true })
+      .eq("quote_date", today);
+    const total = todayTotal ?? quotesTotal;
+
     const lines: string[] = ["# Listas de proveedores", ""];
-    lines.push(`Leí ${messages.length} ${messages.length === 1 ? "lista" : "listas"} con ${itemsTotal} ítems; guardé ${quotesTotal} cotizaciones para comparar.`);
-    lines.push("", "## Por proveedor");
+    lines.push(
+      `Hoy en total hay **${total} cotizaciones** guardadas para comparar` +
+        (total !== quotesTotal ? ` (esta corrida sumó ${quotesTotal} nuevas, de ${itemsTotal} ítems en ${messages.length} ${messages.length === 1 ? "lista" : "listas"}).` : `, de ${itemsTotal} ítems en ${messages.length} ${messages.length === 1 ? "lista" : "listas"}.`),
+    );
+    lines.push("", "## Esta corrida, por proveedor");
     for (const s of bySupplier.values()) lines.push(`- **${s.name}**: ${s.items} cotizaciones${s.skipped ? `, ${s.skipped} líneas que no entendí` : ""}`);
     lines.push("", "## Para hoy");
     lines.push("- Todavía no toqué ningún precio: eso lo hace Martín (Price Analyst) a las 11, cuando compara estas cotizaciones entre todos los proveedores del día y elige la más barata de cada producto.");
 
     return {
       markdown: lines.join("\n"),
-      summary: `${quotesTotal} cotizaciones guardadas de ${bySupplier.size} ${bySupplier.size === 1 ? "proveedor" : "proveedores"}`,
-      data: { messages: messages.length, items: itemsTotal, quotes: quotesTotal, by_supplier: [...bySupplier.values()] },
+      summary: `${total} cotizaciones guardadas hoy en total${total !== quotesTotal ? ` (+${quotesTotal} esta corrida)` : ""}`,
+      data: { messages: messages.length, items: itemsTotal, quotes: quotesTotal, quotes_today_total: total, by_supplier: [...bySupplier.values()] },
     };
   },
 };
