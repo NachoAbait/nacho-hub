@@ -69,3 +69,16 @@ body {
   30% { opacity: 0.6; }
   100% { transform: scale(1.6); opacity: 0; }
 }
+
+/* Panel del agente: entra deslizando desde la derecha. Con key={agent.id} en el <aside>,
+   se repite cada vez que se toca un agente distinto (no solo al abrir el primero). */
+.panel-enter {
+  animation: panel-slide-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes panel-slide-in {
+  0% { opacity: 0; transform: translateX(24px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter { animation: none; }
+}

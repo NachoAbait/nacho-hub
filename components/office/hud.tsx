@@ -106,7 +106,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
 
       {/* panel del agente */}
       {agent && (
-        <aside className={`absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
+        <aside key={agent.id} className={`panel-enter absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
           <header className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">
