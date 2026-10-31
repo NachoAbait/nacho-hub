@@ -55,25 +55,25 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
   return (
     <>
       {/* título */}
-      <div className="pointer-events-none absolute left-5 top-5 z-[100] select-none">
-        <div className="text-2xl font-black tracking-tight">
+      <div className="pointer-events-none absolute left-3 top-3 z-[100] select-none sm:left-5 sm:top-5">
+        <div className="text-lg font-black tracking-tight sm:text-2xl">
           NACHO <span className="text-amber-400">HUB</span>
         </div>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
+        <div className="hidden text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50 sm:block">
           {liveCount} de {Object.keys(statuses).length} agentes operativos
           {workingCount > 0 && <span className="text-green-400"> · {workingCount} trabajando ahora</span>}
         </div>
       </div>
 
       {/* selector de piso */}
-      <div className="absolute right-5 top-5 z-[100] flex gap-1 rounded-full border border-white/10 bg-black/70 p-1 backdrop-blur">
+      <div className="absolute right-3 top-3 z-[100] flex gap-0.5 rounded-full border border-white/10 bg-black/70 p-1 backdrop-blur sm:right-5 sm:top-5 sm:gap-1">
         {VIEW_BUTTONS.map((b) => (
           <button
             key={b.id}
             type="button"
             onClick={() => onView(b.id)}
             title={b.hint}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+            className={`rounded-full px-2 py-1 text-[11px] font-semibold transition sm:px-4 sm:py-1.5 sm:text-sm ${
               view === b.id ? "bg-amber-400 text-black" : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >
@@ -87,7 +87,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
         <button
           type="button"
           onClick={onClearFocus}
-          className="absolute left-1/2 top-5 z-[100] -translate-x-1/2 rounded-full border border-amber-400/40 bg-black/75 px-4 py-1.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-black"
+          className="absolute left-1/2 top-14 z-[100] -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-400/40 bg-black/75 px-3 py-1 text-xs font-semibold text-white backdrop-blur transition hover:bg-black sm:top-5 sm:px-4 sm:py-1.5 sm:text-sm"
         >
           ← Equipo {TIERS.find((t) => t.id === focus.tier)?.label} · {CONTEXT_LABEL[focus.floor]} · volver al piso
         </button>
