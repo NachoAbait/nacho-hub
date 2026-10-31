@@ -66,11 +66,14 @@ export interface SectorLayout {
   size: [number, number];
 }
 
+// Separados a propósito: antes el cartel de un sector quedaba pegado a los escritorios
+// del sector de adelante (pasillo de 0.75 entre alfombras). Ahora hay pasillo de verdad
+// en los dos ejes, para que cada sector tenga su propio espacio bien delimitado.
 export const SECTORS: SectorLayout[] = [
-  { tier: "readers", center: [-6.5, -3], size: [11, 7] },
-  { tier: "analysts", center: [6.5, -3], size: [11, 7] },
-  { tier: "creators", center: [-6.5, 4.5], size: [11, 6.5] },
-  { tier: "chief", center: [6.5, 4.5], size: [8, 6.5] },
+  { tier: "readers", center: [-7, -4.5], size: [10, 6] },
+  { tier: "analysts", center: [7, -4.5], size: [10, 6] },
+  { tier: "creators", center: [-7, 4.5], size: [10, 5.5] },
+  { tier: "chief", center: [7, 4.5], size: [8, 5.5] },
 ];
 
 const DESK_DX = 3.4;

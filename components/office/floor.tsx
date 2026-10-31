@@ -209,28 +209,28 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               </mesh>
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
-            {/* Cartel a un costado de la alfombra, SOLO en la vista general del piso (no enfocado): al
-                frente quedaba en la línea de los carteles del sector de adelante y los tapaba. Con el
-                sector en foco la cámara mira solo este sector, no hay "sector de adelante" que choque,
-                así que ahí se mantiene el cartel centrado y al frente, como estaba. */}
+            {/* Cartel al frente de la alfombra: con el pasillo que se agrandó entre sectores (ver
+                SECTORS en lib/office/layout.ts) ya no llega a la línea de los carteles del sector de
+                adelante. Siempre con el borde completo y brillo propio, para que se note como el
+                cartel del sector aunque no esté en foco. */}
             <Html
               transform
-              position={focused ? [cx, 1.25, cz + d / 2 - 0.4] : [cx - 4.4, 1.35, cz]}
-              rotation={[-0.3, 0, 0]}
+              position={[cx, 1.3, cz + d / 2 - 0.5]}
+              rotation={[-0.4, 0, 0]}
               distanceFactor={5}
               zIndexRange={[10, 0]}
               style={{ pointerEvents: "none" }}
             >
               <div
-                className={`rounded-lg border-l-4 px-4 py-2 shadow-xl transition ${focused ? "scale-110" : ""}`}
+                className={`rounded-lg border-2 px-4 py-2 shadow-xl transition ${focused ? "scale-110" : ""}`}
                 style={{
                   visibility: labelsShown && (!focusedTier || focused) ? "visible" : "hidden",
                   borderColor: theme.accent,
-                  background: focused ? theme.accent : "rgba(0,0,0,0.9)",
-                  boxShadow: focused ? `0 0 30px ${theme.accent}` : undefined,
+                  background: focused ? theme.accent : "rgba(0,0,0,0.92)",
+                  boxShadow: `0 0 22px ${theme.accent}${focused ? "" : "80"}`,
                 }}
               >
-                <div className={`text-lg font-black uppercase leading-none tracking-tight ${focused ? "text-black" : "text-white"}`}>Equipo {tier.label}</div>
+                <div className={`text-xl font-black uppercase leading-none tracking-tight ${focused ? "text-black" : "text-white"}`}>Equipo {tier.label}</div>
                 <div className={`mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] ${focused ? "text-black/70" : "text-white/60"}`}>
                   {tier.tagline} · {desks.length} {desks.length === 1 ? "agente" : "agentes"}
                 </div>
