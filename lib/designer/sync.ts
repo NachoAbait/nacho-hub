@@ -61,7 +61,10 @@ export async function syncProductsFromNexios(db: SupabaseClient): Promise<SyncRe
       orderByCat.set(category, n);
       const prev = byNexios.get(r.id);
       return {
-        ...(prev ? { id: prev.id } : {}),
+        // El id siempre va explícito (nunca lo dejamos en manos del default de la tabla): en un upsert
+        // por lote, si algunas filas traen "id" y otras no, Postgres les manda NULL a las que no lo
+        // traen en vez de aplicarles el default, y la fila nueva vuela por la constraint not-null.
+        id: prev?.id ?? crypto.randomUUID(),
         nexios_catalog_id: r.id,
         category,
         model: displayModel(r.device_type, r.model),
