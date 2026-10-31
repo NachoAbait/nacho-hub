@@ -209,8 +209,18 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               </mesh>
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
-            {/* Cartel al frente de la alfombra, bajo e inclinado hacia la cámara: no tapa los escritorios. */}
-            <Html transform position={[cx, 1.25, cz + d / 2 - 0.4]} rotation={[-0.45, 0, 0]} distanceFactor={5} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+            {/* Cartel a un costado de la alfombra, SOLO en la vista general del piso (no enfocado): al
+                frente quedaba en la línea de los carteles del sector de adelante y los tapaba. Con el
+                sector en foco la cámara mira solo este sector, no hay "sector de adelante" que choque,
+                así que ahí se mantiene el cartel centrado y al frente, como estaba. */}
+            <Html
+              transform
+              position={focused ? [cx, 1.25, cz + d / 2 - 0.4] : [cx - 4.4, 1.35, cz]}
+              rotation={[-0.3, 0, 0]}
+              distanceFactor={5}
+              zIndexRange={[10, 0]}
+              style={{ pointerEvents: "none" }}
+            >
               <div
                 className={`rounded-lg border-l-4 px-4 py-2 shadow-xl transition ${focused ? "scale-110" : ""}`}
                 style={{
