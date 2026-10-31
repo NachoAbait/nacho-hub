@@ -3,7 +3,7 @@ import { agentsFor, type AgentDef, type Tier } from "@/lib/agents";
 
 /** Medidas del piso en unidades de escena (≈ metros). */
 export const FLOOR_W = 26;
-export const FLOOR_D = 16;
+export const FLOOR_D = 20;
 export const WALL_H = 4.6;
 /** Distancia vertical entre planta baja y primer piso. */
 export const FLOOR_GAP = 9;
@@ -67,13 +67,14 @@ export interface SectorLayout {
 }
 
 // Separados a propósito: antes el cartel de un sector quedaba pegado a los escritorios
-// del sector de adelante (pasillo de 0.75 entre alfombras). Ahora hay pasillo de verdad
-// en los dos ejes, para que cada sector tenga su propio espacio bien delimitado.
+// del sector de adelante. Ahora hay pasillo de verdad en los dos ejes, y la fila de
+// adelante (creators/chief) quedó bien lejos de la de atrás (readers/analysts) para que
+// el cartel de una fila nunca tape los agentes de la otra.
 export const SECTORS: SectorLayout[] = [
-  { tier: "readers", center: [-7, -4.5], size: [10, 6] },
-  { tier: "analysts", center: [7, -4.5], size: [10, 6] },
-  { tier: "creators", center: [-7, 4.5], size: [10, 5.5] },
-  { tier: "chief", center: [7, 4.5], size: [8, 5.5] },
+  { tier: "readers", center: [-7, -5.8], size: [10, 6] },
+  { tier: "analysts", center: [7, -5.8], size: [10, 6] },
+  { tier: "creators", center: [-7, 5.8], size: [10, 5.5] },
+  { tier: "chief", center: [7, 5.8], size: [8, 5.5] },
 ];
 
 const DESK_DX = 3.4;

@@ -58,6 +58,7 @@ export default function Scene({ view, focus, statuses, selectedId, onSelect, onF
           onSelect={onSelect}
           onFocusSector={(tier) => onFocusSector(theme.id, tier)}
           visible={view === "AMBOS" || view === theme.id}
+          compact={view === "AMBOS"}
         />
       ))}
       <CameraRig view={view} focus={focus} />

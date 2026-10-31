@@ -19,6 +19,10 @@ interface Props {
   onSelect: (id: string) => void;
   onFocusSector: (tier: Tier | null) => void;
   visible: boolean;
+  /** Vista "Ambos": los dos pisos a la vez, cámara bien lejos. Ahí los carteles de sector
+   * de un piso pueden terminar en la línea de los agentes del piso de al lado: se esconden,
+   * total lo importante en esa vista son los agentes, no el cartel de cada sector. */
+  compact?: boolean;
 }
 
 function Plant({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
@@ -69,7 +73,7 @@ function applyOpacity(list: Material[], value: number) {
   }
 }
 
-export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFocusSector, visible }: Props) {
+export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFocusSector, visible, compact }: Props) {
   const layout = floorLayout(theme.id);
   const group = useRef<Group>(null);
   const materials = useRef<Material[]>([]);
@@ -205,7 +209,10 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               <div
                 className={`rounded-lg border-2 px-4 py-2 shadow-xl transition ${focused ? "scale-110" : ""}`}
                 style={{
-                  visibility: labelsShown && (!focusedTier || focused) ? "visible" : "hidden",
+                  // En "Ambos" sin nada enfocado (la vista general de los dos pisos) se esconde: ahí
+                  // es donde un cartel de sector podía terminar en la línea de los agentes del piso
+                  // de al lado. Enfocado sí se muestra (ahí la cámara está cerca, como en un piso solo).
+                  visibility: labelsShown && (focused || (!compact && !focusedTier)) ? "visible" : "hidden",
                   borderColor: theme.accent,
                   background: focused ? theme.accent : "rgba(0,0,0,0.92)",
                   boxShadow: `0 0 22px ${theme.accent}${focused ? "" : "80"}`,
