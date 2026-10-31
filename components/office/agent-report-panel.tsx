@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { loadAgentReport, type AgentReportData } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { BusinessContext } from "@/lib/types";
 
 /**
@@ -28,7 +29,7 @@ export function AgentReportPanel({ agentId, context }: { agentId: string; contex
         Último informe{report?.date ? ` · ${report.date}` : ""}
       </h3>
       {report === undefined ? (
-        <p className="text-xs text-white/50">Cargando…</p>
+        <PanelSkeleton />
       ) : report ? (
         <div className="text-[13px] leading-relaxed text-white/80 [&_a]:text-amber-300 [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-bold [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-2">
           <Markdown>{report.markdown}</Markdown>

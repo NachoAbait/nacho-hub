@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { applyAllRecommended, confirmPriceUpdate, loadPriceComparison, selectSupplierForProduct, type ComparisonRow } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
@@ -40,7 +41,7 @@ export function PriceAnalystPanel() {
   const reload = () => { loadPriceComparison().then(setRows); };
   useEffect(() => { reload(); }, []);
 
-  if (rows === null) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (rows === null) return <PanelSkeleton />;
   if (rows.length === 0) {
     return <p className="text-xs text-white/50">Todavía no hay cotizaciones de hoy para comparar. Pegale una lista a Lucas primero.</p>;
   }

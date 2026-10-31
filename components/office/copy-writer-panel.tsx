@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { loadCaptionSets, type CaptionSetData, type CaptionVariant } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { BusinessContext } from "@/lib/types";
 
 function VariantCard({ v }: { v: CaptionVariant }) {
@@ -42,7 +43,7 @@ export function CopyWriterPanel({ context }: { context: BusinessContext }) {
   useEffect(() => { loadCaptionSets(context).then((value) => setLoaded({ context, value })); }, [context]);
   const data = loaded?.context === context ? loaded.value : undefined;
 
-  if (data === undefined) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (data === undefined) return <PanelSkeleton />;
   if (!data || data.sets.length === 0) return <p className="text-xs text-white/50">Todavía no hay captions para hoy.</p>;
 
   return (

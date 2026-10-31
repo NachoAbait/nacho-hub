@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { loadChiefBrief, type ChiefBriefData } from "@/app/actions";
 import { AGENTS } from "@/lib/agents";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { BusinessContext } from "@/lib/types";
 
 /** El Daily Brief de Ernesto, como tarjetas: acciones numeradas, alertas si hay, y quién reportó hoy. */
@@ -11,7 +12,7 @@ export function ChiefOfStaffPanel({ context }: { context: BusinessContext }) {
   useEffect(() => { loadChiefBrief(context).then((value) => setLoaded({ context, value })); }, [context]);
   const data = loaded?.context === context ? loaded.value : undefined;
 
-  if (data === undefined) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (data === undefined) return <PanelSkeleton />;
   if (!data || !data.brief) return <p className="text-xs text-white/50">Todavía no hay Daily Brief para hoy.</p>;
 
   const { brief } = data;

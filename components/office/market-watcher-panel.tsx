@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { loadMarketReport, type MarketReport } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { BusinessContext } from "@/lib/types";
 
 const DOLAR_COLOR: Record<string, string> = {
@@ -29,7 +30,7 @@ export function MarketWatcherPanel({ context }: { context: BusinessContext }) {
   useEffect(() => { loadMarketReport(context).then((report) => setLoaded({ context, report })); }, [context]);
   const report = loaded?.context === context ? loaded.report : null;
 
-  if (report === null) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (report === null) return <PanelSkeleton />;
 
   return (
     <div className="flex flex-col gap-3 text-[11px]">

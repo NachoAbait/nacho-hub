@@ -16,6 +16,7 @@ import {
   saveSuppliers,
   type PriceReaderPanelData,
 } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { PendingSender, SupplierToday } from "@/lib/suppliers";
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
@@ -357,7 +358,7 @@ export function PriceReaderPanel() {
   useEffect(() => { reload(); }, []);
 
   if (err) return <p className="text-xs text-red-300">{err}</p>;
-  if (!data) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (!data) return <PanelSkeleton />;
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
       <SupplierTodayBox data={data} />

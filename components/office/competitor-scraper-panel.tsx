@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { loadCompetitorPrices, type CompetitorPrice } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 import type { BusinessContext } from "@/lib/types";
 
 type Data = { date: string; prices: CompetitorPrice[]; markdown: string } | null;
@@ -13,7 +14,7 @@ export function CompetitorScraperPanel({ context }: { context: BusinessContext }
   useEffect(() => { loadCompetitorPrices(context).then((value) => setLoaded({ context, value })); }, [context]);
   const data = loaded?.context === context ? loaded.value : undefined;
 
-  if (data === undefined) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (data === undefined) return <PanelSkeleton />;
   if (!data) return <p className="text-xs text-white/50">Todavía no hay informe de hoy.</p>;
 
   return (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { loadGlobalHighlights, loadMarketReport, type Highlight, type MarketReport } from "@/app/actions";
+import { ListSkeleton, PanelSkeleton } from "@/components/office/skeleton";
 
 function timeAgo(pubDate: string): string {
   const t = new Date(pubDate).getTime();
@@ -22,7 +23,7 @@ export function GlobalAnalystPanel() {
   useEffect(() => { loadGlobalHighlights().then(setData); }, []);
   useEffect(() => { loadMarketReport("GLOBAL").then((r) => setNews(r.news)); }, []);
 
-  if (data === undefined) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (data === undefined) return <PanelSkeleton />;
   if (!data) return <p className="text-xs text-white/50">Todavía no hay informe de hoy.</p>;
 
   return (
@@ -41,7 +42,7 @@ export function GlobalAnalystPanel() {
       <div className="flex flex-col gap-1.5">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Noticias</h3>
         {news === undefined ? (
-          <p className="text-white/50">Cargando…</p>
+          <ListSkeleton />
         ) : news.length === 0 ? (
           <p className="text-white/50">No encontré titulares relevantes ahora.</p>
         ) : (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { loadStockReport, type StockReport } from "@/app/actions";
+import { PanelSkeleton } from "@/components/office/skeleton";
 
 function money(n: number): string {
   return `US$ ${Math.round(n).toLocaleString("es-AR")}`;
@@ -46,7 +47,7 @@ export function StockAnalystPanel() {
 
   useEffect(() => { loadStockReport().then(setReport); }, []);
 
-  if (report === null) return <p className="text-xs text-white/50">Cargando…</p>;
+  if (report === null) return <PanelSkeleton />;
   if (!report.available) return <p className="text-xs text-white/50">No tengo acceso a NexiOS ahora mismo.</p>;
 
   const dead = report.rows.filter((r) => r.units > 0 && r.soldUnits === 0 && r.agingDays > 30).sort((a, b) => b.costUsd - a.costUsd);
