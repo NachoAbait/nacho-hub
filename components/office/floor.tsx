@@ -189,20 +189,17 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
               </mesh>
             )}
             <Lamp position={[cx, 3.4, cz]} accent={theme.accent} />
-            {/* Cartel por encima del sector, no adelante de los escritorios: centrado en X/Z del
-                sector (no al frente ni atrás, que ahí sí chocaba con el cartel de marca o con el
-                sector vecino) y bien arriba, por encima de las cabezas de todos los carteles de
-                agentes. Con el sector en foco la cámara queda muy cerca: a esa altura el cartel se
-                ve enorme y tapa hasta el header, así que ahí vuelve a la posición baja y al frente,
-                que a esa distancia de cámara ya se ve clara y separada de todo.
-                Nota: en la vista "Ambos" (los dos pisos a la vez, cámara bien lejos) algún par de
-                carteles de sectores vecinos todavía queda un poco justo — no se resolvió del todo,
-                queda para una vuelta aparte si hace falta pulirlo más. */}
+            {/* Cartel por encima del sector, nunca adelante/abajo de los escritorios: sin foco va
+                centrado en el sector y bien arriba, por encima de las cabezas de todos los carteles
+                de agentes. Con el sector en foco la cámara queda mucho más cerca (zoom), así que
+                distanceFactor baja para que no se vea gigante, y en vez de ir tan arriba (chocaría
+                con el header) va apenas por encima de la fila de atrás del sector — sigue siendo
+                "por encima", solo que a una escala que entra en el cuadro de esa cámara. */}
             <Html
               transform
-              position={focused ? [cx, 1.3, cz + d / 2 - 0.5] : [cx, 3.8, cz]}
-              rotation={focused ? [-0.4, 0, 0] : [0, 0, 0]}
-              distanceFactor={focused ? 5 : 6}
+              position={focused ? [cx, 3, cz - d / 2 + 0.5] : [cx, 3.8, cz]}
+              rotation={[0, 0, 0]}
+              distanceFactor={focused ? 3 : 6}
               zIndexRange={[10, 0]}
               style={{ pointerEvents: "none" }}
             >
