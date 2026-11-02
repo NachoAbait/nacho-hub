@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { applyCatalogVisibility, confirmPriceUpdate, createCatalogProduct, loadCatalogManagerPanel, setCatalogManagerAuto, type CatalogManagerData } from "@/app/actions";
+import {
+  applyCatalogVisibility,
+  confirmPriceUpdate,
+  createCatalogProduct,
+  loadCatalogManagerPanel,
+  setCatalogManagerAuto,
+  type CatalogManagerData,
+  type PendingPriceUpdate,
+} from "@/app/actions";
 import { PanelSkeleton } from "@/components/office/skeleton";
-import { CATEGORY_LABEL } from "@/lib/types";
+import type { PendingNewModel } from "@/lib/agents/catalog-manager";
+import { CATEGORY_LABEL, type Category } from "@/lib/types";
+
+const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
 
@@ -11,13 +22,28 @@ function money(n: number): string {
   return `US$ ${n.toLocaleString("es-AR")}`;
 }
 
-function productLabel(category: string, model: string, capacity: string | null): string {
-  return `${CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL]}: ${model}${capacity ? ` ${capacity}` : ""}`;
+function label(model: string, capacity: string | null): string {
+  return capacity ? `${model} ${capacity}` : model;
 }
 
-/** El panel de Bruno, de arriba a abajo: modo automático o manual, los precios de productos ya
- * creados esperando que confirmes el costo nuevo, los cambios de visibilidad, y al final los
- * modelos nuevos que todavía no están cargados en la app. */
+/** Agrupa por categoría y las ordena según CATEGORY_ORDER, como hace el panel de Martín. */
+function byCategory<T extends { category: Category }>(items: T[]): [Category, T[]][] {
+  const map = new Map<Category, T[]>();
+  for (const item of items) {
+    const list = map.get(item.category) ?? [];
+    list.push(item);
+    map.set(item.category, list);
+  }
+  return CATEGORY_ORDER.map((c) => [c, map.get(c) ?? []] as [Category, T[]]).filter(([, list]) => list.length > 0);
+}
+
+/**
+ * El panel de Bruno, con el mismo formato que el de Martín: separado por categoría. Primero, para
+ * cada categoría, los productos YA creados con precio nuevo esperando confirmación (precio en la
+ * app → precio nuevo, botón Habilitar). Después, en celeste, los que todavía no están cargados en
+ * la app (botón Crear). Los cambios de visibilidad (ocultar/mostrar por falta de stock) van aparte,
+ * al final, porque es una decisión distinta a cambiar o crear un precio.
+ */
 export function CatalogManagerPanel() {
   const [data, setData] = useState<CatalogManagerData | undefined>(undefined);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -39,6 +65,12 @@ export function CatalogManagerPanel() {
     });
   }
 
+  const priceGroups = byCategory(data.pendingPriceUpdates);
+  const newGroups = byCategory(data.newModels);
+  const categoriesWithStuff = CATEGORY_ORDER.filter(
+    (c) => priceGroups.some(([cat]) => cat === c) || newGroups.some(([cat]) => cat === c),
+  );
+
   return (
     <div className="flex flex-col gap-3 text-[11px]">
       <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
@@ -56,27 +88,59 @@ export function CatalogManagerPanel() {
         </button>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
-          Precios para actualizar · {data.pendingPriceUpdates.length}
-        </h3>
-        {data.pendingPriceUpdates.length === 0 && <p className="text-white/50">Nada esperando confirmación de costo.</p>}
-        {data.pendingPriceUpdates.map((p) => (
-          <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
-            <div className="min-w-0">
-              <div className="truncate font-semibold text-white/90">{productLabel(p.category, p.model, p.capacity)}</div>
-              <div className="text-white/50">
-                {p.previousCost != null ? `${money(p.previousCost)} → ` : ""}
-                <span className="font-semibold text-amber-300">{money(p.newCost)}</span>
-                {p.supplierName ? ` · ${p.supplierName}` : ""}
-              </div>
+      {msg && <p className="text-white/50">{msg}</p>}
+
+      {categoriesWithStuff.length === 0 && (
+        <p className="text-white/50">Nada esperando: ni precios para actualizar ni modelos nuevos.</p>
+      )}
+
+      {categoriesWithStuff.map((category) => {
+        const priced: PendingPriceUpdate[] = priceGroups.find(([c]) => c === category)?.[1] ?? [];
+        const fresh: PendingNewModel[] = newGroups.find(([c]) => c === category)?.[1] ?? [];
+        return (
+          <div key={category} className="overflow-hidden rounded-lg border border-white/10">
+            <div className="bg-white/10 px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-white/70">
+              {CATEGORY_LABEL[category]}
             </div>
-            <button type="button" className={btn} disabled={pendingId === p.id} onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}>
-              {pendingId === p.id ? "…" : "Aplicar"}
-            </button>
+            <div className="flex flex-col divide-y divide-white/5">
+              {priced.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2 px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-white/90">{label(p.model, p.capacity)}</div>
+                    <div className="text-white/50">
+                      {p.previousCost != null ? `${money(p.previousCost)} en la app → ` : "sin precio previo → "}
+                      <span className="font-semibold text-amber-300">{money(p.newCost)}</span>
+                      {p.supplierName ? ` · ${p.supplierName}` : ""}
+                    </div>
+                  </div>
+                  <button type="button" className={btn} disabled={pendingId === p.id} onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}>
+                    {pendingId === p.id ? "…" : "Habilitar"}
+                  </button>
+                </div>
+              ))}
+              {fresh.map((m) => (
+                <div key={m.id} className="flex items-center justify-between gap-2 border-sky-400/30 bg-sky-400/10 px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-sky-200">{label(m.model, m.capacity)} <span className="ml-1 text-[9px] font-bold uppercase tracking-wide text-sky-300">nuevo</span></div>
+                    <div className="text-sky-200/60">
+                      costo {money(m.detectedCostUsd)} de {m.supplierName ?? "proveedor"}
+                      {m.suggestedPrice != null && <> · sugerido {money(m.suggestedPrice)} (margen {money(m.suggestedMargin!)})</>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
+                    disabled={pendingId === m.id}
+                    onClick={() => run(m.id, () => createCatalogProduct(m.id))}
+                  >
+                    {pendingId === m.id ? "Creando…" : "Crear"}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
 
       {data.auto ? (
         <div className="grid grid-cols-2 gap-2">
@@ -117,36 +181,6 @@ export function CatalogManagerPanel() {
           ))}
         </div>
       )}
-
-      {data.newModels.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
-            Modelos nuevos · {data.newModels.length}
-          </h3>
-          {data.newModels.map((m) => (
-            <div key={m.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-2 py-1.5">
-              <div className="min-w-0">
-                <div className="truncate font-semibold text-white/90">
-                  {CATEGORY_LABEL[m.category]}: {m.model}{m.capacity ? ` ${m.capacity}` : ""}
-                </div>
-                <div className="text-white/50">
-                  costo US$ {m.detectedCostUsd} de {m.supplierName ?? "proveedor"}
-                  {m.suggestedPrice != null && <> · sugerido US$ {m.suggestedPrice} (margen US$ {m.suggestedMargin})</>}
-                </div>
-              </div>
-              <button type="button" className={btn} disabled={pendingId === m.id} onClick={() => run(m.id, () => createCatalogProduct(m.id))}>
-                {pendingId === m.id ? "Creando…" : "Crear"}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {data.newModels.length === 0 && data.auto && (
-        <p className="text-white/50">No hay modelos nuevos esperando.</p>
-      )}
-
-      {msg && <p className="text-white/50">{msg}</p>}
     </div>
   );
 }
