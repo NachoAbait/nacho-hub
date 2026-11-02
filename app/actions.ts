@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { REGISTRY } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
@@ -41,6 +42,22 @@ export interface ActionResult {
 
 function fail(err: unknown): ActionResult {
   return { ok: false, message: err instanceof Error ? err.message : "Error desconocido" };
+}
+
+/**
+ * Playwright puede tardar más que el límite de la página (60s). Si la regeneración de banners
+ * va adentro del mismo request que el click de Nacho, un banner lento mata la función antes de que
+ * la confirmación (que ya se guardó en la base) llegue a responderle al panel, y la celda se queda
+ * amarilla aunque por detrás ya esté aplicado. `after()` corre esto una vez que la respuesta ya salió.
+ */
+function regenerateBannersAfterResponse(categories: Category[]): void {
+  after(async () => {
+    try {
+      await generateAllBanners(categories);
+    } catch {
+      // Un banner que falla no debe arruinar nada: el precio ya quedó aplicado antes de esto.
+    }
+  });
 }
 
 /** "Correr ahora": corre cualquier agente registrado en todos sus contextos. */
@@ -308,7 +325,7 @@ export async function applyAllRecommended(): Promise<ActionResult> {
     const r = await confirmAllUpdates(db, todayArt());
     if (r.categories.length) {
       await syncProductsFromNexios(db);
-      await generateAllBanners(r.categories.filter(isCategory));
+      regenerateBannersAfterResponse(r.categories.filter(isCategory));
     }
     revalidatePath("/");
     return r.applied === 0
@@ -326,7 +343,7 @@ export async function confirmPriceUpdate(id: string): Promise<ActionResult> {
     const r = await confirmUpdate(db, id);
     if (r.applied && r.category && isCategory(r.category)) {
       await syncProductsFromNexios(db);
-      await generateAllBanners([r.category]);
+      regenerateBannersAfterResponse([r.category]);
     }
     revalidatePath("/");
     return { ok: true, message: r.applied ? "Aplicado" : "Confirmado" };
@@ -343,7 +360,7 @@ export async function correctPriceUpdate(id: string, listedUnitPrice: number): P
     const r = await correctUpdate(db, id, listedUnitPrice);
     if (r.category && isCategory(r.category)) {
       await syncProductsFromNexios(db);
-      await generateAllBanners([r.category]);
+      regenerateBannersAfterResponse([r.category]);
     }
     revalidatePath("/");
     return { ok: true, message: `Costo US$ ${r.cost}${r.newPrice != null ? ` · precio US$ ${r.newPrice}` : ""}. Lo voy a recordar para este proveedor.` };
@@ -352,23 +369,67 @@ export async function correctPriceUpdate(id: string, listedUnitPrice: number): P
   }
 }
 
+export interface PendingPriceUpdate {
+  id: string;
+  category: Category;
+  model: string;
+  capacity: string | null;
+  previousCost: number | null;
+  newCost: number;
+  supplierName: string | null;
+}
+
 export interface CatalogManagerData {
   date: string;
   auto: boolean;
   hidden: number;
   shown: number;
+  pendingPriceUpdates: PendingPriceUpdate[];
   pendingVisibility: PendingVisibility[];
   newModels: PendingNewModel[];
 }
 
-/** El panel de Bruno: modo actual, lo que ocultó/mostró (automático) o dejó pendiente (manual), y los modelos nuevos. */
+/**
+ * Los productos YA creados que Martín dejó esperando tu confirmación de costo (precio anterior ->
+ * nuevo), para mostrarlos ANTES de los modelos nuevos a crear: primero lo que ya existe, al final lo
+ * que falta cargar. Vivo (no del informe de Bruno) para que se vea al toque, igual que el panel de Martín.
+ */
+async function pendingPriceUpdatesToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingPriceUpdate[]> {
+  const { data: rows } = await db
+    .from("price_updates")
+    .select("id, category, model, capacity, previous_cost_usd, detected_cost_usd, supplier_id")
+    .eq("status", "detected")
+    .eq("review_status", "pending")
+    .gte("created_at", `${todayArt()}T00:00:00-03:00`)
+    .returns<{ id: string; category: Category; model: string; capacity: string | null; previous_cost_usd: number | null; detected_cost_usd: number; supplier_id: string | null }[]>();
+  if (!rows?.length) return [];
+
+  const supplierIds = [...new Set(rows.map((r) => r.supplier_id).filter((v): v is string => !!v))];
+  const supplierNames = new Map<string, string>();
+  if (supplierIds.length) {
+    const { data: sup } = await db.from("suppliers").select("id, name, phone").in("id", supplierIds);
+    for (const s of sup ?? []) supplierNames.set(s.id, s.name ?? s.phone);
+  }
+
+  return rows
+    .map((r): PendingPriceUpdate => ({
+      id: r.id, category: r.category, model: r.model, capacity: r.capacity,
+      previousCost: r.previous_cost_usd == null ? null : Number(r.previous_cost_usd),
+      newCost: Number(r.detected_cost_usd),
+      supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
+    }))
+    .sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
+}
+
+/** El panel de Bruno: precios de productos existentes para confirmar, cambios de visibilidad, y al final los modelos nuevos para cargar. */
 export async function loadCatalogManagerPanel(): Promise<CatalogManagerData> {
   const db = supabaseAdmin();
   const auto = await getSetting<boolean>(db, "catalog_manager_auto", false);
+  const pendingPriceUpdates = await pendingPriceUpdatesToday(db);
   const rep = await latestReport(db, "catalog-manager", "BNB");
-  if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingVisibility: [], newModels: [] };
+  if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingPriceUpdates, pendingVisibility: [], newModels: [] };
   const raw = (rep.raw_data_json ?? {}) as { hidden?: number; shown?: number; pendingVisibility?: PendingVisibility[]; newModels?: PendingNewModel[] };
-  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingVisibility: raw.pendingVisibility ?? [], newModels: raw.newModels ?? [] };
+  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingPriceUpdates, pendingVisibility: raw.pendingVisibility ?? [], newModels: raw.newModels ?? [] };
 }
 
 /** El switch del panel de Bruno: vos decidís cuándo pasa de confirmar uno por uno a automático. */
@@ -439,7 +500,7 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
       .eq("id", updateId);
 
     await syncProductsFromNexios(db);
-    await generateAllBanners([u.category]);
+    regenerateBannersAfterResponse([u.category]);
     revalidatePath("/");
     return { ok: true, message: `Creado: US$ ${cost} + margen US$ ${margin} = US$ ${price}` };
   } catch (err) {
