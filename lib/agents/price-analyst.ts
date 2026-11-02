@@ -18,22 +18,35 @@ interface DecisionKey {
  * en vez de dejar una segunda fila duplicada. Si la de antes ya se había aprobado, esta es una nueva.
  */
 async function upsertDecision(db: SupabaseClient, today: string, key: DecisionKey, fields: Record<string, unknown>): Promise<void> {
-  let q = db
-    .from("price_updates")
-    .select("id")
-    .gte("created_at", `${today}T00:00:00-03:00`)
-    .not("review_status", "in", "(confirmed,corrected)");
-
-  if (key.hub_product_id) {
-    q = q.eq("hub_product_id", key.hub_product_id);
-  } else if (key.nexios_catalog_id) {
-    q = q.eq("nexios_catalog_id", key.nexios_catalog_id);
-  } else {
-    q = q.is("hub_product_id", null).is("nexios_catalog_id", null).eq("category", key.category).eq("model", key.model);
-    q = key.capacity ? q.eq("capacity", key.capacity) : q.is("capacity", null);
+  if (key.hub_product_id || key.nexios_catalog_id) {
+    let q = db
+      .from("price_updates")
+      .select("id")
+      .gte("created_at", `${today}T00:00:00-03:00`)
+      .not("review_status", "in", "(confirmed,corrected)");
+    q = key.hub_product_id ? q.eq("hub_product_id", key.hub_product_id) : q.eq("nexios_catalog_id", key.nexios_catalog_id);
+    const { data: existing } = await q.limit(1).maybeSingle<{ id: string }>();
+    if (existing) await db.from("price_updates").update(fields).eq("id", existing.id);
+    else await db.from("price_updates").insert(fields);
+    return;
   }
 
-  const { data: existing } = await q.limit(1).maybeSingle<{ id: string }>();
+  // Modelo nuevo (sin match en el catálogo): el texto que arma el modelo + chip + celular +
+  // pulgadas varía de corrida a corrida (orden de palabras, "AppleWatch" vs "Apple Watch", "+Cell"
+  // vs "+ Cell"), así que una igualdad exacta de texto nunca encontraba la fila ya pendiente y
+  // dejaba una nueva cada vez que Martín volvía a correr — de ahí los "modelos nuevos" duplicados
+  // en el panel de Bruno. Comparamos con la misma clave normalizada que usa el resto del matching.
+  const { data: candidates } = await db
+    .from("price_updates")
+    .select("id, model, capacity")
+    .gte("created_at", `${today}T00:00:00-03:00`)
+    .not("review_status", "in", "(confirmed,corrected)")
+    .is("hub_product_id", null)
+    .is("nexios_catalog_id", null)
+    .eq("category", key.category)
+    .returns<{ id: string; model: string; capacity: string | null }[]>();
+  const targetKey = entryKey(key.category, key.model, key.capacity);
+  const existing = (candidates ?? []).find((c) => entryKey(key.category, c.model, c.capacity) === targetKey);
   if (existing) await db.from("price_updates").update(fields).eq("id", existing.id);
   else await db.from("price_updates").insert(fields);
 }
