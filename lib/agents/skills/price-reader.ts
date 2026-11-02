@@ -25,8 +25,12 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
    El chip y el tamaño en pulgadas NO van en el modelo (van en sus propios campos, reglas 5 y 6); el tamaño en mm de
    Apple Watch sí se queda en el modelo porque no tiene campo propio.
 4. Conectividad celular (+Cell / eSIM): un proveedor puede escribirla "+ Cell", "+Cell", "Cellular", "GPS + Cellular",
-   "con eSIM" o "4G". Es un campo propio, aparte del modelo: cellular true si lo menciona, false si no. Aplica a iPad
-   y Apple Watch. Es un producto FÍSICAMENTE DISTINTO del WiFi-only, nunca el mismo, aunque todo lo demás sea igual.
+   "con eSIM" o "4G". Es un campo propio, aparte del modelo: cellular true si lo menciona, false si no.
+   SOLO existe como producto distinto para iPad y Apple Watch (ahí sí es un producto FÍSICAMENTE DISTINTO del
+   WiFi-only, nunca el mismo, aunque todo lo demás sea igual). Para iPhone y Samsung, cellular es SIEMPRE false,
+   aunque el proveedor escriba "ESIM" o "eSIM" al lado: todos los celulares ya traen conectividad celular de
+   fábrica, mencionarlo no es un producto aparte. Si ves "iPhone 17 Pro Max ESIM" es el mismo "iPhone 17 Pro Max"
+   de siempre, no un modelo nuevo — no lo separes ni lo marques cellular true.
 5. Chip: el procesador si el proveedor lo menciona (M4, M5, M5 Pro, M5 Max, A18, A18 Pro…), SIEMPRE separado del
    modelo. Si no lo menciona, null. Es un campo propio porque cada proveedor lo escribe en un lugar distinto de la
    línea (antes o después del tamaño), y si quedara pegado al modelo el mismo producto parece dos productos
