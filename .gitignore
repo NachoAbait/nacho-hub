@@ -42,5 +42,7 @@ next-env.d.ts
 
 # puente de WhatsApp (sesión y secretos)
 bridge/whatsapp/auth
+bridge/whatsapp/auth.bak-*
 bridge/whatsapp/.env
 bridge/whatsapp/node_modules
+bridge/whatsapp/qr.png

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
 import qrcode from "qrcode-terminal";
+import qrcodePng from "qrcode";
 
 // Mini lector de .env (sin dependencias)
 if (existsSync(new URL("./.env", import.meta.url))) {
@@ -69,6 +70,7 @@ async function start() {
     if (qr) {
       console.log("\nEscaneá este QR desde WhatsApp > Dispositivos vinculados > Vincular un dispositivo:\n");
       qrcode.generate(qr, { small: true });
+      qrcodePng.toFile(new URL("./qr.png", import.meta.url).pathname, qr, { width: 400 }).catch(() => {});
     }
     if (connection === "open") {
       reconnectAttempts = 0;
