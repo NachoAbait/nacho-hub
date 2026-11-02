@@ -147,7 +147,10 @@ export const priceAnalyst: AgentModule = {
       if (!entry) {
         // Sin match en el catálogo: mostramos el modelo con el chip, celular y pulgadas pegados (el
         // catálogo no tiene esos campos separados, así que acá tampoco hay dónde más ponerlos).
-        const fullModel = [best.model, best.chip, best.cellular ? "+ Cell" : null, best.inches ? `${best.inches}"` : null].filter(Boolean).join(" ");
+        // Las pulgadas se redondean hacia abajo (15.3" es un Air "de 15"): si no, "Air 15.3 M5"
+        // quedaba con un token de más (el ".3") y nunca machea ni con el catálogo ni con "Air 15 M5"
+        // de otro proveedor que sí redondeó.
+        const fullModel = [best.model, best.chip, best.cellular ? "+ Cell" : null, best.inches ? `${Math.floor(best.inches)}"` : null].filter(Boolean).join(" ");
         await upsertDecision(ctx.db, today, { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: fullModel, capacity: best.capacity }, {
           category: best.category, model: fullModel, capacity: best.capacity,
           detected_cost_usd: best.cost_usd, original_price_usd: best.original_price_usd,

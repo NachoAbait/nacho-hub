@@ -122,12 +122,19 @@ export function matchCatalog(
     const exact = pick(exactList);
     if (exact) return exact;
   }
-  const wantModel = normalizeModel(fullModelText(model, chip, cellular, inches));
+  // Lucas puede detectar menos detalle del que ya tiene cargado el catálogo (ej. cotización dice
+  // "NEO 13" y el catálogo ya tiene "MacBook NEO A18 Pro 13"): si TODO lo que detectó está contenido
+  // en una fila del catálogo, es la misma. Nunca al revés — si lo detectado tiene palabras DE MÁS
+  // que el catálogo no tiene (ej. "AirPods 4 Noise Cancelling" cuando el catálogo solo tiene
+  // "AirPods 4" a secas), esas palabras de más pueden ser un producto realmente distinto, así que
+  // no se adivina: queda sin aplicar y aparece como modelo nuevo para que Nacho decida.
+  const wantTokens = new Set(normalizeModel(fullModelText(model, chip, cellular, inches)).split(/\s+/).filter(Boolean));
   const wantCap = normalizeCapacity(capacity);
-  const candidates = [...index.values()].flat().filter(
-    (e) => e.category === category && normalizeCapacity(e.capacity) === wantCap &&
-      (normalizeModel(e.model) === wantModel || normalizeModel(e.model).endsWith(" " + wantModel) || wantModel.endsWith(" " + normalizeModel(e.model))),
-  );
+  const candidates = [...index.values()].flat().filter((e) => {
+    if (e.category !== category || normalizeCapacity(e.capacity) !== wantCap) return false;
+    const eTokens = normalizeModel(e.model).split(/\s+/).filter(Boolean);
+    return [...wantTokens].every((t) => eTokens.includes(t));
+  });
   return candidates.length === 1 ? candidates[0] : pick(candidates);
 }
 

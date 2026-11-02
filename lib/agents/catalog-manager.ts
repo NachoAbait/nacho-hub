@@ -13,6 +13,8 @@ export interface PendingNewModel {
   supplierName: string | null;
   suggestedMargin: number | null;
   suggestedPrice: number | null;
+  /** Ya lo creaste hoy: el panel lo muestra en verde en vez de sacarlo de la lista. */
+  confirmed: boolean;
 }
 
 export interface PendingVisibility {
@@ -109,6 +111,7 @@ export const catalogManager: AgentModule = {
         id: p.id, category: p.category, model: p.model, capacity: p.capacity, detectedCostUsd: cost,
         supplierName: p.supplier_id ? supplierNames.get(p.supplier_id) ?? null : null,
         suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
+        confirmed: false,
       };
     });
 

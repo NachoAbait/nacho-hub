@@ -37,32 +37,22 @@ function byCategory<T extends { category: Category }>(items: T[]): [Category, T[
   return CATEGORY_ORDER.map((c) => [c, map.get(c) ?? []] as [Category, T[]]).filter(([, list]) => list.length > 0);
 }
 
-/** Fila ya confirmada: se queda en el lugar donde estaba, en verde, sin botón. */
-function DoneRow({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-      <div className="min-w-0">
-        <div className="truncate font-semibold text-green-400">{title}</div>
-        <div className="text-green-400/60">{subtitle}</div>
-      </div>
-      <span className="text-sm text-green-400">✓</span>
-    </div>
-  );
-}
-
 /**
  * El panel de Bruno, con el mismo formato que el de Martín: separado por categoría. Primero, para
  * cada categoría, los productos YA creados con precio nuevo esperando confirmación (precio en la
  * app → precio nuevo, botón Habilitar). Después, en celeste, los que todavía no están cargados en
  * la app (botón Crear). Los cambios de visibilidad (ocultar/mostrar por falta de stock) van aparte,
  * al final. Confirmar un ítem no lo hace desaparecer: se queda en el mismo lugar, pasa a verde y
- * pierde el botón, para que quede claro qué ya quedó resuelto en esta sesión.
+ * pierde el botón — y eso se guarda del lado del servidor (lo que confirmaste HOY), no solo en la
+ * pestaña abierta: cerrar y volver a abrir el panel no lo hace desaparecer.
  */
 export function CatalogManagerPanel() {
   const [data, setData] = useState<CatalogManagerData | undefined>(undefined);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [doneRows, setDoneRows] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
+  // Visibilidad no tiene un registro propio en la base (solo toca NexiOS directo), así que acá sí
+  // se pierde al cerrar el panel — a diferencia de Habilitar/Crear, que el servidor recuerda.
+  const [doneVisibility, setDoneVisibility] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
   const [, start] = useTransition();
 
   const reload = () => { loadCatalogManagerPanel().then(setData); };
@@ -76,26 +66,15 @@ export function CatalogManagerPanel() {
       const r = await action();
       setMsg(r.message);
       setPendingId(null);
-      if (r.ok && done) setDoneRows((prev) => new Map(prev).set(key, done));
+      if (r.ok && done) setDoneVisibility((prev) => new Map(prev).set(key, done));
       reload();
     });
   }
 
   const priceGroups = byCategory(data.pendingPriceUpdates);
   const newGroups = byCategory(data.newModels);
-  const doneByCategory = new Map<Category, { id: string; title: string; subtitle: string }[]>();
-  for (const [id, row] of doneRows) {
-    const fromPrice = data.pendingPriceUpdates.find((p) => p.id === id);
-    const fromNew = data.newModels.find((m) => m.id === id);
-    const fromVisibility = data.pendingVisibility.find((v) => v.id === id);
-    const category = fromPrice?.category ?? fromNew?.category ?? fromVisibility?.category ?? null;
-    if (!category) continue; // ya no está pendiente en ningún lado y perdimos el rastro de su categoría
-    const list = doneByCategory.get(category) ?? [];
-    list.push({ id, ...row });
-    doneByCategory.set(category, list);
-  }
   const categoriesWithStuff = CATEGORY_ORDER.filter(
-    (c) => priceGroups.some(([cat]) => cat === c) || newGroups.some(([cat]) => cat === c) || (doneByCategory.get(c)?.length ?? 0) > 0,
+    (c) => priceGroups.some(([cat]) => cat === c) || newGroups.some(([cat]) => cat === c),
   );
 
   return (
@@ -124,7 +103,6 @@ export function CatalogManagerPanel() {
       {categoriesWithStuff.map((category) => {
         const priced: PendingPriceUpdate[] = priceGroups.find(([c]) => c === category)?.[1] ?? [];
         const fresh: PendingNewModel[] = newGroups.find(([c]) => c === category)?.[1] ?? [];
-        const done = doneByCategory.get(category) ?? [];
         return (
           <div key={category} className="overflow-hidden rounded-lg border border-white/10">
             <div className="bg-white/10 px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-white/70">
@@ -134,49 +112,55 @@ export function CatalogManagerPanel() {
               {priced.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-2 px-2 py-1.5">
                   <div className="min-w-0">
-                    <div className="truncate font-semibold text-white/90">{label(p.model, p.capacity)}</div>
-                    <div className="text-white/50">
+                    <div className={`truncate font-semibold ${p.confirmed ? "text-green-400" : "text-white/90"}`}>{label(p.model, p.capacity)}</div>
+                    <div className={p.confirmed ? "text-green-400/60" : "text-white/50"}>
                       {p.previousCost != null ? `${money(p.previousCost)} en la app → ` : "sin precio previo → "}
-                      <span className="font-semibold text-amber-300">{money(p.newCost)}</span>
+                      <span className={`font-semibold ${p.confirmed ? "text-green-400" : "text-amber-300"}`}>{money(p.newCost)}</span>
                       {p.supplierName ? ` · ${p.supplierName}` : ""}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className={btn}
-                    disabled={pendingId === p.id}
-                    onClick={() => run(p.id, () => confirmPriceUpdate(p.id), {
-                      title: label(p.model, p.capacity),
-                      subtitle: `${p.previousCost != null ? `${money(p.previousCost)} → ` : ""}${money(p.newCost)}${p.supplierName ? ` · ${p.supplierName}` : ""}`,
-                    })}
-                  >
-                    {pendingId === p.id ? "…" : "Habilitar"}
-                  </button>
+                  {p.confirmed ? (
+                    <span className="text-sm text-green-400">✓</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={btn}
+                      disabled={pendingId === p.id}
+                      onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}
+                    >
+                      {pendingId === p.id ? "…" : "Habilitar"}
+                    </button>
+                  )}
                 </div>
               ))}
               {fresh.map((m) => (
-                <div key={m.id} className="flex items-center justify-between gap-2 border-sky-400/30 bg-sky-400/10 px-2 py-1.5">
+                <div key={m.id} className={`flex items-center justify-between gap-2 px-2 py-1.5 ${m.confirmed ? "" : "border-sky-400/30 bg-sky-400/10"}`}>
                   <div className="min-w-0">
-                    <div className="truncate font-semibold text-sky-200">{label(m.model, m.capacity)} <span className="ml-1 text-[9px] font-bold uppercase tracking-wide text-sky-300">nuevo</span></div>
-                    <div className="text-sky-200/60">
+                    <div className={`truncate font-semibold ${m.confirmed ? "text-green-400" : "text-sky-200"}`}>
+                      {label(m.model, m.capacity)}{" "}
+                      <span className={`ml-1 text-[9px] font-bold uppercase tracking-wide ${m.confirmed ? "text-green-400" : "text-sky-300"}`}>
+                        {m.confirmed ? "creado" : "nuevo"}
+                      </span>
+                    </div>
+                    <div className={m.confirmed ? "text-green-400/60" : "text-sky-200/60"}>
                       costo {money(m.detectedCostUsd)} de {m.supplierName ?? "proveedor"}
                       {m.suggestedPrice != null && <> · sugerido {money(m.suggestedPrice)} (margen {money(m.suggestedMargin!)})</>}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
-                    disabled={pendingId === m.id}
-                    onClick={() => run(m.id, () => createCatalogProduct(m.id), {
-                      title: label(m.model, m.capacity),
-                      subtitle: `costo ${money(m.detectedCostUsd)} de ${m.supplierName ?? "proveedor"}`,
-                    })}
-                  >
-                    {pendingId === m.id ? "Creando…" : "Crear"}
-                  </button>
+                  {m.confirmed ? (
+                    <span className="text-sm text-green-400">✓</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
+                      disabled={pendingId === m.id}
+                      onClick={() => run(m.id, () => createCatalogProduct(m.id))}
+                    >
+                      {pendingId === m.id ? "Creando…" : "Crear"}
+                    </button>
+                  )}
                 </div>
               ))}
-              {done.map((d) => <DoneRow key={d.id} title={d.title} subtitle={d.subtitle} />)}
             </div>
           </div>
         );
@@ -200,7 +184,7 @@ export function CatalogManagerPanel() {
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
             Cambios de visibilidad · {data.pendingVisibility.length}
           </h3>
-          {data.pendingVisibility.length === 0 && doneRows.size === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
+          {data.pendingVisibility.length === 0 && doneVisibility.size === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
           {data.pendingVisibility.map((v: PendingVisibility) => (
             <div key={v.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
               <div className="min-w-0">
@@ -224,6 +208,15 @@ export function CatalogManagerPanel() {
               >
                 {pendingId === v.id ? "…" : v.action === "hide" ? "Ocultar" : "Habilitar"}
               </button>
+            </div>
+          ))}
+          {[...doneVisibility.values()].map((d) => (
+            <div key={d.title} className="flex items-center justify-between gap-2 px-1 py-0.5">
+              <div className="min-w-0">
+                <div className="truncate font-semibold text-green-400">{d.title}</div>
+                <div className="text-green-400/60">{d.subtitle}</div>
+              </div>
+              <span className="text-sm text-green-400">✓</span>
             </div>
           ))}
         </div>

@@ -378,6 +378,8 @@ export interface PendingPriceUpdate {
   previousCost: number | null;
   newCost: number;
   supplierName: string | null;
+  /** Ya lo confirmaste hoy: el panel lo muestra en verde en vez de sacarlo de la lista. */
+  confirmed: boolean;
 }
 
 export interface CatalogManagerData {
@@ -393,16 +395,18 @@ export interface CatalogManagerData {
 /**
  * Los productos YA creados que Martín dejó esperando tu confirmación de costo (precio anterior ->
  * nuevo), para mostrarlos ANTES de los modelos nuevos a crear: primero lo que ya existe, al final lo
- * que falta cargar. Vivo (no del informe de Bruno) para que se vea al toque, igual que el panel de Martín.
+ * que falta cargar. Vivo (no del informe de Bruno) para que se vea al toque, igual que el panel de
+ * Martín. También trae lo que ya confirmaste HOY (no solo lo pendiente): si no, cerrar y volver a
+ * abrir el panel hacía que el ítem recién habilitado desapareciera en vez de quedar en verde.
  */
 async function pendingPriceUpdatesToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingPriceUpdate[]> {
   const { data: rows } = await db
     .from("price_updates")
-    .select("id, category, model, capacity, previous_cost_usd, detected_cost_usd, supplier_id")
+    .select("id, category, model, capacity, previous_cost_usd, detected_cost_usd, supplier_id, review_status")
     .eq("status", "detected")
-    .eq("review_status", "pending")
+    .in("review_status", ["pending", "confirmed", "corrected"])
     .gte("created_at", `${todayArt()}T00:00:00-03:00`)
-    .returns<{ id: string; category: Category; model: string; capacity: string | null; previous_cost_usd: number | null; detected_cost_usd: number; supplier_id: string | null }[]>();
+    .returns<{ id: string; category: Category; model: string; capacity: string | null; previous_cost_usd: number | null; detected_cost_usd: number; supplier_id: string | null; review_status: string }[]>();
   if (!rows?.length) return [];
 
   const supplierIds = [...new Set(rows.map((r) => r.supplier_id).filter((v): v is string => !!v))];
@@ -418,6 +422,7 @@ async function pendingPriceUpdatesToday(db: ReturnType<typeof supabaseAdmin>): P
       previousCost: r.previous_cost_usd == null ? null : Number(r.previous_cost_usd),
       newCost: Number(r.detected_cost_usd),
       supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
+      confirmed: r.review_status !== "pending",
     }))
     .sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
 }
@@ -457,16 +462,28 @@ function dedupeNewModelsBySubset(rows: PendingNewModel[]): PendingNewModel[] {
 /**
  * Los modelos nuevos (sin match en el catálogo) que todavía están esperando que los crees. Vivo
  * (no del informe de Bruno): si no, apenas creás uno seguía apareciendo con el botón "Crear" hasta
- * la próxima corrida de Bruno, en vez de desaparecer al toque.
+ * la próxima corrida de Bruno, en vez de desaparecer al toque. También trae los que ya creaste HOY
+ * (review_status "confirmed" con reviewed_at de hoy): si no, cerrar y volver a abrir el panel hacía
+ * que el que acabás de crear desapareciera en vez de quedar marcado en verde.
  */
 async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingNewModel[]> {
-  const { data: rows } = await db
-    .from("price_updates")
-    .select("id, category, model, capacity, detected_cost_usd, supplier_id")
-    .eq("status", "new_model")
-    .eq("review_status", "pending")
-    .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>();
-  if (!rows?.length) return [];
+  const [{ data: pending }, { data: doneToday }] = await Promise.all([
+    db
+      .from("price_updates")
+      .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+      .eq("status", "new_model")
+      .eq("review_status", "pending")
+      .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>(),
+    db
+      .from("price_updates")
+      .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+      .eq("status", "new_model")
+      .eq("review_status", "confirmed")
+      .gte("reviewed_at", `${todayArt()}T00:00:00-03:00`)
+      .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>(),
+  ]);
+  const rows = [...(pending ?? []).map((r) => ({ ...r, confirmed: false })), ...(doneToday ?? []).map((r) => ({ ...r, confirmed: true }))];
+  if (!rows.length) return [];
 
   const supplierIds = [...new Set(rows.map((r) => r.supplier_id).filter((v): v is string => !!v))];
   const supplierNames = new Map<string, string>();
@@ -483,9 +500,13 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
       id: r.id, category: r.category, model: r.model, capacity: r.capacity, detectedCostUsd: cost,
       supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
       suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
+      confirmed: r.confirmed,
     };
   });
-  return dedupeNewModelsBySubset(mapped).sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
+  // El dedupe por subconjunto solo corre sobre lo pendiente: un ítem ya confirmado no se tiene
+  // que tragar a uno pendiente (ni al revés), cada uno se decide por separado.
+  const pendingOnly = dedupeNewModelsBySubset(mapped.filter((m) => !m.confirmed));
+  return [...pendingOnly, ...mapped.filter((m) => m.confirmed)].sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
 }
 
 /** El panel de Bruno: precios de productos existentes para confirmar, cambios de visibilidad, y al final los modelos nuevos para cargar. */
