@@ -31,7 +31,7 @@ import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios } from "@/lib/nexios";
+import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios, normalizeCapacity, normalizeModel } from "@/lib/nexios";
 import { entryKey } from "@/lib/agents/catalog-match";
 import { averageMargin, type PendingNewModel, type PendingVisibility } from "@/lib/agents/catalog-manager";
 import { isCategory, type BusinessContext, type Category } from "@/lib/types";
@@ -423,6 +423,38 @@ async function pendingPriceUpdatesToday(db: ReturnType<typeof supabaseAdmin>): P
 }
 
 /**
+ * Dos proveedores pueden cotizar el mismo modelo nuevo con distinto nivel de detalle: uno escribe
+ * "NEO 13" y otro "MacBook NEO A18 Pro 13"" — mismo producto, el segundo tiene más información. Si
+ * las palabras de un candidato son un subconjunto exacto de las de otro (misma categoría y
+ * capacidad), son el mismo: nos quedamos con el más completo. Nunca junta dos variantes realmente
+ * distintas (ninguna es subconjunto exacto de la otra), así que no corre riesgo de mezclar un M4
+ * con un M5 por error.
+ */
+function dedupeNewModelsBySubset(rows: PendingNewModel[]): PendingNewModel[] {
+  const groups = new Map<string, PendingNewModel[]>();
+  for (const r of rows) {
+    const k = `${r.category}|${normalizeCapacity(r.capacity)}`;
+    const list = groups.get(k) ?? [];
+    list.push(r);
+    groups.set(k, list);
+  }
+  const kept: PendingNewModel[] = [];
+  for (const list of groups.values()) {
+    const tokenSets = list.map((r) => new Set(normalizeModel(r.model).split(/\s+/).filter(Boolean)));
+    const dropped = new Set<number>();
+    for (let i = 0; i < list.length; i++) {
+      for (let j = 0; j < list.length; j++) {
+        if (i === j) continue;
+        const a = tokenSets[i], b = tokenSets[j];
+        if (a.size < b.size && [...a].every((t) => b.has(t))) { dropped.add(i); break; }
+      }
+    }
+    list.forEach((r, i) => { if (!dropped.has(i)) kept.push(r); });
+  }
+  return kept;
+}
+
+/**
  * Los modelos nuevos (sin match en el catálogo) que todavía están esperando que los crees. Vivo
  * (no del informe de Bruno): si no, apenas creás uno seguía apareciendo con el botón "Crear" hasta
  * la próxima corrida de Bruno, en vez de desaparecer al toque.
@@ -444,17 +476,16 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
   }
 
   const catalog = (await fetchCatalog()) ?? [];
-  return rows
-    .map((r): PendingNewModel => {
-      const margin = averageMargin(catalog, r.category);
-      const cost = Number(r.detected_cost_usd);
-      return {
-        id: r.id, category: r.category, model: r.model, capacity: r.capacity, detectedCostUsd: cost,
-        supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
-        suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
-      };
-    })
-    .sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
+  const mapped = rows.map((r): PendingNewModel => {
+    const margin = averageMargin(catalog, r.category);
+    const cost = Number(r.detected_cost_usd);
+    return {
+      id: r.id, category: r.category, model: r.model, capacity: r.capacity, detectedCostUsd: cost,
+      supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
+      suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
+    };
+  });
+  return dedupeNewModelsBySubset(mapped).sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
 }
 
 /** El panel de Bruno: precios de productos existentes para confirmar, cambios de visibilidad, y al final los modelos nuevos para cargar. */

@@ -11,7 +11,7 @@ import {
   type PendingPriceUpdate,
 } from "@/app/actions";
 import { PanelSkeleton } from "@/components/office/skeleton";
-import type { PendingNewModel } from "@/lib/agents/catalog-manager";
+import type { PendingNewModel, PendingVisibility } from "@/lib/agents/catalog-manager";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
@@ -37,20 +37,32 @@ function byCategory<T extends { category: Category }>(items: T[]): [Category, T[
   return CATEGORY_ORDER.map((c) => [c, map.get(c) ?? []] as [Category, T[]]).filter(([, list]) => list.length > 0);
 }
 
+/** Fila ya confirmada: se queda en el lugar donde estaba, en verde, sin botón. */
+function DoneRow({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+      <div className="min-w-0">
+        <div className="truncate font-semibold text-green-400">{title}</div>
+        <div className="text-green-400/60">{subtitle}</div>
+      </div>
+      <span className="text-sm text-green-400">✓</span>
+    </div>
+  );
+}
+
 /**
  * El panel de Bruno, con el mismo formato que el de Martín: separado por categoría. Primero, para
  * cada categoría, los productos YA creados con precio nuevo esperando confirmación (precio en la
  * app → precio nuevo, botón Habilitar). Después, en celeste, los que todavía no están cargados en
  * la app (botón Crear). Los cambios de visibilidad (ocultar/mostrar por falta de stock) van aparte,
- * al final, porque es una decisión distinta a cambiar o crear un precio.
+ * al final. Confirmar un ítem no lo hace desaparecer: se queda en el mismo lugar, pasa a verde y
+ * pierde el botón, para que quede claro qué ya quedó resuelto en esta sesión.
  */
 export function CatalogManagerPanel() {
   const [data, setData] = useState<CatalogManagerData | undefined>(undefined);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  // Lo que ya confirmaste en esta visita: el ítem sale de la lista (botón incluido) apenas recarga,
-  // y acá queda un rastro chico en verde en vez de que desaparezca sin dejar señal.
-  const [done, setDone] = useState<{ id: string; text: string }[]>([]);
+  const [doneRows, setDoneRows] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
   const [, start] = useTransition();
 
   const reload = () => { loadCatalogManagerPanel().then(setData); };
@@ -58,21 +70,32 @@ export function CatalogManagerPanel() {
 
   if (data === undefined) return <PanelSkeleton />;
 
-  function run(key: string, action: () => Promise<{ ok: boolean; message: string }>, doneText?: string) {
+  function run(key: string, action: () => Promise<{ ok: boolean; message: string }>, done?: { title: string; subtitle: string }) {
     setPendingId(key);
     start(async () => {
       const r = await action();
       setMsg(r.message);
       setPendingId(null);
-      if (r.ok && doneText) setDone((prev) => [{ id: key, text: doneText }, ...prev].slice(0, 20));
+      if (r.ok && done) setDoneRows((prev) => new Map(prev).set(key, done));
       reload();
     });
   }
 
   const priceGroups = byCategory(data.pendingPriceUpdates);
   const newGroups = byCategory(data.newModels);
+  const doneByCategory = new Map<Category, { id: string; title: string; subtitle: string }[]>();
+  for (const [id, row] of doneRows) {
+    const fromPrice = data.pendingPriceUpdates.find((p) => p.id === id);
+    const fromNew = data.newModels.find((m) => m.id === id);
+    const fromVisibility = data.pendingVisibility.find((v) => v.id === id);
+    const category = fromPrice?.category ?? fromNew?.category ?? fromVisibility?.category ?? null;
+    if (!category) continue; // ya no está pendiente en ningún lado y perdimos el rastro de su categoría
+    const list = doneByCategory.get(category) ?? [];
+    list.push({ id, ...row });
+    doneByCategory.set(category, list);
+  }
   const categoriesWithStuff = CATEGORY_ORDER.filter(
-    (c) => priceGroups.some(([cat]) => cat === c) || newGroups.some(([cat]) => cat === c),
+    (c) => priceGroups.some(([cat]) => cat === c) || newGroups.some(([cat]) => cat === c) || (doneByCategory.get(c)?.length ?? 0) > 0,
   );
 
   return (
@@ -94,14 +117,6 @@ export function CatalogManagerPanel() {
 
       {msg && <p className="text-white/50">{msg}</p>}
 
-      {done.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          {done.map((d) => (
-            <div key={d.id} className="text-[10px] text-green-400/80">✓ {d.text}</div>
-          ))}
-        </div>
-      )}
-
       {categoriesWithStuff.length === 0 && (
         <p className="text-white/50">Nada esperando: ni precios para actualizar ni modelos nuevos.</p>
       )}
@@ -109,6 +124,7 @@ export function CatalogManagerPanel() {
       {categoriesWithStuff.map((category) => {
         const priced: PendingPriceUpdate[] = priceGroups.find(([c]) => c === category)?.[1] ?? [];
         const fresh: PendingNewModel[] = newGroups.find(([c]) => c === category)?.[1] ?? [];
+        const done = doneByCategory.get(category) ?? [];
         return (
           <div key={category} className="overflow-hidden rounded-lg border border-white/10">
             <div className="bg-white/10 px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-white/70">
@@ -129,7 +145,10 @@ export function CatalogManagerPanel() {
                     type="button"
                     className={btn}
                     disabled={pendingId === p.id}
-                    onClick={() => run(p.id, () => confirmPriceUpdate(p.id), `${label(p.model, p.capacity)} habilitado`)}
+                    onClick={() => run(p.id, () => confirmPriceUpdate(p.id), {
+                      title: label(p.model, p.capacity),
+                      subtitle: `${p.previousCost != null ? `${money(p.previousCost)} → ` : ""}${money(p.newCost)}${p.supplierName ? ` · ${p.supplierName}` : ""}`,
+                    })}
                   >
                     {pendingId === p.id ? "…" : "Habilitar"}
                   </button>
@@ -148,12 +167,16 @@ export function CatalogManagerPanel() {
                     type="button"
                     className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
                     disabled={pendingId === m.id}
-                    onClick={() => run(m.id, () => createCatalogProduct(m.id), `${label(m.model, m.capacity)} creado`)}
+                    onClick={() => run(m.id, () => createCatalogProduct(m.id), {
+                      title: label(m.model, m.capacity),
+                      subtitle: `costo ${money(m.detectedCostUsd)} de ${m.supplierName ?? "proveedor"}`,
+                    })}
                   >
                     {pendingId === m.id ? "Creando…" : "Crear"}
                   </button>
                 </div>
               ))}
+              {done.map((d) => <DoneRow key={d.id} title={d.title} subtitle={d.subtitle} />)}
             </div>
           </div>
         );
@@ -177,8 +200,8 @@ export function CatalogManagerPanel() {
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
             Cambios de visibilidad · {data.pendingVisibility.length}
           </h3>
-          {data.pendingVisibility.length === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
-          {data.pendingVisibility.map((v) => (
+          {data.pendingVisibility.length === 0 && doneRows.size === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
+          {data.pendingVisibility.map((v: PendingVisibility) => (
             <div key={v.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
               <div className="min-w-0">
                 <div className="truncate font-semibold text-white/90">
@@ -193,7 +216,10 @@ export function CatalogManagerPanel() {
                 onClick={() => run(
                   v.id,
                   () => applyCatalogVisibility(v.id, v.action),
-                  `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""} ${v.action === "hide" ? "ocultado" : "vuelto a mostrar"}`,
+                  {
+                    title: `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""}`,
+                    subtitle: v.action === "hide" ? "ocultado" : "vuelto a mostrar",
+                  },
                 )}
               >
                 {pendingId === v.id ? "…" : v.action === "hide" ? "Ocultar" : "Habilitar"}
