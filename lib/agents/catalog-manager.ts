@@ -1,7 +1,7 @@
 import type { AgentModule } from "@/lib/agents/runtime";
 import { getSetting } from "@/lib/agents/runtime";
 import { entryKey } from "@/lib/agents/catalog-match";
-import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, fetchCatalog, nexios, nexiosAvailable, type NexiosCatalogRow } from "@/lib/nexios";
+import { CATEGORY_TO_DEVICE, catalogModelText, DEVICE_TO_CATEGORY, fetchCatalog, nexios, nexiosAvailable, type NexiosCatalogRow } from "@/lib/nexios";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 export interface PendingNewModel {
@@ -63,13 +63,13 @@ export const catalogManager: AgentModule = {
     const tracked = catalog.filter((r) => DEVICE_TO_CATEGORY[r.device_type] != null);
 
     // Candidatos a mostrar (siempre se evalúan): lo que cotizaron hoy y estaba oculto.
-    const showCandidates = tracked.filter((r) => !r.public_visible && quotedKeys.has(entryKey(DEVICE_TO_CATEGORY[r.device_type]!, r.model, r.capacity)));
+    const showCandidates = tracked.filter((r) => !r.public_visible && quotedKeys.has(entryKey(DEVICE_TO_CATEGORY[r.device_type]!, catalogModelText(r), r.capacity)));
 
     // Candidatos a ocultar: solo en la corrida de cron, no en cada mensaje (si corriera en cada
     // "ingest" ocultaría productos a los que todavía no les llegó el turno en la difusión).
     let hideCandidates: NexiosCatalogRow[] = [];
     if (ctx.trigger !== "ingest") {
-      hideCandidates = tracked.filter((r) => r.public_visible && !quotedKeys.has(entryKey(DEVICE_TO_CATEGORY[r.device_type]!, r.model, r.capacity)));
+      hideCandidates = tracked.filter((r) => r.public_visible && !quotedKeys.has(entryKey(DEVICE_TO_CATEGORY[r.device_type]!, catalogModelText(r), r.capacity)));
     }
 
     let applied = { shown: 0, hidden: 0 };
@@ -80,8 +80,8 @@ export const catalogManager: AgentModule = {
       applied = { shown: showCandidates.length, hidden: hideCandidates.length };
     } else {
       pendingVisibility = [
-        ...showCandidates.map((r): PendingVisibility => ({ id: r.id, action: "show", category: DEVICE_TO_CATEGORY[r.device_type], model: r.model, capacity: r.capacity })),
-        ...hideCandidates.map((r): PendingVisibility => ({ id: r.id, action: "hide", category: DEVICE_TO_CATEGORY[r.device_type], model: r.model, capacity: r.capacity })),
+        ...showCandidates.map((r): PendingVisibility => ({ id: r.id, action: "show", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity })),
+        ...hideCandidates.map((r): PendingVisibility => ({ id: r.id, action: "hide", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity })),
       ];
     }
 

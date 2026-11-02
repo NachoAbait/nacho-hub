@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { DEVICE_TO_CATEGORY, fetchCatalog, normalizeCapacity, normalizeModel, type NexiosCatalogRow } from "@/lib/nexios";
+import { catalogModelText, DEVICE_TO_CATEGORY, fetchCatalog, normalizeCapacity, normalizeModel, type NexiosCatalogRow } from "@/lib/nexios";
 import type { Category } from "@/lib/types";
 
 /** Compartido entre Price Reader (colector) y Price Analyst (decide y aplica). */
@@ -48,8 +48,9 @@ export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, 
   for (const r of nexiosRows as NexiosCatalogRow[]) {
     const category = DEVICE_TO_CATEGORY[r.device_type];
     if (!category) continue;
-    const key = entryKey(category, r.model, r.capacity);
-    index.set(key, { key, category, model: r.model, capacity: r.capacity, cost_usd: r.cost_usd, margin_usd: r.margin_usd, nexios_id: r.id, hub_id: null });
+    const model = catalogModelText(r);
+    const key = entryKey(category, model, r.capacity);
+    index.set(key, { key, category, model, capacity: r.capacity, cost_usd: r.cost_usd, margin_usd: r.margin_usd, nexios_id: r.id, hub_id: null });
   }
   const { data: hub } = await db
     .from("products")

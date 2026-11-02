@@ -60,6 +60,7 @@ export interface NexiosCatalogRow {
   is_active: boolean;
   public_visible: boolean;
   updated_at: string;
+  attributes: { screen?: string; chip?: string; ram?: string; material?: string } | null;
 }
 
 /** Catálogo de sellados activo. */
@@ -68,7 +69,7 @@ export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
   if (!db) return null;
   const { data, error } = await db
     .from("price_catalog")
-    .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, updated_at")
+    .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, updated_at, attributes")
     .eq("organization_id", NEXIOS_ORG_ID)
     .eq("is_active", true)
     .eq("condition", "new_sealed")
@@ -82,6 +83,26 @@ export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
     margin_usd: r.margin_usd == null ? null : Number(r.margin_usd),
     price_usd: r.price_usd == null ? null : Number(r.price_usd),
   })) as NexiosCatalogRow[];
+}
+
+/**
+ * El modelo tal como lo escriben las cotizaciones (y lo compara entryKey): NexiOS guarda el tamaño
+ * en mm (Apple Watch), el chip y las pulgadas (iPad, MacBook) aparte en attributes, no en el
+ * nombre — sin esto ningún producto con esos campos podía machear con una cotización (que siempre
+ * trae todo pegado al modelo: "MacBook Air M5 13"", "Apple Watch SE 3 40mm"). El material
+ * (attributes.material) no se usa: Nacho no lo tiene en cuenta para el costo.
+ */
+export function catalogModelText(r: Pick<NexiosCatalogRow, "device_type" | "model" | "attributes">): string {
+  const attrs = r.attributes;
+  if (!attrs) return r.model;
+  const parts = [r.model];
+  if (r.device_type === "apple_watch") {
+    if (attrs.screen) parts.push(attrs.screen);
+  } else if (r.device_type === "ipad" || r.device_type === "macbook") {
+    if (attrs.chip) parts.push(attrs.chip);
+    if (attrs.screen) parts.push(attrs.screen);
+  }
+  return parts.join(" ");
 }
 
 /**
