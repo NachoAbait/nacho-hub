@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Markdown from "react-markdown";
 import {
   addSupplier,
@@ -300,11 +300,64 @@ function ReplaceAllBox({ active, onDone }: { active: PriceReaderPanelData["suppl
   );
 }
 
+interface PasteJob {
+  id: string;
+  supplierLabel: string;
+  text: string;
+  supplierId: string | null;
+  status: "en cola" | "leyendo" | "listo" | "error";
+  message?: string;
+}
+
+const JOB_DOT: Record<PasteJob["status"], string> = {
+  "en cola": "bg-white/25",
+  leyendo: "bg-amber-400 animate-pulse",
+  listo: "bg-green-500",
+  error: "bg-red-500",
+};
+
+/**
+ * Pegás una lista, se suma a la cola y el cuadro queda libre al toque para pegar la siguiente —
+ * no hace falta esperar a que termine de leer esta para arrancar con otro proveedor. Atrás se
+ * procesan de a una (nunca en paralelo): si dos se pisaran al mismo tiempo, Martín podría comparar
+ * con datos a medio guardar.
+ */
 function PasteBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
   const [text, setText] = useState("");
   const [supplier, setSupplier] = useState("");
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
+  const [queue, setQueue] = useState<PasteJob[]>([]);
+  const working = useRef(false);
+
+  const supplierLabel = (id: string | null) => (id ? data.suppliers.find((s) => s.id === id)?.name ?? data.suppliers.find((s) => s.id === id)?.phone ?? "proveedor" : "sin proveedor");
+
+  // Procesa la cola de a una: la dispara el click de "Agregar a la cola" y cada respuesta que
+  // vuelve, nunca un efecto — así nunca hay dos lecturas de Lucas pisándose al mismo tiempo.
+  function runNext(current: PasteJob[]) {
+    if (working.current) return;
+    const job = current.find((j) => j.status === "en cola");
+    if (!job) return;
+    working.current = true;
+    setQueue(current.map((j) => (j.id === job.id ? { ...j, status: "leyendo" } : j)));
+    pasteSupplierList(job.text, job.supplierId).then((r) => {
+      working.current = false;
+      setQueue((prev) => {
+        const done = prev.map((j) => (j.id === job.id ? { ...j, status: r.ok ? "listo" : "error", message: r.message } as PasteJob : j));
+        runNext(done);
+        return done;
+      });
+      onDone();
+    });
+  }
+
+  function enqueue() {
+    const job: PasteJob = { id: crypto.randomUUID(), supplierLabel: supplierLabel(supplier || null), text, supplierId: supplier || null, status: "en cola" };
+    const next = [...queue, job];
+    setQueue(next);
+    setText("");
+    setSupplier("");
+    runNext(next);
+  }
+
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45">Pegar lista a mano</h3>
@@ -314,11 +367,21 @@ function PasteBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => 
           <option value="">Sin proveedor</option>
           {data.suppliers.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name ?? s.phone}</option>)}
         </select>
-        <button className={btn} disabled={pending || text.trim().length < 8} onClick={() => start(async () => { const r = await pasteSupplierList(text, supplier || null); setMsg(r.message); if (r.ok) { setText(""); onDone(); } })}>
-          {pending ? "Leyendo… (hasta 1 min)" : "Procesar"}
+        <button className={btn} disabled={text.trim().length < 8} onClick={enqueue}>
+          Agregar a la cola
         </button>
       </div>
-      {msg && <p className="text-xs text-white/60">{msg}</p>}
+      {queue.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {[...queue].reverse().map((j) => (
+            <li key={j.id} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs">
+              <span className={`h-2 w-2 flex-none rounded-full ${JOB_DOT[j.status]}`} />
+              <span className="flex-none font-semibold text-white/85">{j.supplierLabel}</span>
+              <span className="truncate text-white/50">{j.status === "en cola" ? "en cola" : j.status === "leyendo" ? "leyendo… (hasta 1 min)" : j.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
