@@ -132,9 +132,6 @@ export async function updateCatalogCost(id: string, costUsd: number): Promise<{ 
 export function normalizeModel(model: string): string {
   return model
     .toLowerCase()
-    // Inglés americano vs británico: un proveedor escribe "Noise Canceling" (una "l"), NexiOS lo
-    // tiene cargado como "Cancelling" (dos) — mismo producto, se iguala acá para que machee.
-    .replace(/\bcanceling\b/g, "cancelling")
     .replace(/\b(iphone|apple ?watch|galaxy|samsung|ipad|macbook)\b/g, " ")
     .replace(/[^\p{L}\p{N}+]+/gu, " ")
     .replace(/\s+/g, " ")

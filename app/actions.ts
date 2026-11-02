@@ -32,7 +32,7 @@ import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
 import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios, normalizeCapacity, normalizeModel } from "@/lib/nexios";
-import { entryKey } from "@/lib/agents/catalog-match";
+import { entryKey, wordsMatch } from "@/lib/agents/catalog-match";
 import { averageMargin, type PendingNewModel, type PendingVisibility } from "@/lib/agents/catalog-manager";
 import { isCategory, type BusinessContext, type Category } from "@/lib/types";
 
@@ -445,13 +445,13 @@ function dedupeNewModelsBySubset(rows: PendingNewModel[]): PendingNewModel[] {
   }
   const kept: PendingNewModel[] = [];
   for (const list of groups.values()) {
-    const tokenSets = list.map((r) => new Set(normalizeModel(r.model).split(/\s+/).filter(Boolean)));
+    const tokenSets = list.map((r) => [...new Set(normalizeModel(r.model).split(/\s+/).filter(Boolean))]);
     const dropped = new Set<number>();
     for (let i = 0; i < list.length; i++) {
       for (let j = 0; j < list.length; j++) {
         if (i === j) continue;
         const a = tokenSets[i], b = tokenSets[j];
-        if (a.size < b.size && [...a].every((t) => b.has(t))) { dropped.add(i); break; }
+        if (a.length < b.length && a.every((t) => b.some((t2) => wordsMatch(t, t2)))) { dropped.add(i); break; }
       }
     }
     list.forEach((r, i) => { if (!dropped.has(i)) kept.push(r); });

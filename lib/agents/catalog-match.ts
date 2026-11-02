@@ -18,6 +18,39 @@ export interface CatalogEntry {
   ram?: string | null;
 }
 
+/** Distancia de edición entre dos strings (cuántas letras hay que cambiar/agregar/sacar para que
+ * sean iguales). Base de la tolerancia a errores de tipeo y variantes de ortografía. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const row = [i];
+    for (let j = 1; j <= n; j++) {
+      row[j] = a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j - 1], prev[j], row[j - 1]);
+    }
+    prev = row;
+  }
+  return prev[n];
+}
+
+/**
+ * ¿"canceling" y "cancelling" son la misma palabra? Sí — inglés americano vs británico, un
+ * proveedor la escribe distinto que como está cargada en NexiOS. En vez de ir corrigiendo cada
+ * variante de ortografía a mano, se tolera una letra de diferencia por cada ~6 letras de la
+ * palabra. Nunca en números (un "11" nunca puede machear con un "13": la plata y la capacidad
+ * dependen de eso) ni en palabras muy cortas (ahí una letra de diferencia SÍ puede ser otra
+ * palabra, como "air" vs "max").
+ */
+export function wordsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (/\d/.test(a) || /\d/.test(b)) return false;
+  if (a.length < 6 || b.length < 6) return false;
+  const tolerance = Math.floor(Math.max(a.length, b.length) / 6);
+  return levenshtein(a, b) <= tolerance;
+}
+
 /** Modelo + chip + celular + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no
  * tiene esos campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que
  * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso.
@@ -133,7 +166,7 @@ export function matchCatalog(
   const candidates = [...index.values()].flat().filter((e) => {
     if (e.category !== category || normalizeCapacity(e.capacity) !== wantCap) return false;
     const eTokens = normalizeModel(e.model).split(/\s+/).filter(Boolean);
-    return [...wantTokens].every((t) => eTokens.includes(t));
+    return [...wantTokens].every((t) => eTokens.some((e2) => wordsMatch(t, e2)));
   });
   return candidates.length === 1 ? candidates[0] : pick(candidates);
 }
