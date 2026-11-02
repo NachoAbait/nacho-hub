@@ -28,6 +28,9 @@ export interface ComparisonRow {
   updateId: string | null;
   winnerSupplierId: string | null;
   reviewStatus: string | null;
+  /** true si Martín no encontró este producto en el catálogo: no hay nada que aplicarle acá, lo
+   * tiene que dar de alta Bruno primero (panel de Catalog Manager). */
+  isNewModel: boolean;
 }
 
 interface RawQuote {
@@ -55,6 +58,7 @@ interface RawUpdate {
   capacity: string | null;
   supplier_id: string | null;
   review_status: string;
+  status: string;
   created_at: string;
 }
 
@@ -72,7 +76,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
     // desaparece de la tabla apenas lo aplica.
     db
       .from("price_updates")
-      .select("id, category, model, capacity, supplier_id, review_status, created_at")
+      .select("id, category, model, capacity, supplier_id, review_status, status, created_at")
       .gte("created_at", `${today}T00:00:00-03:00`)
       .order("created_at", { ascending: true })
       .returns<RawUpdate[]>(),
@@ -128,6 +132,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
       updateId: update?.id ?? null,
       winnerSupplierId: update?.supplier_id ?? null,
       reviewStatus: update?.review_status ?? null,
+      isNewModel: update?.status === "new_model",
     };
   });
 }

@@ -46,7 +46,11 @@ export function PriceAnalystPanel() {
     return <p className="text-xs text-white/50">Todavía no hay cotizaciones de hoy para comparar. Pegale una lista a Lucas primero.</p>;
   }
 
-  const pendingCount = rows.filter((r) => r.updateId && r.reviewStatus === "pending").length;
+  // Los modelos nuevos (sin match en el catálogo) nunca se pueden aplicar desde acá: no hay nada
+  // que actualizar hasta que Bruno los crea. No cuentan como "esperando tu aprobación" ni entran
+  // en "Aplicar todo lo recomendado", para no prometer un click que no hace nada.
+  const pendingCount = rows.filter((r) => r.updateId && r.reviewStatus === "pending" && !r.isNewModel).length;
+  const newModelCount = rows.filter((r) => r.isNewModel).length;
 
   const supplierIds = [...new Set(rows.flatMap((r) => r.quotes.map((q) => q.supplierId)))].sort((a, b) => {
     const an = rows.flatMap((r) => r.quotes).find((q) => q.supplierId === a)?.supplierName ?? a;
@@ -80,7 +84,10 @@ export function PriceAnalystPanel() {
   return (
     <div className="flex flex-col gap-3 text-[11px]">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-white/60">{pendingCount > 0 ? `${pendingCount} esperando tu aprobación` : "Nada esperando: todo aplicado"}</span>
+        <span className="text-white/60">
+          {pendingCount > 0 ? `${pendingCount} esperando tu aprobación` : "Nada esperando: todo aplicado"}
+          {newModelCount > 0 && ` · ${newModelCount} modelo${newModelCount === 1 ? "" : "s"} nuevo${newModelCount === 1 ? "" : "s"} para crear en Bruno`}
+        </span>
         {pendingCount > 0 && (
           <button
             type="button"
@@ -118,7 +125,10 @@ export function PriceAnalystPanel() {
                   const isPendingRow = row.reviewStatus === "pending";
                   return (
                     <tr key={fullLabel(row)} className="border-t border-white/5">
-                      <td className="px-2 py-1 font-semibold text-white/85">{fullLabel(row)}</td>
+                      <td className="px-2 py-1 font-semibold text-white/85">
+                        {fullLabel(row)}
+                        {row.isNewModel && <span className="ml-1.5 rounded-full bg-sky-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-300">nuevo</span>}
+                      </td>
                       {supplierIds.map((id) => {
                         const q = row.quotes.find((x) => x.supplierId === id);
                         if (!q) return <td key={id} className="px-2 py-1 text-right text-white/20">—</td>;
@@ -127,11 +137,23 @@ export function PriceAnalystPanel() {
                         const key = `${row.updateId}:${id}`;
                         const confirmKey = `${row.updateId}:confirm`;
                         const isPendingClick = pendingKey === key || (isWinner && pendingKey === confirmKey);
+                        // Modelo nuevo: no hay catálogo que actualizar, así que el "ganador" nunca
+                        // se puede confirmar desde acá (por eso se quedaba amarillo para siempre,
+                        // por más que lo tocaras). Se marca distinto y manda al panel de Bruno.
+                        if (isWinner && row.isNewModel) {
+                          return (
+                            <td key={id} className="px-1 py-1 text-right">
+                              <span title="Modelo nuevo: creálo en el panel de Bruno para poder aplicarle costo" className="block w-full cursor-default rounded border border-sky-400/40 bg-sky-400/10 px-1.5 py-0.5 text-right font-bold text-sky-300">
+                                {money(q.cost)}
+                              </span>
+                            </td>
+                          );
+                        }
                         return (
                           <td key={id} className="px-1 py-1 text-right">
                             <button
                               type="button"
-                              disabled={!row.updateId || isPendingClick || (isWinner && applied)}
+                              disabled={!row.updateId || isPendingClick || (isWinner && applied) || row.isNewModel}
                               title={
                                 isWinner && applied ? "Ya aplicado" : isWinner && isPendingRow ? "Tocar para confirmar y aplicar" : "Elegir este proveedor para este producto"
                               }
