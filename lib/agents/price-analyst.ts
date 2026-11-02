@@ -60,6 +60,7 @@ interface Quote {
   cellular: boolean;
   inches: number | null;
   capacity: string | null;
+  ram_gb: number | null;
   cost_usd: number;
   original_price_usd: number;
   pricing_basis: "unit" | "bulk_min";
@@ -101,7 +102,7 @@ export const priceAnalyst: AgentModule = {
     const today = todayArt();
     const { data: quotes, error } = await ctx.db
       .from("price_quotes")
-      .select("id, supplier_id, category, model, chip, cellular, inches, capacity, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("id, supplier_id, category, model, chip, cellular, inches, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<Quote[]>();
     if (error) throw new Error(`price_quotes: ${error.message}`);
@@ -141,7 +142,7 @@ export const priceAnalyst: AgentModule = {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
       const best = sorted[0];
       const second = sorted[1];
-      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches, best.cellular);
+      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches, best.cellular, best.ram_gb);
 
       if (!entry) {
         // Sin match en el catálogo: mostramos el modelo con el chip, celular y pulgadas pegados (el

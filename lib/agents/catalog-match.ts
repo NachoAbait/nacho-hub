@@ -13,6 +13,9 @@ export interface CatalogEntry {
   margin_usd: number | null;
   nexios_id: string | null;
   hub_id: string | null;
+  /** RAM del catálogo (ej. "16GB"), solo presente cuando hay más de una fila con la misma clave y
+   * hace falta para desambiguar cuál es cuál. */
+  ram?: string | null;
 }
 
 /** Modelo + chip + celular + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no
@@ -20,7 +23,11 @@ export interface CatalogEntry {
  * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso.
  * Las pulgadas se redondean hacia abajo: Apple vende "13.6"" como MacBook Air 13" y "15.3"" como de 15",
  * así que un proveedor que cotiza el valor exacto (15.3) y el catálogo que solo guarda 15 tienen que
- * poder machear igual — sin esto, un MacBook Air de 15.3" nunca encontraba su fila ya cargada. */
+ * poder machear igual — sin esto, un MacBook Air de 15.3" nunca encontraba su fila ya cargada.
+ * La RAM NO entra acá a propósito: muchos proveedores no la mencionan, y si formara parte de la
+ * clave un producto con una sola variante de RAM dejaría de machear apenas un proveedor no la
+ * dijera. Cuando hay más de una fila del catálogo con la misma clave (un modelo que sí existe en
+ * más de una RAM), matchCatalog desambigua aparte con la RAM si la cotización la trae. */
 function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null): string {
   return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null].filter(Boolean).join(" ");
 }
@@ -44,16 +51,27 @@ export function entryKey(
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
-/** Índice del catálogo: NexiOS si está, y siempre los products del hub. */
-export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, CatalogEntry>> {
-  const index = new Map<string, CatalogEntry>();
+/**
+ * Índice del catálogo: NexiOS si está, y siempre los products del hub. Guarda un ARRAY por clave
+ * porque a veces hay más de una fila con el mismo modelo+chip+pantalla+capacidad, distintas solo
+ * por RAM (ej. MacBook Pro M5 14" 1TB existe con 16GB y con 24GB) — matchCatalog desambigua esos
+ * casos con la RAM que haya detectado Lucas, si la detectó.
+ */
+export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, CatalogEntry[]>> {
+  const index = new Map<string, CatalogEntry[]>();
+  const push = (key: string, entry: CatalogEntry) => {
+    const list = index.get(key);
+    if (list) list.push(entry);
+    else index.set(key, [entry]);
+  };
+
   const nexiosRows = (await fetchCatalog()) ?? [];
   for (const r of nexiosRows as NexiosCatalogRow[]) {
     const category = DEVICE_TO_CATEGORY[r.device_type];
     if (!category) continue;
     const model = catalogModelText(r);
     const key = entryKey(category, model, r.capacity);
-    index.set(key, { key, category, model, capacity: r.capacity, cost_usd: r.cost_usd, margin_usd: r.margin_usd, nexios_id: r.id, hub_id: null });
+    push(key, { key, category, model, capacity: r.capacity, cost_usd: r.cost_usd, margin_usd: r.margin_usd, nexios_id: r.id, hub_id: null, ram: r.attributes?.ram ?? null });
   }
   const { data: hub } = await db
     .from("products")
@@ -61,12 +79,13 @@ export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, 
     .eq("is_active", true);
   for (const p of hub ?? []) {
     const key = entryKey(p.category as Category, p.model, p.capacity);
-    const prev = index.get(key);
-    if (prev) {
-      prev.hub_id = p.id;
-      if (prev.cost_usd == null && p.cost_usd != null) prev.cost_usd = Number(p.cost_usd);
+    const list = index.get(key);
+    const match = list?.find((e) => e.nexios_id === p.nexios_catalog_id) ?? (list?.length === 1 ? list[0] : undefined);
+    if (match) {
+      match.hub_id = p.id;
+      if (match.cost_usd == null && p.cost_usd != null) match.cost_usd = Number(p.cost_usd);
     } else {
-      index.set(key, {
+      push(key, {
         key, category: p.category as Category, model: p.model, capacity: p.capacity,
         cost_usd: p.cost_usd == null ? null : Number(p.cost_usd),
         margin_usd: p.margin_usd == null ? null : Number(p.margin_usd),
@@ -79,23 +98,37 @@ export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, 
 
 /** Busca el producto del catálogo para model/capacity/category dados: exacto por clave, si no por modelo contenido. */
 export function matchCatalog(
-  index: Map<string, CatalogEntry>,
+  index: Map<string, CatalogEntry[]>,
   category: Category,
   model: string,
   capacity: string | null,
   chip?: string | null,
   inches?: number | null,
   cellular?: boolean | null,
+  ramGb?: number | null,
 ): CatalogEntry | null {
-  const exact = index.get(entryKey(category, model, capacity, chip, inches, cellular));
-  if (exact) return exact;
+  const pick = (list: CatalogEntry[]): CatalogEntry | null => {
+    if (list.length === 1) return list[0];
+    // Más de una fila con la misma clave (distintas solo por RAM): si la cotización trae la RAM,
+    // nos quedamos con la que coincide. Si no la trae, o no coincide con ninguna, es ambiguo —
+    // mejor dejarlo sin aplicar (pasa a revisión) que aplicarle el costo a la fila equivocada.
+    if (ramGb == null) return null;
+    const matches = list.filter((e) => e.ram && parseInt(e.ram, 10) === ramGb);
+    return matches.length === 1 ? matches[0] : null;
+  };
+
+  const exactList = index.get(entryKey(category, model, capacity, chip, inches, cellular));
+  if (exactList) {
+    const exact = pick(exactList);
+    if (exact) return exact;
+  }
   const wantModel = normalizeModel(fullModelText(model, chip, cellular, inches));
   const wantCap = normalizeCapacity(capacity);
-  const candidates = [...index.values()].filter(
+  const candidates = [...index.values()].flat().filter(
     (e) => e.category === category && normalizeCapacity(e.capacity) === wantCap &&
       (normalizeModel(e.model) === wantModel || normalizeModel(e.model).endsWith(" " + wantModel) || wantModel.endsWith(" " + normalizeModel(e.model))),
   );
-  return candidates.length === 1 ? candidates[0] : null;
+  return candidates.length === 1 ? candidates[0] : pick(candidates);
 }
 
 /**
