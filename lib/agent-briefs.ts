@@ -72,6 +72,18 @@ export const BRIEFS: Record<string, AgentBrief> = {
     delivers: "Precios actualizados al más barato del día, y una lista corta de lo que necesita tu ojo.",
     schedule: "11:00, cuando ya pasó la ventana de difusiones de la mañana.",
   },
+  "catalog-manager": {
+    summary: "Me ocupo de lo que Martín no toca: qué modelos faltan en el catálogo y qué se tiene que ocultar por falta de stock.",
+    steps: [
+      "Reviso qué modelos nuevos detectó Martín hoy (cotizados por un proveedor, pero sin match en el catálogo).",
+      "Les calculo un precio sugerido con el margen promedio de su categoría, para que solo tengas que confirmar.",
+      "Oculto del catálogo público lo que ningún proveedor cotizó hoy: no hay forma de saber si queda stock.",
+      "Lo que estaba oculto y un proveedor volvió a cotizar, lo muestro de nuevo al toque.",
+    ],
+    sources: ["Catálogo de NexiOS", "Cotizaciones del día", "Modelos nuevos detectados por Martín"],
+    delivers: "Catálogo que solo muestra lo que hay stock hoy, y modelos nuevos listos para que los crees con un clic.",
+    schedule: "Ocultar: 11:00, junto con Martín. Mostrar de nuevo: al toque, cada vez que llega una cotización.",
+  },
   "content-analyst": {
     summary: "Analizo qué contenido rinde y por qué, nuestro y de la competencia.",
     steps: [

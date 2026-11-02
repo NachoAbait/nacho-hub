@@ -8,6 +8,7 @@ import { RunNowButton } from "@/components/office/run-now-button";
 import { PriceReaderPanel } from "@/components/office/price-reader-panel";
 import { PriceAnalystPanel } from "@/components/office/price-analyst-panel";
 import { StockAnalystPanel } from "@/components/office/stock-analyst-panel";
+import { CatalogManagerPanel } from "@/components/office/catalog-manager-panel";
 import { MarketWatcherPanel } from "@/components/office/market-watcher-panel";
 import { ChiefOfStaffPanel } from "@/components/office/chief-of-staff-panel";
 import { ContentCreatorPanel } from "@/components/office/content-creator-panel";
@@ -182,6 +183,12 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "catalog-manager" && (
+            <div className="border-t border-white/10 pt-4">
+              <CatalogManagerPanel />
+            </div>
+          )}
+
           {agent.id === "market-watcher" && focus && (
             <div className="border-t border-white/10 pt-4">
               <MarketWatcherPanel context={focus.floor} />
@@ -236,7 +243,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 

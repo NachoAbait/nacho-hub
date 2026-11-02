@@ -30,7 +30,9 @@ import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { isCategory, type BusinessContext } from "@/lib/types";
+import { CATEGORY_TO_DEVICE, NEXIOS_ORG_ID, fetchCatalog, nexios } from "@/lib/nexios";
+import type { PendingNewModel, PendingVisibility } from "@/lib/agents/catalog-manager";
+import { isCategory, type BusinessContext, type Category } from "@/lib/types";
 
 export interface ActionResult {
   ok: boolean;
@@ -345,6 +347,101 @@ export async function correctPriceUpdate(id: string, listedUnitPrice: number): P
     }
     revalidatePath("/");
     return { ok: true, message: `Costo US$ ${r.cost}${r.newPrice != null ? ` · precio US$ ${r.newPrice}` : ""}. Lo voy a recordar para este proveedor.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export interface CatalogManagerData {
+  date: string;
+  auto: boolean;
+  hidden: number;
+  shown: number;
+  pendingVisibility: PendingVisibility[];
+  newModels: PendingNewModel[];
+}
+
+/** El panel de Bruno: modo actual, lo que ocultó/mostró (automático) o dejó pendiente (manual), y los modelos nuevos. */
+export async function loadCatalogManagerPanel(): Promise<CatalogManagerData> {
+  const db = supabaseAdmin();
+  const auto = await getSetting<boolean>(db, "catalog_manager_auto", false);
+  const rep = await latestReport(db, "catalog-manager", "BNB");
+  if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingVisibility: [], newModels: [] };
+  const raw = (rep.raw_data_json ?? {}) as { hidden?: number; shown?: number; pendingVisibility?: PendingVisibility[]; newModels?: PendingNewModel[] };
+  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingVisibility: raw.pendingVisibility ?? [], newModels: raw.newModels ?? [] };
+}
+
+/** El switch del panel de Bruno: vos decidís cuándo pasa de confirmar uno por uno a automático. */
+export async function setCatalogManagerAuto(auto: boolean): Promise<ActionResult> {
+  try {
+    await supabaseAdmin().from("hub_settings").upsert({ key: "catalog_manager_auto", value: auto, updated_at: new Date().toISOString() });
+    revalidatePath("/");
+    return { ok: true, message: auto ? "Modo automático activado" : "Modo manual activado" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Confirmás un cambio de visibilidad (mostrar u ocultar) uno por uno: recién ahí se toca NexiOS. */
+export async function applyCatalogVisibility(id: string, action: "hide" | "show"): Promise<ActionResult> {
+  try {
+    const nx = nexios();
+    if (!nx) return { ok: false, message: "Falta la conexión con NexiOS" };
+    const { error } = await nx.from("price_catalog").update({ public_visible: action === "show", updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) return fail(new Error(error.message));
+    revalidatePath("/");
+    return { ok: true, message: action === "show" ? "Mostrado de nuevo" : "Ocultado" };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Nacho confirma un modelo nuevo: se crea la fila en NexiOS (fuente real) con el margen sugerido
+ * por Bruno, se sincroniza al hub y se regenera el banner de esa categoría. Como con cualquier otro
+ * precio, nada se crea sin este click.
+ */
+export async function createCatalogProduct(updateId: string): Promise<ActionResult> {
+  try {
+    const db = supabaseAdmin();
+    const { data: u } = await db
+      .from("price_updates")
+      .select("id, category, model, capacity, detected_cost_usd")
+      .eq("id", updateId)
+      .single<{ id: string; category: string; model: string; capacity: string | null; detected_cost_usd: number }>();
+    if (!u) return { ok: false, message: "No encontré esa recomendación" };
+    if (!isCategory(u.category)) return { ok: false, message: "Categoría inválida" };
+
+    const nx = nexios();
+    if (!nx) return { ok: false, message: "Falta la conexión con NexiOS" };
+
+    const device = CATEGORY_TO_DEVICE[u.category as Category];
+    const catalog = (await fetchCatalog()) ?? [];
+    const margins = catalog.filter((r) => r.device_type === device && r.margin_usd != null).map((r) => r.margin_usd as number);
+    const margin = margins.length ? Math.round(margins.reduce((a, b) => a + b, 0) / margins.length) : 0;
+    const cost = Number(u.detected_cost_usd);
+    const price = cost + margin;
+
+    const { data: row, error } = await nx
+      .from("price_catalog")
+      .insert({
+        organization_id: NEXIOS_ORG_ID, device_type: device, model: u.model, capacity: u.capacity,
+        condition: "new_sealed", cost_usd: cost, margin_usd: margin, price_usd: price,
+        is_active: true, public_visible: true,
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (error || !row) return fail(new Error(`No pude crear en NexiOS: ${error?.message}`));
+
+    await db
+      .from("price_updates")
+      .update({ nexios_catalog_id: row.id, status: "applied", review_status: "confirmed", new_price_usd: price, applied_at: new Date().toISOString() })
+      .eq("id", updateId);
+
+    await syncProductsFromNexios(db);
+    await generateAllBanners([u.category]);
+    revalidatePath("/");
+    return { ok: true, message: `Creado: US$ ${cost} + margen US$ ${margin} = US$ ${price}` };
   } catch (err) {
     return fail(err);
   }

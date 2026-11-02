@@ -53,6 +53,8 @@ export const AGENTS: AgentDef[] = [
     description: "Performance de Meta Ads, detecta anomalías." },
   { id: "stock-analyst", task: "Controla stock, margen y caja", persona: "Julieta", name: "Stock Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: true,
     description: "Rotación, márgenes y cash flow." },
+  { id: "catalog-manager", task: "Cuida qué se ve en la tienda", persona: "Bruno", name: "Catalog Manager", tier: "analysts", contexts: ["BNB"], phase: 3, live: true,
+    description: "Crea en NexiOS los modelos nuevos que cotizan los proveedores (margen sugerido, lo confirmás vos) y oculta del catálogo público lo que nadie cotizó hoy." },
 
   // TIER 3 — CREATORS
   { id: "designer", task: "Arma los banners de precios", persona: "Nico", name: "Designer", tier: "creators", contexts: ["BNB"], phase: 1, live: true,
@@ -117,6 +119,7 @@ export const REGISTERED_AGENT_IDS = [
   "price-reader",
   "price-analyst",
   "stock-analyst",
+  "catalog-manager",
   "market-watcher",
   "competitor-scraper",
   "content-creator",

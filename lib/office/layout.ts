@@ -83,7 +83,9 @@ const DESK_DZ = 2.9;
 /** Posiciones (x, z) de los escritorios de un sector, en grilla de 2 columnas centrada. */
 export function deskPositions(sector: SectorLayout, count: number): [number, number][] {
   if (count === 0) return [];
-  const cols = count === 1 ? 1 : 2;
+  // De 5 agentes para arriba, 3 columnas en vez de 2: mantiene el sector en 2 filas de profundidad
+  // (lo que ya está bien calibrado contra el cartel del sector y el del vecino) sumando ancho en vez.
+  const cols = count === 1 ? 1 : count >= 5 ? 3 : 2;
   const rows = Math.ceil(count / cols);
   const [cx, cz] = sector.center;
   const out: [number, number][] = [];

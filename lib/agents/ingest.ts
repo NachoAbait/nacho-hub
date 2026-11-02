@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { runAgent, type RunOutcome } from "@/lib/agents/runtime";
 import { priceReader } from "@/lib/agents/price-reader";
 import { priceAnalyst } from "@/lib/agents/price-analyst";
+import { catalogManager } from "@/lib/agents/catalog-manager";
 import { findAllowedSupplier, normalizePhone, notePendingSender } from "@/lib/suppliers";
 
 export interface IngestInput {
@@ -80,7 +81,14 @@ export async function ingestPriceList(input: IngestInput): Promise<IngestResult>
   // Un proveedor puede mandar precios a cualquier hora, no solo en la ventana de la mañana.
   // Cada vez que Lucas termina de leer algo, se lo manda a Martín al toque (no solo a las 11):
   // si ya había una comparación de ese producto esperando aprobación, la actualiza, no la duplica.
-  if (run.ok) await runAgent(priceAnalyst, "BNB", "ingest");
+  if (run.ok) {
+    await runAgent(priceAnalyst, "BNB", "ingest");
+    // Bruno (Catalog Manager) solo hace el paso "mostrar de nuevo" en cada mensaje (si esto que
+    // llegó es algo que estaba oculto por falta de stock, ya vuelve a aparecer). El paso "ocultar"
+    // es cosa del cron diario (ver catalog-manager.ts): acá, a mitad de la difusión, todavía no se
+    // puede saber qué quedó sin cotizar en todo el día.
+    await runAgent(catalogManager, "BNB", "ingest");
+  }
 
   return { ok: run.ok, ignored: false, supplier: supplierLabel, message_id: msg.id, run };
 }
