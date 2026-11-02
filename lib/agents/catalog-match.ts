@@ -17,9 +17,12 @@ export interface CatalogEntry {
 
 /** Modelo + chip + celular + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no
  * tiene esos campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que
- * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso. */
+ * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso.
+ * Las pulgadas se redondean hacia abajo: Apple vende "13.6"" como MacBook Air 13" y "15.3"" como de 15",
+ * así que un proveedor que cotiza el valor exacto (15.3) y el catálogo que solo guarda 15 tienen que
+ * poder machear igual — sin esto, un MacBook Air de 15.3" nunca encontraba su fila ya cargada. */
 function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null): string {
-  return [model, chip, cellular ? "Cell" : null, inches ? `${inches}"` : null].filter(Boolean).join(" ");
+  return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null].filter(Boolean).join(" ");
 }
 
 /**
