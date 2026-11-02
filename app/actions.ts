@@ -31,7 +31,8 @@ import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { CATEGORY_TO_DEVICE, NEXIOS_ORG_ID, fetchCatalog, nexios } from "@/lib/nexios";
+import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios } from "@/lib/nexios";
+import { entryKey } from "@/lib/agents/catalog-match";
 import { averageMargin, type PendingNewModel, type PendingVisibility } from "@/lib/agents/catalog-manager";
 import { isCategory, type BusinessContext, type Category } from "@/lib/types";
 
@@ -518,10 +519,19 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     const cost = Number(u.detected_cost_usd);
     const price = cost + margin;
 
+    // Si ya hay otra fila del mismo modelo (misma familia, ignorando la capacidad — ej. "18 Pro"
+    // 256GB y 512GB ya cargados, esto es el 1TB), usamos el MISMO texto y atributos que esa fila en
+    // vez del texto que armó Lucas/Martín: si no, NexiOS guarda "iPhone 18 Pro" para el nuevo y "18
+    // Pro" para los viejos, y quedan como dos productos distintos en vez de variantes del mismo.
+    const familyKey = entryKey(u.category as Category, u.model, null);
+    const sibling = catalog.find((r) => DEVICE_TO_CATEGORY[r.device_type] === u.category && entryKey(u.category as Category, catalogModelText(r), null) === familyKey);
+    const model = sibling?.model ?? u.model;
+    const attributes = sibling?.attributes ?? null;
+
     const { data: row, error } = await nx
       .from("price_catalog")
       .insert({
-        organization_id: NEXIOS_ORG_ID, device_type: device, model: u.model, capacity: u.capacity,
+        organization_id: NEXIOS_ORG_ID, device_type: device, model, capacity: u.capacity, attributes,
         condition: "new_sealed", cost_usd: cost, margin_usd: margin, price_usd: price,
         is_active: true, public_visible: true,
       })
