@@ -24,7 +24,7 @@ export interface PendingVisibility {
 }
 
 /** Margen promedio de los productos activos de esa categoría, para sugerir precio a un modelo nuevo. */
-function averageMargin(catalog: NexiosCatalogRow[], category: Category): number | null {
+export function averageMargin(catalog: NexiosCatalogRow[], category: Category): number | null {
   const device = CATEGORY_TO_DEVICE[category];
   const margins = catalog.filter((r) => r.device_type === device && r.margin_usd != null).map((r) => r.margin_usd as number);
   if (!margins.length) return null;

@@ -32,7 +32,7 @@ import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
 import { CATEGORY_TO_DEVICE, NEXIOS_ORG_ID, fetchCatalog, nexios } from "@/lib/nexios";
-import type { PendingNewModel, PendingVisibility } from "@/lib/agents/catalog-manager";
+import { averageMargin, type PendingNewModel, type PendingVisibility } from "@/lib/agents/catalog-manager";
 import { isCategory, type BusinessContext, type Category } from "@/lib/types";
 
 export interface ActionResult {
@@ -421,15 +421,50 @@ async function pendingPriceUpdatesToday(db: ReturnType<typeof supabaseAdmin>): P
     .sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
 }
 
+/**
+ * Los modelos nuevos (sin match en el catálogo) que todavía están esperando que los crees. Vivo
+ * (no del informe de Bruno): si no, apenas creás uno seguía apareciendo con el botón "Crear" hasta
+ * la próxima corrida de Bruno, en vez de desaparecer al toque.
+ */
+async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingNewModel[]> {
+  const { data: rows } = await db
+    .from("price_updates")
+    .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+    .eq("status", "new_model")
+    .eq("review_status", "pending")
+    .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>();
+  if (!rows?.length) return [];
+
+  const supplierIds = [...new Set(rows.map((r) => r.supplier_id).filter((v): v is string => !!v))];
+  const supplierNames = new Map<string, string>();
+  if (supplierIds.length) {
+    const { data: sup } = await db.from("suppliers").select("id, name, phone").in("id", supplierIds);
+    for (const s of sup ?? []) supplierNames.set(s.id, s.name ?? s.phone);
+  }
+
+  const catalog = (await fetchCatalog()) ?? [];
+  return rows
+    .map((r): PendingNewModel => {
+      const margin = averageMargin(catalog, r.category);
+      const cost = Number(r.detected_cost_usd);
+      return {
+        id: r.id, category: r.category, model: r.model, capacity: r.capacity, detectedCostUsd: cost,
+        supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
+        suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
+      };
+    })
+    .sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
+}
+
 /** El panel de Bruno: precios de productos existentes para confirmar, cambios de visibilidad, y al final los modelos nuevos para cargar. */
 export async function loadCatalogManagerPanel(): Promise<CatalogManagerData> {
   const db = supabaseAdmin();
   const auto = await getSetting<boolean>(db, "catalog_manager_auto", false);
-  const pendingPriceUpdates = await pendingPriceUpdatesToday(db);
+  const [pendingPriceUpdates, newModels] = await Promise.all([pendingPriceUpdatesToday(db), newModelsToday(db)]);
   const rep = await latestReport(db, "catalog-manager", "BNB");
-  if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingPriceUpdates, pendingVisibility: [], newModels: [] };
-  const raw = (rep.raw_data_json ?? {}) as { hidden?: number; shown?: number; pendingVisibility?: PendingVisibility[]; newModels?: PendingNewModel[] };
-  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingPriceUpdates, pendingVisibility: raw.pendingVisibility ?? [], newModels: raw.newModels ?? [] };
+  if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingPriceUpdates, pendingVisibility: [], newModels };
+  const raw = (rep.raw_data_json ?? {}) as { hidden?: number; shown?: number; pendingVisibility?: PendingVisibility[] };
+  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingPriceUpdates, pendingVisibility: raw.pendingVisibility ?? [], newModels };
 }
 
 /** El switch del panel de Bruno: vos decidís cuándo pasa de confirmar uno por uno a automático. */

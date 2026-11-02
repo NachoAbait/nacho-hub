@@ -48,6 +48,9 @@ export function CatalogManagerPanel() {
   const [data, setData] = useState<CatalogManagerData | undefined>(undefined);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // Lo que ya confirmaste en esta visita: el ítem sale de la lista (botón incluido) apenas recarga,
+  // y acá queda un rastro chico en verde en vez de que desaparezca sin dejar señal.
+  const [done, setDone] = useState<{ id: string; text: string }[]>([]);
   const [, start] = useTransition();
 
   const reload = () => { loadCatalogManagerPanel().then(setData); };
@@ -55,12 +58,13 @@ export function CatalogManagerPanel() {
 
   if (data === undefined) return <PanelSkeleton />;
 
-  function run(key: string, action: () => Promise<{ message: string }>) {
+  function run(key: string, action: () => Promise<{ ok: boolean; message: string }>, doneText?: string) {
     setPendingId(key);
     start(async () => {
       const r = await action();
       setMsg(r.message);
       setPendingId(null);
+      if (r.ok && doneText) setDone((prev) => [{ id: key, text: doneText }, ...prev].slice(0, 20));
       reload();
     });
   }
@@ -90,6 +94,14 @@ export function CatalogManagerPanel() {
 
       {msg && <p className="text-white/50">{msg}</p>}
 
+      {done.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {done.map((d) => (
+            <div key={d.id} className="text-[10px] text-green-400/80">✓ {d.text}</div>
+          ))}
+        </div>
+      )}
+
       {categoriesWithStuff.length === 0 && (
         <p className="text-white/50">Nada esperando: ni precios para actualizar ni modelos nuevos.</p>
       )}
@@ -113,7 +125,12 @@ export function CatalogManagerPanel() {
                       {p.supplierName ? ` · ${p.supplierName}` : ""}
                     </div>
                   </div>
-                  <button type="button" className={btn} disabled={pendingId === p.id} onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}>
+                  <button
+                    type="button"
+                    className={btn}
+                    disabled={pendingId === p.id}
+                    onClick={() => run(p.id, () => confirmPriceUpdate(p.id), `${label(p.model, p.capacity)} habilitado`)}
+                  >
                     {pendingId === p.id ? "…" : "Habilitar"}
                   </button>
                 </div>
@@ -131,7 +148,7 @@ export function CatalogManagerPanel() {
                     type="button"
                     className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
                     disabled={pendingId === m.id}
-                    onClick={() => run(m.id, () => createCatalogProduct(m.id))}
+                    onClick={() => run(m.id, () => createCatalogProduct(m.id), `${label(m.model, m.capacity)} creado`)}
                   >
                     {pendingId === m.id ? "Creando…" : "Crear"}
                   </button>
@@ -173,7 +190,11 @@ export function CatalogManagerPanel() {
                 type="button"
                 className={btn}
                 disabled={pendingId === v.id}
-                onClick={() => run(v.id, () => applyCatalogVisibility(v.id, v.action))}
+                onClick={() => run(
+                  v.id,
+                  () => applyCatalogVisibility(v.id, v.action),
+                  `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""} ${v.action === "hide" ? "ocultado" : "vuelto a mostrar"}`,
+                )}
               >
                 {pendingId === v.id ? "…" : v.action === "hide" ? "Ocultar" : "Habilitar"}
               </button>
