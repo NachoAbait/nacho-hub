@@ -249,7 +249,10 @@ export async function suppliersToday(db: SupabaseClient, today: string): Promise
   const since = `${today}T00:00:00-03:00`;
 
   const [{ data: messages }, { data: quotes }, { data: analystRuns }] = await Promise.all([
-    db.from("supplier_messages").select("supplier_id, received_at").gte("received_at", since).not("supplier_id", "is", null),
+    // created_at (cuándo lo guardó el hub), no received_at (la fecha original de WhatsApp): un mensaje
+    // atrasado que llega recién ahora porque la compu estuvo apagada trae received_at de ayer, pero
+    // "hoy" tiene que reflejar que se leyó recién ahora.
+    db.from("supplier_messages").select("supplier_id, created_at").gte("created_at", since).not("supplier_id", "is", null),
     db.from("price_quotes").select("supplier_id").eq("quote_date", today),
     db.from("agent_runs").select("id").eq("agent_id", "price-analyst").eq("status", "ok").gte("started_at", since).limit(1),
   ]);
