@@ -509,6 +509,23 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
   return [...pendingOnly, ...mapped.filter((m) => m.confirmed)].sort((a, b) => `${a.category}:${a.model}`.localeCompare(`${b.category}:${b.model}`));
 }
 
+/**
+ * Lo que Bruno dejó pendiente en su último informe, pero chequeado contra el estado REAL de NexiOS:
+ * esa lista queda congelada hasta la próxima corrida de Bruno, así que sin esto un ítem ya aplicado
+ * (clic en Habilitar/Ocultar) seguía apareciendo como pendiente — la acción se guardaba bien, pero
+ * el panel mostraba siempre la foto vieja.
+ */
+async function reconcilePendingVisibility(rows: PendingVisibility[]): Promise<PendingVisibility[]> {
+  if (!rows.length) return rows;
+  const catalog = (await fetchCatalog()) ?? [];
+  const visibleById = new Map(catalog.map((r) => [r.id, r.public_visible]));
+  return rows.filter((r) => {
+    const visible = visibleById.get(r.id);
+    if (visible == null) return false;
+    return r.action === "show" ? !visible : visible;
+  });
+}
+
 /** El panel de Bruno: precios de productos existentes para confirmar, cambios de visibilidad, y al final los modelos nuevos para cargar. */
 export async function loadCatalogManagerPanel(): Promise<CatalogManagerData> {
   const db = supabaseAdmin();
@@ -517,7 +534,8 @@ export async function loadCatalogManagerPanel(): Promise<CatalogManagerData> {
   const rep = await latestReport(db, "catalog-manager", "BNB");
   if (!rep) return { date: todayArt(), auto, hidden: 0, shown: 0, pendingPriceUpdates, pendingVisibility: [], newModels };
   const raw = (rep.raw_data_json ?? {}) as { hidden?: number; shown?: number; pendingVisibility?: PendingVisibility[] };
-  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingPriceUpdates, pendingVisibility: raw.pendingVisibility ?? [], newModels };
+  const pendingVisibility = await reconcilePendingVisibility(raw.pendingVisibility ?? []);
+  return { date: rep.date, auto, hidden: raw.hidden ?? 0, shown: raw.shown ?? 0, pendingPriceUpdates, pendingVisibility, newModels };
 }
 
 /** El switch del panel de Bruno: vos decidís cuándo pasa de confirmar uno por uno a automático. */
