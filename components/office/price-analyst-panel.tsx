@@ -22,6 +22,60 @@ function money(n: number): string {
   return `US$ ${n.toLocaleString("es-AR")}`;
 }
 
+/** GB numérico para ordenar bien: alfabético pone "1TB" antes de "256GB" (compara el "1" contra
+ * el "2"), cuando en realidad 1TB es más grande. */
+function capacityGb(capacity: string | null): number {
+  if (!capacity) return 0;
+  const m = capacity.match(/([\d.]+)\s*(GB|TB)/i);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return m[2].toUpperCase() === "TB" ? n * 1024 : n;
+}
+
+/**
+ * Generación + variante de un iPhone ("iPhone 17 Pro Max" -> [17, 4]), para poder ordenar ascendente
+ * de verdad: alfabético pone "17 Pro" antes de "17e" (el espacio ordena antes que una letra) y no
+ * sabe que "Pro Max" va después de "Pro". Orden de variante: e (el más económico) - base - Air - Pro
+ * - Pro Max (el más caro).
+ */
+function iphoneRank(model: string): [number, number] {
+  const m = model.match(/^iphone\s+(\d+)(e)?(?:\s+(air|pro max|pro))?$/i);
+  if (!m) return [999, 1];
+  const gen = Number(m[1]);
+  if (m[2]) return [gen, 0];
+  switch ((m[3] ?? "").toLowerCase()) {
+    case "air": return [gen, 2];
+    case "pro": return [gen, 3];
+    case "pro max": return [gen, 4];
+    default: return [gen, 1];
+  }
+}
+
+/**
+ * Orden de la lista de Martín: ascendente siempre. iPhone por generación y variante (ver
+ * iphoneRank); el resto por modelo y pulgadas. Un +Cell es básicamente otro producto (más caro),
+ * así que todas las variantes +Cell de un modelo quedan agrupadas después de las que no lo son,
+ * antes de mirar la capacidad — y recién ahí, memoria ascendente.
+ */
+function compareRows(a: ComparisonRow, b: ComparisonRow): number {
+  if (a.category === "iphone") {
+    const [genA, varA] = iphoneRank(a.model);
+    const [genB, varB] = iphoneRank(b.model);
+    if (genA !== genB) return genA - genB;
+    if (varA !== varB) return varA - varB;
+  } else {
+    const modelCmp = a.model.localeCompare(b.model);
+    if (modelCmp !== 0) return modelCmp;
+    const inchesCmp = (a.inches ?? 0) - (b.inches ?? 0);
+    if (inchesCmp !== 0) return inchesCmp;
+  }
+  if (a.cellular !== b.cellular) return a.cellular ? 1 : -1;
+  const capCmp = capacityGb(a.capacity) - capacityGb(b.capacity);
+  if (capCmp !== 0) return capCmp;
+  if ((a.ramGb ?? 0) !== (b.ramGb ?? 0)) return (a.ramGb ?? 0) - (b.ramGb ?? 0);
+  return fullLabel(a).localeCompare(fullLabel(b));
+}
+
 /**
  * El cuadro de Martín, vivo adentro del hub: un producto por fila, un proveedor por columna, SOLO
  * con las cotizaciones de hoy (a las 00 arranca vacío otra vez, los precios de ayer no sirven). La
@@ -101,7 +155,7 @@ export function PriceAnalystPanel() {
       </div>
       {msg && <p className="text-white/50">{msg}</p>}
       {CATEGORY_ORDER.map((category) => {
-        const inCategory = rows.filter((r) => r.category === category).sort((a, b) => fullLabel(a).localeCompare(fullLabel(b)));
+        const inCategory = rows.filter((r) => r.category === category).sort(compareRows);
         if (!inCategory.length) return null;
         return (
           <div key={category} className="overflow-x-auto rounded-lg border border-white/10">
