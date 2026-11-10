@@ -21,6 +21,7 @@ export interface ComparisonRow {
   chip: string | null;
   cellular: boolean;
   inches: number | null;
+  screenMm: number | null;
   capacity: string | null;
   ramGb: number | null;
   quotes: ComparisonQuote[];
@@ -40,6 +41,7 @@ interface RawQuote {
   chip: string | null;
   cellular: boolean;
   inches: number | null;
+  screen_mm: number | null;
   capacity: string | null;
   ram_gb: number | null;
   cost_usd: number;
@@ -56,6 +58,10 @@ interface RawUpdate {
   category: string | null;
   model: string;
   capacity: string | null;
+  chip: string | null;
+  cellular: boolean;
+  inches: number | null;
+  screen_mm: number | null;
   supplier_id: string | null;
   review_status: string;
   status: string;
@@ -67,7 +73,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
   const [{ data: quotes }, { data: suppliers }, { data: updates }] = await Promise.all([
     db
       .from("price_quotes")
-      .select("supplier_id, category, model, chip, cellular, inches, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("supplier_id, category, model, chip, cellular, inches, screen_mm, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<RawQuote[]>(),
     db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>(),
@@ -76,29 +82,32 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
     // desaparece de la tabla apenas lo aplica.
     db
       .from("price_updates")
-      .select("id, category, model, capacity, supplier_id, review_status, status, created_at")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, supplier_id, review_status, status, created_at")
       .gte("created_at", `${today}T00:00:00-03:00`)
       .order("created_at", { ascending: true })
       .returns<RawUpdate[]>(),
   ]);
 
   const supplierName = new Map((suppliers ?? []).map((s) => [s.id, s.name ?? s.phone]));
-  // price_updates.model ya trae el chip pegado (del catálogo, o de best.model+chip si es un modelo nuevo),
-  // así que acá se arma la clave SIN pasar chip aparte: el texto completo ya lo tiene adentro.
-  const updateByKey = new Map((updates ?? []).map((u) => [entryKey((u.category ?? "other") as Category, u.model, u.capacity), u]));
+  // price_updates.model queda LIMPIO (sin chip/celular/pulgadas/mm pegados, ver price-analyst.ts),
+  // así que la clave se arma igual que la de las cotizaciones, con esos campos aparte.
+  const updateByKey = new Map(
+    (updates ?? []).map((u) => [entryKey((u.category ?? "other") as Category, u.model, u.capacity, u.chip, u.inches, u.cellular, u.screen_mm), u]),
+  );
 
-  interface Row { category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
+  interface Row { category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screenMm: number | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
   const rows = new Map<string, Row>();
   for (const q of quotes ?? []) {
     if (!q.supplier_id) continue;
-    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular);
+    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
     let row = rows.get(key);
     if (!row) {
-      row = { category: q.category, model: q.model, chip: q.chip, cellular: q.cellular, inches: q.inches, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
+      row = { category: q.category, model: q.model, chip: q.chip, cellular: q.cellular, inches: q.inches, screenMm: q.screen_mm, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
       rows.set(key, row);
     } else {
       if (!row.chip && q.chip) row.chip = q.chip;
       if (!row.inches && q.inches) row.inches = q.inches;
+      if (!row.screenMm && q.screen_mm) row.screenMm = q.screen_mm;
       if (!row.ramGb && q.ram_gb) row.ramGb = q.ram_gb;
       if (q.model.length > row.model.length) row.model = q.model;
     }
@@ -126,6 +135,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
       chip: row.chip,
       cellular: row.cellular,
       inches: row.inches,
+      screenMm: row.screenMm,
       capacity: row.capacity,
       ramGb: row.ramGb,
       quotes: [...row.bySupplier.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName)),

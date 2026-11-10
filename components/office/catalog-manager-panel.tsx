@@ -26,6 +26,14 @@ function label(model: string, capacity: string | null): string {
   return capacity ? `${model} ${capacity}` : model;
 }
 
+/** Modelos nuevos: a diferencia de PendingVisibility (ya viene armado con catalogModelText), acá
+ * model queda limpio a propósito (ver price-analyst.ts) y chip/+Cell/pulgadas/mm viven aparte —
+ * sin esto el cartel no distinguía un Apple Watch de 46mm de uno de 42mm. */
+function newModelLabel(m: PendingNewModel): string {
+  const detail = [m.chip, m.cellular ? "+Cell" : null, m.inches ? `${m.inches}"` : null, m.screenMm ? `${m.screenMm}mm` : null].filter(Boolean).join(" ");
+  return label([m.model, detail].filter(Boolean).join(" "), m.capacity);
+}
+
 /** Agrupa por categoría y las ordena según CATEGORY_ORDER, como hace el panel de Martín. */
 function byCategory<T extends { category: Category }>(items: T[]): [Category, T[]][] {
   const map = new Map<Category, T[]>();
@@ -137,7 +145,7 @@ export function CatalogManagerPanel() {
                 <div key={m.id} className={`flex items-center justify-between gap-2 px-2 py-1.5 ${m.confirmed ? "" : "border-sky-400/30 bg-sky-400/10"}`}>
                   <div className="min-w-0">
                     <div className={`truncate font-semibold ${m.confirmed ? "text-green-400" : "text-sky-200"}`}>
-                      {label(m.model, m.capacity)}{" "}
+                      {newModelLabel(m)}{" "}
                       <span className={`ml-1 text-[9px] font-bold uppercase tracking-wide ${m.confirmed ? "text-green-400" : "text-sky-300"}`}>
                         {m.confirmed ? "creado" : "nuevo"}
                       </span>

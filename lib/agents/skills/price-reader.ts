@@ -8,8 +8,9 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
 
 ## Reglas de extracción
 
-1. Cada ítem tiene: categoría, modelo, chip, celular (sí/no), pulgadas, capacidad, RAM (si aplica cada uno) y precio
-   en dólares. Si una línea tiene varios precios (por capacidad o por color), generá un ítem por cada precio.
+1. Cada ítem tiene: categoría, modelo, chip, celular (sí/no), pulgadas, mm de caja (Apple Watch), capacidad, RAM
+   (si aplica cada uno) y precio en dólares. Si una línea tiene varios precios (por capacidad o por color), generá
+   un ítem por cada precio.
 2. Los precios de proveedores son COSTOS en dólares billete. Si la lista dice "en pesos" o tiene valores de más de 100.000,
    es en pesos: marcá currency "ARS" y no inventes la conversión.
 3. Modelo: SIEMPRE con el prefijo de línea, nunca pelado, y SIEMPRE de la misma forma para la misma categoría (no
@@ -18,12 +19,14 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
    - iPad → "iPad" + la línea si tiene (Air, Pro): "iPad Air", "iPad Pro". El iPad base (chip A16) no tiene línea
      propia, así que queda solo "iPad".
    - MacBook → "MacBook" + la línea: "MacBook Air", "MacBook Pro", "MacBook NEO".
-   - Apple Watch → "Apple Watch" + línea y tamaño en mm (el tamaño en mm se queda pegado al modelo, no es "pulgadas"
-     y no tiene campo propio): "Apple Watch SE 3 40mm", "Apple Watch Series 12 46mm", "Apple Watch Ultra 4 49mm".
+   - Apple Watch → "Apple Watch" + línea, SIN el tamaño: "Apple Watch SE 3", "Apple Watch Series 12", "Apple Watch
+     Ultra 4". El diámetro de caja (40mm, 44mm, 49mm…) NUNCA va pegado al modelo: tiene su propio campo (screen_mm,
+     regla 6).
    - AirPods → "AirPods" + línea: "AirPods Pro 3", "AirPods Max 2", "AirPods 4", "AirPods 5".
    - Samsung → "Galaxy" + línea: "Galaxy S25 Ultra", "Galaxy S26", "Galaxy S26 Ultra".
-   El chip y el tamaño en pulgadas NO van en el modelo (van en sus propios campos, reglas 5 y 6); el tamaño en mm de
-   Apple Watch sí se queda en el modelo porque no tiene campo propio.
+   El chip, el tamaño en pulgadas y el diámetro de Apple Watch NUNCA van en el modelo: cada uno tiene su propio
+   campo (reglas 5 y 6). La app donde se cargan los productos (NexiOS) guarda esos datos en atributos separados del
+   nombre, así que si quedan pegados al modelo un producto nuevo se crea con el nombre sucio y sin esos atributos.
 4. Conectividad celular (+Cell / eSIM): un proveedor puede escribirla "+ Cell", "+Cell", "Cellular", "GPS + Cellular",
    "con eSIM" o "4G". Es un campo propio, aparte del modelo: cellular true si lo menciona, false si no.
    SOLO existe como producto distinto para iPad y Apple Watch (ahí sí es un producto FÍSICAMENTE DISTINTO del
@@ -43,6 +46,8 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
    - Para cualquier otro caso donde el tamaño no esté claro y el modelo SÍ tenga más de un tamaño posible (MacBook
      Air es 13 o 15; MacBook Pro es 14 o 16; iPad Air y iPad Pro son 11 o 13), dejalo null: no adivines entre dos
      opciones.
+6b. Diámetro de caja en mm (SOLO Apple Watch), campo screen_mm: el número tal cual lo da el proveedor (38, 40, 41,
+    42, 44, 45, 46, 49), separado del modelo. Para cualquier otro caso, null.
 7. Capacidad (almacenamiento) siempre como "128GB", "256GB", "512GB", "1TB". Si el producto no tiene (AirPods, Watch), null.
 8. RAM en GB como número (16, 24, 32), SOLO si el proveedor la menciona explícitamente y por separado del
    almacenamiento. Formato típico: "16GB/512GB" → ram_gb 16, capacity "512GB" (la primera cifra junto a una barra o
@@ -71,8 +76,9 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
   cellular false, inches 11 (por la excepción de la regla 6: el A16 es siempre de 11"), capacity "128GB".
 - "AIR M4 + CELL 11” 128GB · U$ 785" (iPad) → model "iPad Air", chip "M4", cellular true, inches 11, capacity
   "128GB" — PRODUCTO DISTINTO de "AIR M4 11” 128GB" (sin +Cell, cellular false), aunque todo lo demás sea igual.
-- "Ultra 4 49mm + Cell" (Apple Watch, acá no hay pulgadas ni capacidad) → model "Apple Watch Ultra 4 49mm", chip
-  null, cellular true, inches null, capacity null — también producto distinto de "Apple Watch Ultra 4 49mm" sin +Cell.
+- "Ultra 4 49mm + Cell" (Apple Watch, acá no hay pulgadas ni capacidad) → model "Apple Watch Ultra 4", chip null,
+  cellular true, inches null, screen_mm 49, capacity null — también producto distinto de "Apple Watch Ultra 4" 49mm
+  sin +Cell (mismo model y screen_mm, pero cellular false).
 - "📱S25 ULTRA 12 + 256GB. u$ 825" (Samsung; el "12" es RAM, no parte del modelo) → model "Galaxy S25 Ultra",
   chip null, cellular false, inches null, capacity "256GB", ram_gb 12.
 

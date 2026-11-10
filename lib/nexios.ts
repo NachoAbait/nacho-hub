@@ -60,7 +60,7 @@ export interface NexiosCatalogRow {
   is_active: boolean;
   public_visible: boolean;
   updated_at: string;
-  attributes: { screen?: string; chip?: string; ram?: string; material?: string } | null;
+  attributes: { screen?: string; chip?: string; ram?: string; material?: string; connectivity?: string } | null;
 }
 
 /** Catálogo de sellados activo. */
@@ -87,10 +87,13 @@ export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
 
 /**
  * El modelo tal como lo escriben las cotizaciones (y lo compara entryKey): NexiOS guarda el tamaño
- * en mm (Apple Watch), el chip y las pulgadas (iPad, MacBook) aparte en attributes, no en el
- * nombre — sin esto ningún producto con esos campos podía machear con una cotización (que siempre
- * trae todo pegado al modelo: "MacBook Air M5 13"", "Apple Watch SE 3 40mm"). El material
- * (attributes.material) no se usa: Nacho no lo tiene en cuenta para el costo.
+ * en mm (Apple Watch), el chip, las pulgadas (iPad, MacBook) y la conectividad celular aparte en
+ * attributes, no en el nombre — sin esto ningún producto con esos campos podía machear con una
+ * cotización (que siempre trae todo pegado al modelo: "MacBook Air M5 13"", "Apple Watch SE 3
+ * 40mm", "iPad Air M4 Cell 11""). El material (attributes.material) no se usa: Nacho no lo tiene
+ * en cuenta para el costo. La conectividad SÍ entra siempre (iPad y Watch): dos filas con el mismo
+ * modelo y pantalla pero una GPS-only y otra +Cellular son productos distintos, y sin este token
+ * acá colisionarían en la misma clave.
  */
 export function catalogModelText(r: Pick<NexiosCatalogRow, "device_type" | "model" | "attributes">): string {
   const attrs = r.attributes;
@@ -102,6 +105,7 @@ export function catalogModelText(r: Pick<NexiosCatalogRow, "device_type" | "mode
     if (attrs.chip) parts.push(attrs.chip);
     if (attrs.screen) parts.push(attrs.screen);
   }
+  if (attrs.connectivity?.includes("Cellular")) parts.push("Cell");
   return parts.join(" ");
 }
 

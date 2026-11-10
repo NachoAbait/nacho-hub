@@ -51,9 +51,10 @@ export function wordsMatch(a: string, b: string): boolean {
   return levenshtein(a, b) <= tolerance;
 }
 
-/** Modelo + chip + celular + pulgadas como un solo texto, para comparar: el catálogo (NexiOS/hub) no
- * tiene esos campos separados, los trae adentro del nombre del modelo ("MacBook Air M5 13"), así que
- * las cotizaciones (que sí los separan) arman el mismo texto completo acá para poder compararse contra eso.
+/** Modelo + chip + celular + pulgadas + mm (Watch) como un solo texto, para comparar: el catálogo
+ * (NexiOS/hub) no tiene esos campos separados, los trae adentro del nombre del modelo ("MacBook Air
+ * M5 13", "Apple Watch SE 3 40mm"), así que las cotizaciones (que sí los separan) arman el mismo
+ * texto completo acá para poder compararse contra eso.
  * Las pulgadas se redondean hacia abajo: Apple vende "13.6"" como MacBook Air 13" y "15.3"" como de 15",
  * así que un proveedor que cotiza el valor exacto (15.3) y el catálogo que solo guarda 15 tienen que
  * poder machear igual — sin esto, un MacBook Air de 15.3" nunca encontraba su fila ya cargada.
@@ -61,8 +62,8 @@ export function wordsMatch(a: string, b: string): boolean {
  * clave un producto con una sola variante de RAM dejaría de machear apenas un proveedor no la
  * dijera. Cuando hay más de una fila del catálogo con la misma clave (un modelo que sí existe en
  * más de una RAM), matchCatalog desambigua aparte con la RAM si la cotización la trae. */
-function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null): string {
-  return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null].filter(Boolean).join(" ");
+function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null, screenMm?: number | null): string {
+  return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null, screenMm ? `${screenMm}mm` : null].filter(Boolean).join(" ");
 }
 
 /**
@@ -79,8 +80,9 @@ export function entryKey(
   chip?: string | null,
   inches?: number | null,
   cellular?: boolean | null,
+  screenMm?: number | null,
 ): string {
-  const tokens = normalizeModel(fullModelText(model, chip, cellular, inches)).split(/\s+/).filter(Boolean).sort();
+  const tokens = normalizeModel(fullModelText(model, chip, cellular, inches, screenMm)).split(/\s+/).filter(Boolean).sort();
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
@@ -139,6 +141,7 @@ export function matchCatalog(
   inches?: number | null,
   cellular?: boolean | null,
   ramGb?: number | null,
+  screenMm?: number | null,
 ): CatalogEntry | null {
   const pick = (list: CatalogEntry[]): CatalogEntry | null => {
     if (list.length === 1) return list[0];
@@ -150,7 +153,7 @@ export function matchCatalog(
     return matches.length === 1 ? matches[0] : null;
   };
 
-  const exactList = index.get(entryKey(category, model, capacity, chip, inches, cellular));
+  const exactList = index.get(entryKey(category, model, capacity, chip, inches, cellular, screenMm));
   if (exactList) {
     const exact = pick(exactList);
     if (exact) return exact;
@@ -161,7 +164,7 @@ export function matchCatalog(
   // que el catálogo no tiene (ej. "AirPods 4 Noise Cancelling" cuando el catálogo solo tiene
   // "AirPods 4" a secas), esas palabras de más pueden ser un producto realmente distinto, así que
   // no se adivina: queda sin aplicar y aparece como modelo nuevo para que Nacho decida.
-  const wantTokens = new Set(normalizeModel(fullModelText(model, chip, cellular, inches)).split(/\s+/).filter(Boolean));
+  const wantTokens = new Set(normalizeModel(fullModelText(model, chip, cellular, inches, screenMm)).split(/\s+/).filter(Boolean));
   const wantCap = normalizeCapacity(capacity);
   const candidates = [...index.values()].flat().filter((e) => {
     if (e.category !== category || normalizeCapacity(e.capacity) !== wantCap) return false;

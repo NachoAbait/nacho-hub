@@ -7,12 +7,13 @@ import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
 
-/** Orden pedido: modelo - chip - (+Cell si tiene) - pulgadas - memoria - RAM, separado con "-". */
+/** Orden pedido: modelo - chip - (+Cell si tiene) - pulgadas/mm - memoria - RAM, separado con "-". */
 function fullLabel(row: ComparisonRow): string {
   const parts = [row.model];
   if (row.chip) parts.push(row.chip);
   if (row.cellular) parts.push("+Cell");
   if (row.inches) parts.push(`${row.inches}"`);
+  if (row.screenMm) parts.push(`${row.screenMm}mm`);
   if (row.capacity) parts.push(row.capacity);
   if (row.ramGb) parts.push(`${row.ramGb}GB RAM`);
   return parts.join(" - ");
@@ -68,6 +69,8 @@ function compareRows(a: ComparisonRow, b: ComparisonRow): number {
     if (modelCmp !== 0) return modelCmp;
     const inchesCmp = (a.inches ?? 0) - (b.inches ?? 0);
     if (inchesCmp !== 0) return inchesCmp;
+    const mmCmp = (a.screenMm ?? 0) - (b.screenMm ?? 0);
+    if (mmCmp !== 0) return mmCmp;
   }
   if (a.cellular !== b.cellular) return a.cellular ? 1 : -1;
   const capCmp = capacityGb(a.capacity) - capacityGb(b.capacity);

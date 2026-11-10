@@ -9,6 +9,12 @@ export interface PendingNewModel {
   category: Category;
   model: string;
   capacity: string | null;
+  /** Solo para mostrar en el panel (createCatalogProduct ya los lee aparte de price_updates):
+   * model queda limpio, así que sin esto el cartel no distingue un +Cell de 46mm de uno de 42mm. */
+  chip: string | null;
+  cellular: boolean;
+  inches: number | null;
+  screenMm: number | null;
   detectedCostUsd: number;
   supplierName: string | null;
   suggestedMargin: number | null;
@@ -56,10 +62,10 @@ export const catalogManager: AgentModule = {
 
     const { data: quotesToday } = await ctx.db
       .from("price_quotes")
-      .select("category, model, chip, cellular, inches, capacity")
+      .select("category, model, chip, cellular, inches, screen_mm, capacity")
       .eq("quote_date", ctx.today)
-      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; capacity: string | null }[]>();
-    const quotedKeys = new Set((quotesToday ?? []).map((q) => entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular)));
+      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; capacity: string | null }[]>();
+    const quotedKeys = new Set((quotesToday ?? []).map((q) => entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm)));
 
     // Nunca tocamos accesorios (device_type "accessory"): Lucas no cotiza eso, no hay forma de saber si hay stock.
     const tracked = catalog.filter((r) => DEVICE_TO_CATEGORY[r.device_type] != null);
@@ -92,10 +98,14 @@ export const catalogManager: AgentModule = {
     // que ocultar/mostrar uno que ya existe.
     const { data: pending } = await ctx.db
       .from("price_updates")
-      .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, detected_cost_usd, supplier_id")
       .eq("status", "new_model")
       .eq("review_status", "pending")
-      .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>();
+      .returns<{
+        id: string; category: Category; model: string; capacity: string | null;
+        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null;
+        detected_cost_usd: number; supplier_id: string | null;
+      }[]>();
 
     const supplierIds = [...new Set((pending ?? []).map((p) => p.supplier_id).filter((v): v is string => !!v))];
     const supplierNames = new Map<string, string>();
@@ -108,7 +118,9 @@ export const catalogManager: AgentModule = {
       const margin = averageMargin(catalog, p.category);
       const cost = Number(p.detected_cost_usd);
       return {
-        id: p.id, category: p.category, model: p.model, capacity: p.capacity, detectedCostUsd: cost,
+        id: p.id, category: p.category, model: p.model, capacity: p.capacity,
+        chip: p.chip, cellular: p.cellular, inches: p.inches, screenMm: p.screen_mm,
+        detectedCostUsd: cost,
         supplierName: p.supplier_id ? supplierNames.get(p.supplier_id) ?? null : null,
         suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
         confirmed: false,
@@ -128,7 +140,8 @@ export const catalogManager: AgentModule = {
     if (newModels.length) {
       lines.push("", "## Modelos nuevos esperando que los crees");
       for (const m of newModels) {
-        lines.push(`- **${CATEGORY_LABEL[m.category]}: ${m.model}${m.capacity ? " " + m.capacity : ""}** — costo US$ ${m.detectedCostUsd} de ${m.supplierName ?? "proveedor"}${m.suggestedPrice != null ? `, precio sugerido US$ ${m.suggestedPrice} (margen US$ ${m.suggestedMargin})` : ""}`);
+        const detail = [m.chip, m.cellular ? "+Cell" : null, m.inches ? `${m.inches}"` : null, m.screenMm ? `${m.screenMm}mm` : null].filter(Boolean).join(" ");
+        lines.push(`- **${CATEGORY_LABEL[m.category]}: ${m.model}${detail ? " " + detail : ""}${m.capacity ? " " + m.capacity : ""}** — costo US$ ${m.detectedCostUsd} de ${m.supplierName ?? "proveedor"}${m.suggestedPrice != null ? `, precio sugerido US$ ${m.suggestedPrice} (margen US$ ${m.suggestedMargin})` : ""}`);
       }
     }
     lines.push("", "## Para hoy");

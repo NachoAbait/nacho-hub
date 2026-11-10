@@ -14,6 +14,8 @@ const ItemSchema = z.object({
   cellular: z.boolean(),
   /** Tamaño de pantalla en pulgadas (solo MacBook/iPad). Null si no aplica o es ambiguo. */
   inches: z.number().nullable(),
+  /** Diámetro de caja en mm (SOLO Apple Watch): 38, 40, 41, 42, 44, 45, 46, 49. Null si no aplica. */
+  screen_mm: z.number().nullable(),
   capacity: z.string().nullable(),
   /** RAM en GB, solo si el proveedor la menciona por separado del almacenamiento. Null si no. */
   ram_gb: z.number().nullable(),
@@ -207,6 +209,7 @@ export const priceReader: AgentModule = {
             chip: item.chip,
             cellular: item.cellular,
             inches: item.inches,
+            screen_mm: item.screen_mm,
             capacity: item.capacity,
             ram_gb: item.ram_gb,
             cost_usd: cost,

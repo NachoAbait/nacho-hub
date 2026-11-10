@@ -31,7 +31,7 @@ import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
 import { syncProductsFromNexios } from "@/lib/designer/sync";
-import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios, normalizeCapacity, normalizeModel } from "@/lib/nexios";
+import { CATEGORY_TO_DEVICE, DEVICE_TO_CATEGORY, NEXIOS_ORG_ID, catalogModelText, fetchCatalog, nexios, normalizeCapacity, normalizeModel, type NexiosCatalogRow } from "@/lib/nexios";
 import { entryKey, wordsMatch } from "@/lib/agents/catalog-match";
 import { averageMargin, type PendingNewModel, type PendingVisibility } from "@/lib/agents/catalog-manager";
 import { isCategory, type BusinessContext, type Category } from "@/lib/types";
@@ -467,20 +467,22 @@ function dedupeNewModelsBySubset(rows: PendingNewModel[]): PendingNewModel[] {
  * que el que acabás de crear desapareciera en vez de quedar marcado en verde.
  */
 async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingNewModel[]> {
+  const NEW_MODEL_COLS = "id, category, model, capacity, chip, cellular, inches, screen_mm, detected_cost_usd, supplier_id";
+  interface NewModelRow { id: string; category: Category; model: string; capacity: string | null; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; detected_cost_usd: number; supplier_id: string | null }
   const [{ data: pending }, { data: doneToday }] = await Promise.all([
     db
       .from("price_updates")
-      .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+      .select(NEW_MODEL_COLS)
       .eq("status", "new_model")
       .eq("review_status", "pending")
-      .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>(),
+      .returns<NewModelRow[]>(),
     db
       .from("price_updates")
-      .select("id, category, model, capacity, detected_cost_usd, supplier_id")
+      .select(NEW_MODEL_COLS)
       .eq("status", "new_model")
       .eq("review_status", "confirmed")
       .gte("reviewed_at", `${todayArt()}T00:00:00-03:00`)
-      .returns<{ id: string; category: Category; model: string; capacity: string | null; detected_cost_usd: number; supplier_id: string | null }[]>(),
+      .returns<NewModelRow[]>(),
   ]);
   const rows = [...(pending ?? []).map((r) => ({ ...r, confirmed: false })), ...(doneToday ?? []).map((r) => ({ ...r, confirmed: true }))];
   if (!rows.length) return [];
@@ -497,7 +499,9 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
     const margin = averageMargin(catalog, r.category);
     const cost = Number(r.detected_cost_usd);
     return {
-      id: r.id, category: r.category, model: r.model, capacity: r.capacity, detectedCostUsd: cost,
+      id: r.id, category: r.category, model: r.model, capacity: r.capacity,
+      chip: r.chip, cellular: r.cellular, inches: r.inches, screenMm: r.screen_mm,
+      detectedCostUsd: cost,
       supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
       suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
       confirmed: r.confirmed,
@@ -564,6 +568,30 @@ export async function applyCatalogVisibility(id: string, action: "hide" | "show"
 }
 
 /**
+ * Atributos de NexiOS para un modelo nuevo, cuando no hay ninguna fila hermana de la que copiarlos
+ * (createCatalogProduct). NexiOS NUNCA guarda esto en el nombre: el diámetro de Apple Watch va en
+ * attributes.screen ("40mm"), el chip y las pulgadas de iPad/MacBook en attributes.chip/screen, y la
+ * conectividad celular (+Cell) en attributes.connectivity — "GPS"/"GPS + Cellular" para Watch,
+ * "WiFi"/"WiFi + Cellular" para iPad.
+ */
+function buildAttributes(
+  device: string,
+  u: { chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; ram_gb: number | null },
+): NexiosCatalogRow["attributes"] {
+  const attrs: NonNullable<NexiosCatalogRow["attributes"]> = {};
+  if (device === "apple_watch") {
+    if (u.screen_mm) attrs.screen = `${u.screen_mm}mm`;
+    attrs.connectivity = u.cellular ? "GPS + Cellular" : "GPS";
+  } else if (device === "ipad" || device === "macbook") {
+    if (u.chip) attrs.chip = u.chip;
+    if (u.inches) attrs.screen = `${u.inches}"`;
+    if (u.ram_gb) attrs.ram = `${u.ram_gb}GB`;
+    if (device === "ipad" && u.cellular) attrs.connectivity = "WiFi + Cellular";
+  }
+  return Object.keys(attrs).length ? attrs : null;
+}
+
+/**
  * Nacho confirma un modelo nuevo: se crea la fila en NexiOS (fuente real) con el margen sugerido
  * por Bruno, se sincroniza al hub y se regenera el banner de esa categoría. Como con cualquier otro
  * precio, nada se crea sin este click.
@@ -573,9 +601,13 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     const db = supabaseAdmin();
     const { data: u } = await db
       .from("price_updates")
-      .select("id, category, model, capacity, detected_cost_usd")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, ram_gb, detected_cost_usd")
       .eq("id", updateId)
-      .single<{ id: string; category: string; model: string; capacity: string | null; detected_cost_usd: number }>();
+      .single<{
+        id: string; category: string; model: string; capacity: string | null;
+        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; ram_gb: number | null;
+        detected_cost_usd: number;
+      }>();
     if (!u) return { ok: false, message: "No encontré esa recomendación" };
     if (!isCategory(u.category)) return { ok: false, message: "Categoría inválida" };
 
@@ -593,10 +625,16 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     // 256GB y 512GB ya cargados, esto es el 1TB), usamos el MISMO texto y atributos que esa fila en
     // vez del texto que armó Lucas/Martín: si no, NexiOS guarda "iPhone 18 Pro" para el nuevo y "18
     // Pro" para los viejos, y quedan como dos productos distintos en vez de variantes del mismo.
-    const familyKey = entryKey(u.category as Category, u.model, null);
-    const sibling = catalog.find((r) => DEVICE_TO_CATEGORY[r.device_type] === u.category && entryKey(u.category as Category, catalogModelText(r), null) === familyKey);
+    const familyKey = entryKey(u.category as Category, u.model, null, u.chip, u.inches, u.cellular, u.screen_mm);
+    const sibling = catalog.find(
+      (r) => DEVICE_TO_CATEGORY[r.device_type] === u.category && entryKey(u.category as Category, catalogModelText(r), null) === familyKey,
+    );
     const model = sibling?.model ?? u.model;
-    const attributes = sibling?.attributes ?? null;
+    // Sin una fila hermana de la que copiar attributes, los armamos acá: NexiOS guarda el chip, las
+    // pulgadas, el diámetro de Apple Watch y la conectividad celular en atributos propios, NUNCA en
+    // el nombre — antes esto quedaba null y lo que Lucas/Martín detectaron se perdía (o, peor, se
+    // guardaba pegado al nombre si nadie lo había separado río arriba).
+    const attributes = sibling?.attributes ?? buildAttributes(device, u);
 
     const { data: row, error } = await nx
       .from("price_catalog")
