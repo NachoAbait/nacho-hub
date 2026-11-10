@@ -59,18 +59,21 @@ function DraftBox({ p }: { p: PendingSender }) {
   );
 }
 
-/** Lo único que importa de cada proveedor hoy: nombre, estado, y cuántos productos sacó. */
-function SupplierTodayRow({ s }: { s: SupplierToday }) {
+/** Lo único que importa de cada proveedor hoy: nombre, estado, y cuántos productos sacó.
+ * `reading` pisa el estado real mientras el PasteBox le está mandando una lista a mano: el servidor
+ * tarda en confirmar, pero no hace falta esperarlo para mostrar "leyendo" — se sabe al toque. */
+function SupplierTodayRow({ s, reading }: { s: SupplierToday; reading: boolean }) {
+  const state = reading ? "leyendo" : s.state;
   return (
     <li className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px]">
-      <span className={`h-2 w-2 flex-none rounded-full ${STATE_DOT[s.state]}`} />
+      <span className={`h-2 w-2 flex-none rounded-full ${STATE_DOT[state]}`} />
       <span className="font-semibold text-white/85">{s.supplier.name ?? s.supplier.phone}</span>
-      <span className="ml-auto text-white/45">{STATE_LABEL[s.state]}{s.quotesToday ? ` · ${s.quotesToday} productos` : ""}</span>
+      <span className="ml-auto text-white/45">{STATE_LABEL[state]}{s.quotesToday ? ` · ${s.quotesToday} productos` : ""}</span>
     </li>
   );
 }
 
-function SupplierTodayBox({ data }: { data: PriceReaderPanelData }) {
+function SupplierTodayBox({ data, readingSupplierId }: { data: PriceReaderPanelData; readingSupplierId: string | null }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const sent = data.today.filter((s) => s.state === "leido_enviado").length;
@@ -82,7 +85,7 @@ function SupplierTodayBox({ data }: { data: PriceReaderPanelData }) {
       {data.today.length === 0 ? (
         <p className="text-[11px] text-white/50">No hay proveedores activos todavía.</p>
       ) : (
-        <ul className="flex flex-col gap-1.5">{data.today.map((s) => <SupplierTodayRow key={s.supplier.id} s={s} />)}</ul>
+        <ul className="flex flex-col gap-1.5">{data.today.map((s) => <SupplierTodayRow key={s.supplier.id} s={s} reading={s.supplier.id === readingSupplierId} />)}</ul>
       )}
       <div className="mt-1 flex items-center gap-2 border-t border-white/10 pt-2">
         <button
@@ -322,7 +325,7 @@ const JOB_DOT: Record<PasteJob["status"], string> = {
  * procesan de a una (nunca en paralelo): si dos se pisaran al mismo tiempo, Martín podría comparar
  * con datos a medio guardar.
  */
-function PasteBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => void }) {
+function PasteBox({ data, onDone, onReading }: { data: PriceReaderPanelData; onDone: () => void; onReading: (id: string | null) => void }) {
   const [text, setText] = useState("");
   const [supplier, setSupplier] = useState("");
   const [queue, setQueue] = useState<PasteJob[]>([]);
@@ -332,21 +335,29 @@ function PasteBox({ data, onDone }: { data: PriceReaderPanelData; onDone: () => 
 
   // Procesa la cola de a una: la dispara el click de "Agregar a la cola" y cada respuesta que
   // vuelve, nunca un efecto — así nunca hay dos lecturas de Lucas pisándose al mismo tiempo.
+  // El .catch es clave: sin él, una acción que revienta (ej. referencia de server action vencida
+  // por un deploy) deja working.current en true para siempre y la cola queda trabada hasta
+  // refrescar la página — justo el bug reportado. Con el .catch, un error cuenta como terminado
+  // (se marca en rojo) y sigue con el que sigue.
   function runNext(current: PasteJob[]) {
     if (working.current) return;
     const job = current.find((j) => j.status === "en cola");
     if (!job) return;
     working.current = true;
     setQueue(current.map((j) => (j.id === job.id ? { ...j, status: "leyendo" } : j)));
-    pasteSupplierList(job.text, job.supplierId).then((r) => {
-      working.current = false;
-      setQueue((prev) => {
-        const done = prev.map((j) => (j.id === job.id ? { ...j, status: r.ok ? "listo" : "error", message: r.message } as PasteJob : j));
-        runNext(done);
-        return done;
+    onReading(job.supplierId);
+    pasteSupplierList(job.text, job.supplierId)
+      .catch((err) => ({ ok: false, message: err instanceof Error ? err.message : "Error de conexión" }))
+      .then((r) => {
+        working.current = false;
+        onReading(null);
+        setQueue((prev) => {
+          const done = prev.map((j) => (j.id === job.id ? { ...j, status: r.ok ? "listo" : "error", message: r.message } as PasteJob : j));
+          runNext(done);
+          return done;
+        });
+        onDone();
       });
-      onDone();
-    });
   }
 
   function enqueue() {
@@ -417,6 +428,7 @@ function ModelHintsBox({ hints, onDone }: { hints: string[]; onDone: () => void 
 export function PriceReaderPanel() {
   const [data, setData] = useState<PriceReaderPanelData | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [readingSupplierId, setReadingSupplierId] = useState<string | null>(null);
   const reload = () => { loadPriceReaderPanel().then(setData).catch((e) => setErr(String(e))); };
   useEffect(() => { reload(); }, []);
 
@@ -424,9 +436,9 @@ export function PriceReaderPanel() {
   if (!data) return <PanelSkeleton />;
   return (
     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
-      <SupplierTodayBox data={data} />
+      <SupplierTodayBox data={data} readingSupplierId={readingSupplierId} />
       <SuppliersBox data={data} onDone={reload} />
-      <PasteBox data={data} onDone={reload} />
+      <PasteBox data={data} onDone={reload} onReading={setReadingSupplierId} />
       <ModelHintsBox hints={data.modelHints} onDone={reload} />
       {/* Las recomendaciones de Martín (lo que espera tu aprobación) viven en su propio panel: Lucas
           solo lee, no decide nada sobre precios. */}
