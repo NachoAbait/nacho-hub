@@ -193,31 +193,48 @@ export function CatalogManagerPanel() {
             Cambios de visibilidad · {data.pendingVisibility.length}
           </h3>
           {data.pendingVisibility.length === 0 && doneVisibility.size === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
-          {data.pendingVisibility.map((v: PendingVisibility) => (
-            <div key={v.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
-              <div className="min-w-0">
-                <div className="truncate font-semibold text-white/90">
-                  {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
-                </div>
-                <div className="text-white/50">{v.action === "hide" ? "ningún proveedor lo cotizó hoy" : "un proveedor lo volvió a cotizar"}</div>
-              </div>
-              <button
-                type="button"
-                className={btn}
-                disabled={pendingId === v.id}
-                onClick={() => run(
-                  v.id,
-                  () => applyCatalogVisibility(v.id, v.action),
-                  {
-                    title: `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""}`,
-                    subtitle: v.action === "hide" ? "ocultado" : "vuelto a mostrar",
-                  },
-                )}
+          {data.pendingVisibility.map((v: PendingVisibility) => {
+            const isShow = v.action === "show";
+            return (
+              <div
+                key={v.id}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 ${isShow ? "border-green-400/25 bg-green-400/5" : "border-amber-400/25 bg-amber-400/5"}`}
               >
-                {pendingId === v.id ? "…" : v.action === "hide" ? "Ocultar" : "Habilitar"}
-              </button>
-            </div>
-          ))}
+                <div className="min-w-0">
+                  <div className={`text-[9px] font-bold uppercase tracking-wide ${isShow ? "text-green-300" : "text-amber-300"}`}>
+                    {isShow ? "Volvió a tener stock" : "Sin stock hoy"}
+                  </div>
+                  <div className="mt-0.5 truncate font-semibold text-white/90">
+                    {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
+                  </div>
+                  <div className="text-white/50">
+                    {isShow
+                      ? `No estaba disponible y hoy ${v.supplierName ?? "un proveedor"} lo cotizó${v.cost != null ? ` a ${money(v.cost)}` : ""}.`
+                      : "Ningún proveedor lo cotizó hoy: nadie tiene stock."}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={
+                    isShow
+                      ? "rounded-full border border-green-400/40 bg-green-400/15 px-3 py-1 text-xs font-semibold text-green-200 transition hover:bg-green-400/25 disabled:opacity-40"
+                      : "rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/25 disabled:opacity-40"
+                  }
+                  disabled={pendingId === v.id}
+                  onClick={() => run(
+                    v.id,
+                    () => applyCatalogVisibility(v.id, v.action),
+                    {
+                      title: `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""}`,
+                      subtitle: isShow ? "vuelto a mostrar" : "ocultado",
+                    },
+                  )}
+                >
+                  {pendingId === v.id ? "…" : isShow ? "Mostrar en la tienda" : "Ocultar de la tienda"}
+                </button>
+              </div>
+            );
+          })}
           {[...doneVisibility.values()].map((d) => (
             <div key={d.title} className="flex items-center justify-between gap-2 px-1 py-0.5">
               <div className="min-w-0">

@@ -29,6 +29,9 @@ export interface PendingVisibility {
   category: Category | null;
   model: string;
   capacity: string | null;
+  /** Solo para "show": a qué costo y de qué proveedor lo volvieron a cotizar hoy, si lo sabemos. */
+  cost: number | null;
+  supplierName: string | null;
 }
 
 /** Margen promedio de los productos activos de esa categoría, para sugerir precio a un modelo nuevo. */
@@ -62,10 +65,18 @@ export const catalogManager: AgentModule = {
 
     const { data: quotesToday } = await ctx.db
       .from("price_quotes")
-      .select("category, model, chip, cellular, inches, screen_mm, capacity")
+      .select("category, model, chip, cellular, inches, screen_mm, capacity, cost_usd, supplier_id")
       .eq("quote_date", ctx.today)
-      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; capacity: string | null }[]>();
-    const quotedKeys = new Set((quotesToday ?? []).map((q) => entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm)));
+      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; capacity: string | null; cost_usd: number; supplier_id: string | null }[]>();
+    // Más barata por producto, con quién la cotizó: para "volvió a aparecer" le podemos decir a
+    // Nacho a qué precio y de quién, no solo que "alguien lo cotizó de nuevo".
+    const quoteInfoByKey = new Map<string, { cost: number; supplierId: string | null }>();
+    for (const q of quotesToday ?? []) {
+      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
+      const prev = quoteInfoByKey.get(key);
+      if (!prev || q.cost_usd < prev.cost) quoteInfoByKey.set(key, { cost: q.cost_usd, supplierId: q.supplier_id });
+    }
+    const quotedKeys = new Set(quoteInfoByKey.keys());
 
     // Nunca tocamos accesorios (device_type "accessory"): Lucas no cotiza eso, no hay forma de saber si hay stock.
     const tracked = catalog.filter((r) => DEVICE_TO_CATEGORY[r.device_type] != null);
@@ -87,9 +98,22 @@ export const catalogManager: AgentModule = {
       if (hideCandidates.length) await nexios()!.from("price_catalog").update({ public_visible: false, updated_at: new Date().toISOString() }).in("id", hideCandidates.map((r) => r.id));
       applied = { shown: showCandidates.length, hidden: hideCandidates.length };
     } else {
+      const showInfos = showCandidates.map((r) => ({
+        r,
+        info: quoteInfoByKey.get(entryKey(DEVICE_TO_CATEGORY[r.device_type]!, catalogModelText(r), r.capacity)),
+      }));
+      const showSupplierIds = [...new Set(showInfos.map((x) => x.info?.supplierId).filter((v): v is string => !!v))];
+      const showSupplierNames = new Map<string, string>();
+      if (showSupplierIds.length) {
+        const { data: sup } = await ctx.db.from("suppliers").select("id, name, phone").in("id", showSupplierIds);
+        for (const s of sup ?? []) showSupplierNames.set(s.id, s.name ?? s.phone);
+      }
       pendingVisibility = [
-        ...showCandidates.map((r): PendingVisibility => ({ id: r.id, action: "show", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity })),
-        ...hideCandidates.map((r): PendingVisibility => ({ id: r.id, action: "hide", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity })),
+        ...showInfos.map(({ r, info }): PendingVisibility => ({
+          id: r.id, action: "show", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity,
+          cost: info?.cost ?? null, supplierName: info?.supplierId ? showSupplierNames.get(info.supplierId) ?? null : null,
+        })),
+        ...hideCandidates.map((r): PendingVisibility => ({ id: r.id, action: "hide", category: DEVICE_TO_CATEGORY[r.device_type], model: catalogModelText(r), capacity: r.capacity, cost: null, supplierName: null })),
       ];
     }
 
