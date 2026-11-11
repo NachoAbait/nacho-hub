@@ -16,6 +16,13 @@ export const BANNER_FETCH_LIMIT = 60;
  * alto de fila actual, nunca se pase del cuadro de 1920px (el body corta lo que sobra). */
 const MAX_VARIANT_ROWS = 12;
 
+/** Por encima de esta cantidad de filas, la foto grande de categoría (arriba de todo) se saca —
+ * no entran tantos modelos a la vez con ella puesta — y ese espacio se usa para agrandar las
+ * cards (ver `big` en css()). Por debajo, se muestra la foto y las cards quedan en tamaño normal.
+ * Calibrado con el catálogo real: iPhone (11 filas) necesita el modo grande sin foto; el resto de
+ * categorías (6 a 8 filas hoy) entra cómodo con la foto puesta. */
+const HERO_ROW_LIMIT = 9;
+
 export type BannerProduct = Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url" | "attributes">;
 
 export interface CategoryBannerProps {
@@ -26,11 +33,11 @@ export interface CategoryBannerProps {
 }
 
 /** Título y acento por categoría. Mismo lenguaje visual (negro + dorado) para toda la marca; Samsung en celeste.
- * showHero en false (iPhone): hay tantos modelos a la vez que una sola foto arriba no identifica a
- * ninguno en particular — mejor usar ese espacio para que cada card (con su propio render) quede
- * más grande, ya que son muchas filas compitiendo por lugar. */
-export const CATEGORY_STYLE: Record<Category, { title: string; upper?: boolean; showHero?: boolean; accent: string; light: string; dark: string }> = {
-  iphone: { title: "iPhones", showHero: false, accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
+ * Si la foto grande de categoría va o no arriba se decide en runtime según cuántas filas entran
+ * (ver HERO_ROW_LIMIT) — no es una propiedad fija por categoría, así se adapta solo si mañana hay
+ * más o menos modelos. */
+export const CATEGORY_STYLE: Record<Category, { title: string; upper?: boolean; accent: string; light: string; dark: string }> = {
+  iphone: { title: "iPhones", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   ipad: { title: "iPad", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   macbook: { title: "MacBook", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   watch: { title: "Apple Watch", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
@@ -172,8 +179,9 @@ const ICONS = {
 };
 const BENEFIT_ICONS = [ICONS.truck, ICONS.shield, ICONS.award, ICONS.card];
 
-/** `big`: cuando la categoría no muestra la foto grande de arriba (showHero false, hoy solo
- * iPhone), las cards usan ese espacio liberado para quedar más grandes en vez de dejarlo vacío. */
+/** `big`: cuando no hay lugar para la foto grande de arriba (demasiadas filas, ver
+ * HERO_ROW_LIMIT), las cards usan ese espacio liberado para quedar más grandes en vez de
+ * dejarlo vacío. */
 function css(accent: string, light: string, dark: string, big: boolean) {
   const cardPad = big ? "13px 22px" : "11px 20px";
   const thumbW = big ? 92 : 70;
@@ -216,14 +224,14 @@ function css(accent: string, light: string, dark: string, big: boolean) {
   .hero { margin: 24px 0 4px; display: flex; justify-content: center; align-items: center; height: 260px; position: relative; }
   .hero-glow { position: absolute; width: 440px; height: 240px; border-radius: 50%;
     background: radial-gradient(ellipse, ${accent}40, transparent 70%); filter: blur(2px); }
-  .hero img { position: relative; max-width: 380px; max-height: 260px; object-fit: contain; filter: drop-shadow(0 24px 36px rgba(0,0,0,0.65)); }
+  .hero img { position: relative; max-width: 380px; max-height: 260px; object-fit: contain; border-radius: 20px; filter: drop-shadow(0 24px 36px rgba(0,0,0,0.65)); }
   .list { margin-top: 14px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: ${listGap}px; min-height: 0; }
   .card { border-radius: 22px; border: 1px solid ${accent}4d;
     background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(0,0,0,0.25));
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); overflow: hidden; }
   .card-inner { display: flex; align-items: stretch; padding: ${cardPad}; gap: 18px; }
   .thumb { flex: none; width: ${thumbW}px; display: flex; align-items: center; justify-content: center; }
-  .thumb img { max-width: 100%; max-height: ${thumbImgH}px; object-fit: contain; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
+  .thumb img { max-width: 100%; max-height: ${thumbImgH}px; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
   .thumb-placeholder { width: ${thumbPhW}px; height: ${thumbPhH}px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15);
     background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -258,8 +266,10 @@ function css(accent: string, light: string, dark: string, big: boolean) {
 /** Banner de precios de una categoría. Base visual compartida (negro + bokeh dorado, chips de variante, precio en USD y pesos). */
 export function CategoryBanner({ category, products, usdArs }: CategoryBannerProps) {
   const style = CATEGORY_STYLE[category];
-  const showHero = style.showHero !== false;
-  const groups = capRows(groupProducts(category, products), MAX_VARIANT_ROWS);
+  const rawGroups = groupProducts(category, products);
+  const totalRows = rawGroups.reduce((sum, g) => sum + g.variants.length, 0);
+  const showHero = totalRows <= HERO_ROW_LIMIT;
+  const groups = capRows(rawGroups, MAX_VARIANT_ROWS);
   const heroImageUrl = showHero ? (products.find((p) => p.hero_image_url)?.hero_image_url ?? null) : null;
 
   return (
