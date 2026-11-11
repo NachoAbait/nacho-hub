@@ -7,10 +7,13 @@ import type { BusinessContext } from "@/lib/types";
 export const maxDuration = 120;
 
 /**
- * POST /api/agents/[id]   (Bearer CRON_SECRET)
+ * POST /api/agents/[id]   (Bearer CRON_SECRET) — botón "Ejecutar ahora" del dashboard.
  * Body opcional: { "context": "BNB" | "AgroScan" | "GLOBAL" }. Sin body corre en todos los contextos del agente.
+ *
+ * GET /api/agents/[id]   (Bearer CRON_SECRET) — para un agente con horario propio, distinto del de
+ * su tier (hoy solo Designer: ver vercel.json). Vercel Cron siempre llama por GET y sin body.
  */
-export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
+async function run(request: Request, ctx: { params: Promise<{ id: string }> }, trigger: "manual" | "cron") {
   if (!isAuthorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const { id } = await ctx.params;
   const mod = getAgentModule(id);
@@ -24,6 +27,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     /* sin body */
   }
   const contexts = wanted ? mod.contexts.filter((c) => c === wanted) : mod.contexts;
-  const runs = await Promise.all(contexts.map((c) => runAgent(mod, c, "manual")));
+  const runs = await Promise.all(contexts.map((c) => runAgent(mod, c, trigger)));
   return NextResponse.json({ ok: runs.every((r) => r.ok), runs });
 }
+
+export const GET = (request: Request, ctx: { params: Promise<{ id: string }> }) => run(request, ctx, "cron");
+export const POST = (request: Request, ctx: { params: Promise<{ id: string }> }) => run(request, ctx, "manual");

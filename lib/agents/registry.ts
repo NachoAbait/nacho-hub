@@ -44,5 +44,8 @@ export function tierOf(id: string): Tier | undefined {
 }
 
 export function modulesOfTier(tier: Tier): AgentModule[] {
-  return MODULES.filter((m) => tierOf(m.id) === tier);
+  // Designer corre en su propio horario, antes que el resto de Creators (ver vercel.json: tiene su
+  // propio cron a /api/agents/designer), para que el catálogo de banners salga recién cuando los
+  // precios del día ya están confirmados — no se dispara de nuevo acá.
+  return MODULES.filter((m) => tierOf(m.id) === tier && !(tier === "creators" && m.id === "designer"));
 }
