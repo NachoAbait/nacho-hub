@@ -24,6 +24,16 @@ export function isCategory(value: unknown): value is Category {
 
 export type BusinessContext = "BNB" | "AgroScan" | "GLOBAL";
 
+/** Chip/pulgadas/RAM/conectividad tal como vienen de NexiOS (price_catalog.attributes), separados
+ * del nombre — ver lib/nexios.ts. Estructuralmente igual al attributes de NexiosCatalogRow. */
+export interface ProductAttributes {
+  screen?: string;
+  chip?: string;
+  ram?: string;
+  material?: string;
+  connectivity?: string;
+}
+
 export interface Product {
   id: string;
   category: Category;
@@ -31,6 +41,7 @@ export interface Product {
   capacity: string | null;
   price_usd: number;
   hero_image_url: string | null;
+  attributes: ProductAttributes | null;
   display_order: number;
   is_active: boolean;
   context: BusinessContext;
@@ -52,6 +63,6 @@ export interface Banner {
 /** Lo que se guarda en banners.snapshot_json: exactamente lo que se renderizó. */
 export interface BannerSnapshot {
   category: Category;
-  products: Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url">[];
+  products: Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url" | "attributes">[];
   template_version: number;
 }

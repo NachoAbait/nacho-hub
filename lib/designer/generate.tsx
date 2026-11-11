@@ -1,23 +1,16 @@
 // "react-dom/server" está bloqueado por Next en la capa server; la variante .browser sí se permite
 import { renderToStaticMarkup } from "react-dom/server.browser";
 import { supabaseAdmin } from "@/lib/supabase";
+import { fetchExchangeRateConfig } from "@/lib/nexios";
 import { CATEGORIES, type Banner, type BannerSnapshot, type Category, type Product } from "@/lib/types";
 import { renderHtmlToPng } from "@/lib/designer/render";
-import { BANNER_MAX_PRODUCTS, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner } from "@/components/banners/category";
+import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner } from "@/components/banners/category";
 
 type SnapshotProduct = BannerSnapshot["products"][number];
 
 /** Todas las categorías comparten la base visual; el template sabe adaptarse a cada una. */
 export function hasTemplate(category: Category): boolean {
   return (CATEGORIES as readonly string[]).includes(category);
-}
-
-function todayLabel(): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "numeric",
-    month: "long",
-    timeZone: "America/Argentina/Buenos_Aires",
-  }).format(new Date());
 }
 
 export class DesignerError extends Error {
@@ -31,14 +24,37 @@ export async function activeProducts(category: Category): Promise<SnapshotProduc
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("products")
-    .select("id, model, capacity, price_usd, hero_image_url")
+    .select("id, model, capacity, price_usd, hero_image_url, attributes")
     .eq("category", category)
     .eq("is_active", true)
     .order("display_order", { ascending: true })
-    .limit(BANNER_MAX_PRODUCTS)
-    .returns<Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url">[]>();
+    .limit(BANNER_FETCH_LIMIT)
+    .returns<Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url" | "attributes">[]>();
   if (error) throw new DesignerError(`Error leyendo products: ${error.message}`);
   return (data ?? []).map((p) => ({ ...p, price_usd: Number(p.price_usd) }));
+}
+
+/**
+ * Pesos: la MISMA cotización y recargo que ya usa NexiOS para mostrarle el precio en pesos al
+ * cliente (Ajustes de la organización → "casa" de dolarapi.com + % de recargo), no un cálculo
+ * propio — así el banner nunca dice un número distinto al que ve el cliente en la app. Si no se
+ * puede leer la config o la cotización, se devuelve null y el banner simplemente no muestra pesos.
+ */
+async function fetchUsdArsRate(): Promise<number | null> {
+  try {
+    const cfg = await fetchExchangeRateConfig();
+    if (!cfg) return null;
+    if (cfg.manual != null) return cfg.manual;
+    if (!cfg.source) return null;
+    const res = await fetch("https://dolarapi.com/v1/dolares", { cache: "no-store" });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as { casa: string; venta: number }[];
+    const row = rows.find((r) => r.casa === cfg.source);
+    if (!row) return null;
+    return row.venta * (1 + (cfg.markupPct ?? 0) / 100);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -52,9 +68,10 @@ export async function generateBanner(category: Category): Promise<Banner> {
   const products = await activeProducts(category);
   if (products.length === 0) throw new DesignerError(`No hay productos activos en "${category}"`, 400);
 
+  const usdArs = await fetchUsdArsRate();
   const snapshot: BannerSnapshot = { category, products, template_version: BANNER_TEMPLATE_VERSION };
 
-  const html = "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} dateLabel={todayLabel()} />);
+  const html = "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} usdArs={usdArs} />);
   const png = await renderHtmlToPng(html, BANNER_SIZE);
 
   const storagePath = `${category}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;

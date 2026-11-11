@@ -109,6 +109,32 @@ export function catalogModelText(r: Pick<NexiosCatalogRow, "device_type" | "mode
   return parts.join(" ");
 }
 
+export interface ExchangeRateConfig {
+  /** Casa de dolarapi.com que usa la propia app ("blue", "oficial", etc). */
+  source: string | null;
+  markupPct: number | null;
+  /** Si está cargado, la app ignora la cotización en vivo y usa este valor fijo. */
+  manual: number | null;
+}
+
+/** La configuración real de cotización de NexiOS (Ajustes de la organización): mismo origen y
+ * recargo que ve el cliente en la app, para que el precio en pesos del banner coincida. */
+export async function fetchExchangeRateConfig(): Promise<ExchangeRateConfig | null> {
+  const db = nexios();
+  if (!db) return null;
+  const { data, error } = await db
+    .from("organizations")
+    .select("exchange_rate_source, exchange_rate_markup_pct, exchange_rate_manual")
+    .eq("id", NEXIOS_ORG_ID)
+    .maybeSingle<{ exchange_rate_source: string | null; exchange_rate_markup_pct: string | number | null; exchange_rate_manual: string | number | null }>();
+  if (error || !data) return null;
+  return {
+    source: data.exchange_rate_source,
+    markupPct: data.exchange_rate_markup_pct == null ? null : Number(data.exchange_rate_markup_pct),
+    manual: data.exchange_rate_manual == null ? null : Number(data.exchange_rate_manual),
+  };
+}
+
 /**
  * Actualiza el costo de una fila del catálogo y recalcula el precio con el margen cargado.
  * NexiOS tiene un trigger que deja el cambio en price_history.

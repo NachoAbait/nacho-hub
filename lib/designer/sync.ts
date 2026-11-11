@@ -69,6 +69,7 @@ export async function syncProductsFromNexios(db: SupabaseClient): Promise<SyncRe
         category,
         model: displayModel(r.device_type, r.model),
         capacity: displayCapacity(r.capacity),
+        attributes: r.attributes,
         price_usd: r.price_usd,
         cost_usd: r.cost_usd,
         margin_usd: r.margin_usd,
