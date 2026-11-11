@@ -4,7 +4,7 @@ import type { Product, ProductAttributes } from "@/lib/types";
 import type { Category } from "@/lib/types";
 
 /** Subir cuando cambie el diseño; queda guardado en snapshot_json. */
-export const BANNER_TEMPLATE_VERSION = 4;
+export const BANNER_TEMPLATE_VERSION = 5;
 
 export const BANNER_SIZE = { width: 1080, height: 1920 } as const;
 
@@ -16,12 +16,16 @@ export const BANNER_FETCH_LIMIT = 60;
  * alto de fila actual, nunca se pase del cuadro de 1920px (el body corta lo que sobra). */
 const MAX_VARIANT_ROWS = 12;
 
-/** Por encima de esta cantidad de filas, la foto grande de categoría (arriba de todo) se saca —
- * no entran tantos modelos a la vez con ella puesta — y ese espacio se usa para agrandar las
- * cards (ver `big` en css()). Por debajo, se muestra la foto y las cards quedan en tamaño normal.
- * Calibrado con el catálogo real: iPhone (11 filas) necesita el modo grande sin foto; el resto de
- * categorías (6 a 8 filas hoy) entra cómodo con la foto puesta. */
-const HERO_ROW_LIMIT = 9;
+/** Ya no hay foto grande de categoría arriba de todo en ninguna historia: ese espacio se le suma
+ * siempre a las cards. Cuantas menos filas entran, más margen libre queda — así que el tamaño de
+ * letra/foto de cada card escala hacia arriba cuando el catálogo de la categoría es chico (ver
+ * sizeScale()), en vez de dejar ese espacio de más vacío. */
+function sizeScale(totalRows: number): number {
+  if (totalRows >= 11) return 1;
+  if (totalRows >= 9) return 1.1;
+  if (totalRows >= 7) return 1.22;
+  return 1.35;
+}
 
 export type BannerProduct = Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url" | "attributes">;
 
@@ -32,10 +36,7 @@ export interface CategoryBannerProps {
   usdArs: number | null;
 }
 
-/** Título y acento por categoría. Mismo lenguaje visual (negro + dorado) para toda la marca; Samsung en celeste.
- * Si la foto grande de categoría va o no arriba se decide en runtime según cuántas filas entran
- * (ver HERO_ROW_LIMIT) — no es una propiedad fija por categoría, así se adapta solo si mañana hay
- * más o menos modelos. */
+/** Título y acento por categoría. Mismo lenguaje visual (negro + dorado) para toda la marca; Samsung en celeste. */
 export const CATEGORY_STYLE: Record<Category, { title: string; upper?: boolean; accent: string; light: string; dark: string }> = {
   iphone: { title: "iPhones", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   ipad: { title: "iPad", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
@@ -179,23 +180,22 @@ const ICONS = {
 };
 const BENEFIT_ICONS = [ICONS.truck, ICONS.shield, ICONS.award, ICONS.card];
 
-/** `big`: cuando no hay lugar para la foto grande de arriba (demasiadas filas, ver
- * HERO_ROW_LIMIT), las cards usan ese espacio liberado para quedar más grandes en vez de
- * dejarlo vacío. */
-function css(accent: string, light: string, dark: string, big: boolean) {
-  const cardPad = big ? "13px 22px" : "11px 20px";
-  const thumbW = big ? 92 : 70;
-  const thumbImgH = big ? 128 : 100;
-  const thumbPhW = big ? 56 : 44;
-  const thumbPhH = big ? 108 : 86;
-  const titleSize = big ? 33 : 27;
-  const rowPad = big ? "7px 0" : "6px 0";
-  const chipSize = big ? 19 : 17;
-  const chipPad = big ? "3px 12px" : "2px 10px";
-  const simpleSize = big ? 33 : 27;
-  const usdSize = big ? 39 : 32;
-  const arsSize = big ? 24 : 21;
-  const listGap = big ? 13 : 10;
+function css(accent: string, light: string, dark: string, scale: number) {
+  const s = (n: number) => Math.round(n * scale);
+  const cardPad = `${s(13)}px ${s(22)}px`;
+  const thumbW = s(92);
+  const thumbImgH = s(128);
+  const thumbPhW = s(56);
+  const thumbPhH = s(108);
+  const titleSize = s(33);
+  const rowPad = `${s(7)}px 0`;
+  const chipSize = s(19);
+  const chipPad = `${s(3)}px ${s(12)}px`;
+  const simpleSize = s(33);
+  const usdSize = s(39);
+  const arsSize = s(24);
+  const listGap = s(13);
+  const cardGap = s(18);
   return `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: ${BANNER_SIZE.width}px; height: ${BANNER_SIZE.height}px; overflow: hidden; }
@@ -221,15 +221,11 @@ function css(accent: string, light: string, dark: string, big: boolean) {
   .title.upper { text-transform: uppercase; }
   .title-sub { font-size: 44px; font-weight: 500; color: rgba(255,255,255,0.75); letter-spacing: -0.01em; }
   .subtitle { margin-top: 8px; font-size: 25px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
-  .hero { margin: 24px 0 4px; display: flex; justify-content: center; align-items: center; height: 260px; position: relative; }
-  .hero-glow { position: absolute; width: 440px; height: 240px; border-radius: 50%;
-    background: radial-gradient(ellipse, ${accent}40, transparent 70%); filter: blur(2px); }
-  .hero img { position: relative; max-width: 380px; max-height: 260px; object-fit: contain; border-radius: 20px; filter: drop-shadow(0 24px 36px rgba(0,0,0,0.65)); }
-  .list { margin-top: 14px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: ${listGap}px; min-height: 0; }
+  .list { margin-top: 36px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: ${listGap}px; min-height: 0; }
   .card { border-radius: 22px; border: 1px solid ${accent}4d;
     background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(0,0,0,0.25));
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); overflow: hidden; }
-  .card-inner { display: flex; align-items: stretch; padding: ${cardPad}; gap: 18px; }
+  .card-inner { display: flex; align-items: stretch; padding: ${cardPad}; gap: ${cardGap}px; }
   .thumb { flex: none; width: ${thumbW}px; display: flex; align-items: center; justify-content: center; }
   .thumb img { max-width: 100%; max-height: ${thumbImgH}px; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
   .thumb-placeholder { width: ${thumbPhW}px; height: ${thumbPhH}px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15);
@@ -268,9 +264,7 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
   const style = CATEGORY_STYLE[category];
   const rawGroups = groupProducts(category, products);
   const totalRows = rawGroups.reduce((sum, g) => sum + g.variants.length, 0);
-  const showHero = totalRows <= HERO_ROW_LIMIT;
   const groups = capRows(rawGroups, MAX_VARIANT_ROWS);
-  const heroImageUrl = showHero ? (products.find((p) => p.hero_image_url)?.hero_image_url ?? null) : null;
 
   return (
     <html lang="es">
@@ -282,7 +276,7 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=block"
         />
-        <style dangerouslySetInnerHTML={{ __html: css(style.accent, style.light, style.dark, !showHero) }} />
+        <style dangerouslySetInnerHTML={{ __html: css(style.accent, style.light, style.dark, sizeScale(totalRows)) }} />
       </head>
       <body>
         <div className="backdrop" />
@@ -302,14 +296,6 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
             <h1 className={`title${style.upper ? " upper" : ""}`}>{style.title}</h1>
           )}
           <div className="subtitle">Originales · Garantía BNB</div>
-
-          {heroImageUrl && (
-            <div className="hero">
-              <div className="hero-glow" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={heroImageUrl} alt="" />
-            </div>
-          )}
 
           <div className="list">
             {groups.map((g) => {
