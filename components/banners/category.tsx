@@ -14,7 +14,7 @@ export const BANNER_FETCH_LIMIT = 60;
 /** Filas de variante (tamaño/capacidad) que entran como máximo en la historia, sumando todas las
  * cards — no "productos": una Apple Watch con 3 tamaños ya son 3 filas. Ajustado para que, con el
  * alto de fila actual, nunca se pase del cuadro de 1920px (el body corta lo que sobra). */
-const MAX_VARIANT_ROWS = 9;
+const MAX_VARIANT_ROWS = 12;
 
 export type BannerProduct = Pick<Product, "id" | "model" | "capacity" | "price_usd" | "hero_image_url" | "attributes">;
 
@@ -185,55 +185,55 @@ function css(accent: string, light: string, dark: string) {
     background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.03) 48%, transparent 56%); }
   .grain { position: absolute; inset: 0; opacity: 0.07; mix-blend-mode: screen;
     background-image: radial-gradient(rgba(255,255,255,0.6) 0.5px, transparent 0.5px); background-size: 4px 4px; }
-  .page { position: relative; height: 100%; padding: 96px 60px 64px; display: flex; flex-direction: column; }
+  .page { position: relative; height: 100%; padding: 84px 60px 52px; display: flex; flex-direction: column; }
   .eyebrow-row { display: flex; align-items: center; gap: 18px; }
   .eyebrow { font-size: 24px; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(255,255,255,0.85); white-space: nowrap; }
   .eyebrow-line { flex: 1; height: 1px; background: linear-gradient(90deg, ${accent}, transparent); }
-  .title { margin-top: 22px; font-weight: 900; font-size: 148px; line-height: 0.92; letter-spacing: -0.03em;
+  .title { margin-top: 14px; font-weight: 900; font-size: 132px; line-height: 0.92; letter-spacing: -0.03em;
     background: linear-gradient(180deg, ${light} 0%, ${accent} 55%, ${dark} 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
   .title.upper { text-transform: uppercase; }
-  .title-sub { font-size: 50px; font-weight: 500; color: rgba(255,255,255,0.75); letter-spacing: -0.01em; }
-  .subtitle { margin-top: 10px; font-size: 27px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
-  .hero { margin: 36px 0 8px; display: flex; justify-content: center; align-items: center; height: 300px; position: relative; }
-  .hero-glow { position: absolute; width: 480px; height: 280px; border-radius: 50%;
+  .title-sub { font-size: 44px; font-weight: 500; color: rgba(255,255,255,0.75); letter-spacing: -0.01em; }
+  .subtitle { margin-top: 8px; font-size: 25px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
+  .hero { margin: 24px 0 4px; display: flex; justify-content: center; align-items: center; height: 260px; position: relative; }
+  .hero-glow { position: absolute; width: 440px; height: 240px; border-radius: 50%;
     background: radial-gradient(ellipse, ${accent}40, transparent 70%); filter: blur(2px); }
-  .hero img { position: relative; max-width: 420px; max-height: 300px; object-fit: contain; filter: drop-shadow(0 24px 36px rgba(0,0,0,0.65)); }
-  .list { margin-top: 20px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 14px; min-height: 0; }
-  .card { border-radius: 24px; border: 1px solid ${accent}4d;
+  .hero img { position: relative; max-width: 380px; max-height: 260px; object-fit: contain; filter: drop-shadow(0 24px 36px rgba(0,0,0,0.65)); }
+  .list { margin-top: 14px; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
+  .card { border-radius: 22px; border: 1px solid ${accent}4d;
     background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(0,0,0,0.25));
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); overflow: hidden; }
-  .card-inner { display: flex; align-items: stretch; padding: 16px 22px; gap: 20px; }
-  .thumb { flex: none; width: 76px; display: flex; align-items: center; justify-content: center; }
-  .thumb img { max-width: 100%; max-height: 110px; object-fit: contain; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
-  .thumb-placeholder { width: 48px; height: 94px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15);
+  .card-inner { display: flex; align-items: stretch; padding: 11px 20px; gap: 18px; }
+  .thumb { flex: none; width: 70px; display: flex; align-items: center; justify-content: center; }
+  .thumb img { max-width: 100%; max-height: 100px; object-fit: contain; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
+  .thumb-placeholder { width: 44px; height: 86px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15);
     background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .group-title { font-size: 30px; line-height: 1.15; padding-bottom: 10px; }
+  .group-title { font-size: 27px; line-height: 1.15; padding-bottom: 5px; }
   .brand { font-weight: 500; color: rgba(255,255,255,0.8); }
   .line { font-weight: 800; background: linear-gradient(180deg, ${light}, ${accent});
     -webkit-background-clip: text; background-clip: text; color: transparent; }
   .rows { display: flex; flex-direction: column; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 0; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 0; }
   .row + .row { border-top: 1px solid rgba(255,255,255,0.08); }
   .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .chip { font-size: 19px; font-weight: 700; padding: 3px 12px; border-radius: 8px; border: 1.5px solid; white-space: nowrap; }
+  .chip { font-size: 17px; font-weight: 700; padding: 2px 10px; border-radius: 8px; border: 1.5px solid; white-space: nowrap; }
   .chip-size { color: #f3b96a; border-color: #f3b96a80; }
   .chip-capacity { color: #7fb6ff; border-color: #7fb6ff80; }
   .chip-ram { color: #c6a4ff; border-color: #c6a4ff80; }
-  .simple-name { font-size: 30px; font-weight: 700; color: #fff; }
+  .simple-name { font-size: 27px; font-weight: 700; color: #fff; }
   .prices { text-align: right; flex: none; }
-  .usd { font-weight: 900; font-size: 36px; line-height: 1; letter-spacing: -0.01em;
+  .usd { font-weight: 900; font-size: 32px; line-height: 1; letter-spacing: -0.01em;
     background: linear-gradient(180deg, ${light}, ${accent}); -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
-  .ars { margin-top: 3px; font-size: 20px; font-weight: 600; color: rgba(255,255,255,0.45); white-space: nowrap; }
-  .footer { margin-top: 28px; padding-top: 26px; border-top: 1px solid ${accent}40; }
+  .ars { margin-top: 2px; font-size: 18px; font-weight: 600; color: rgba(255,255,255,0.45); white-space: nowrap; }
+  .footer { margin-top: 18px; padding-top: 18px; border-top: 1px solid ${accent}40; }
   .benefits { display: flex; justify-content: space-between; }
-  .benefit { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 23%; text-align: center; }
-  .benefit svg { width: 34px; height: 34px; stroke: ${accent}; fill: none; stroke-width: 1.6; }
-  .benefit span { font-size: 17px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); line-height: 1.25; }
-  .brandfoot { margin-top: 30px; display: flex; align-items: center; justify-content: center; gap: 18px; }
+  .benefit { display: flex; flex-direction: column; align-items: center; gap: 7px; width: 23%; text-align: center; }
+  .benefit svg { width: 30px; height: 30px; stroke: ${accent}; fill: none; stroke-width: 1.6; }
+  .benefit span { font-size: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); line-height: 1.25; }
+  .brandfoot { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 18px; }
   .brandfoot .bar { width: 48px; height: 1px; background: ${accent}80; }
-  .brandfoot .logo { font-size: 34px; font-weight: 900; letter-spacing: 0.02em; color: #fff; }
+  .brandfoot .logo { font-size: 30px; font-weight: 900; letter-spacing: 0.02em; color: #fff; }
 `;
 }
 
