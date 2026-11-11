@@ -175,19 +175,19 @@ const BENEFIT_ICONS = [ICONS.truck, ICONS.shield, ICONS.award, ICONS.card];
 /** `big`: cuando la categoría no muestra la foto grande de arriba (showHero false, hoy solo
  * iPhone), las cards usan ese espacio liberado para quedar más grandes en vez de dejarlo vacío. */
 function css(accent: string, light: string, dark: string, big: boolean) {
-  const cardPad = big ? "15px 22px" : "11px 20px";
+  const cardPad = big ? "13px 22px" : "11px 20px";
   const thumbW = big ? 92 : 70;
   const thumbImgH = big ? 128 : 100;
   const thumbPhW = big ? 56 : 44;
   const thumbPhH = big ? 108 : 86;
   const titleSize = big ? 33 : 27;
-  const rowPad = big ? "9px 0" : "6px 0";
+  const rowPad = big ? "7px 0" : "6px 0";
   const chipSize = big ? 19 : 17;
   const chipPad = big ? "3px 12px" : "2px 10px";
   const simpleSize = big ? 33 : 27;
   const usdSize = big ? 39 : 32;
-  const arsSize = big ? 21 : 18;
-  const listGap = big ? 16 : 10;
+  const arsSize = big ? 24 : 21;
+  const listGap = big ? 13 : 10;
   return `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: ${BANNER_SIZE.width}px; height: ${BANNER_SIZE.height}px; overflow: hidden; }
@@ -243,7 +243,7 @@ function css(accent: string, light: string, dark: string, big: boolean) {
   .prices { text-align: right; flex: none; }
   .usd { font-weight: 900; font-size: ${usdSize}px; line-height: 1; letter-spacing: -0.01em;
     background: linear-gradient(180deg, ${light}, ${accent}); -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
-  .ars { margin-top: 2px; font-size: ${arsSize}px; font-weight: 600; color: rgba(255,255,255,0.45); white-space: nowrap; }
+  .ars { margin-top: 3px; font-size: ${arsSize}px; font-weight: 700; color: rgba(255,255,255,0.92); white-space: nowrap; }
   .footer { margin-top: 18px; padding-top: 18px; border-top: 1px solid ${accent}40; }
   .benefits { display: flex; justify-content: space-between; }
   .benefit { display: flex; flex-direction: column; align-items: center; gap: 7px; width: 23%; text-align: center; }

@@ -62,7 +62,11 @@ export async function cutoutBackground(buf: Buffer): Promise<Buffer> {
     propagate(x + 1, y, wasTransparent, r, g, b); propagate(x - 1, y, wasTransparent, r, g, b);
     propagate(x, y + 1, wasTransparent, r, g, b); propagate(x, y - 1, wasTransparent, r, g, b);
   }
-  return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
+  // Las fotos "legado" (15/16/17 Pro Max) traían mucho margen vacío alrededor del teléfono dentro
+  // del lienzo de 1400x1660 — una vez transparente, ese margen hacía que el teléfono se viera
+  // chiquito en la card (contain escala según el tamaño de la imagen entera, no del sujeto). Recorta
+  // al borde real de lo que quedó opaco, así el teléfono ocupa todo el alto disponible en la card.
+  return sharp(data, { raw: { width, height, channels } }).trim().png().toBuffer();
 }
 
 const CDN = "https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is";
@@ -96,7 +100,7 @@ const CATALOGO: Record<string, Record<string, string>> = {
   "iPhone 17 Pro Max": legado("iphone-17-pro", "202509", "6-9inch", PRO17),
   "iPhone 17e": nuevo("iphone-17e", "202603", ["softpink", "white", "black"]),
   "iPhone 18 Pro": nuevo("iphone-18-pro", "202609", ["burgundy", "glacier", "silver", "black"]),
-  "iPhone 18 Pro Max": nuevo("iphone-18-pro-max", "202609", ["burgundy", "glacier", "silver", "black"]),
+  "iPhone 18 Pro Max": nuevo("iphone-18-pro-max", "202609", ["glacier", "burgundy", "silver", "black"]),
   "iPhone Duo": nuevo("iphone-duo", "202609", ["star-white", "night-sky"]),
 };
 
