@@ -26,6 +26,12 @@ function label(model: string, capacity: string | null): string {
   return capacity ? `${model} ${capacity}` : model;
 }
 
+/** Feedback de "está cargando" más visible que un simple "…": sin esto, con la red un poco lenta
+ * parecía que el click no hizo nada y el usuario volvía a tocar el botón. */
+function Spinner({ className = "" }: { className?: string }) {
+  return <span className={`inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent ${className}`} />;
+}
+
 /** Modelos nuevos: a diferencia de PendingVisibility (ya viene armado con catalogModelText), acá
  * model queda limpio a propósito (ver price-analyst.ts) y chip/+Cell/pulgadas/mm viven aparte —
  * sin esto el cartel no distinguía un Apple Watch de 46mm de uno de 42mm. */
@@ -61,6 +67,10 @@ export function CatalogManagerPanel() {
   // Visibilidad no tiene un registro propio en la base (solo toca NexiOS directo), así que acá sí
   // se pierde al cerrar el panel — a diferencia de Habilitar/Crear, que el servidor recuerda.
   const [doneVisibility, setDoneVisibility] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
+  // Al confirmar algo, en vez de refrescar al toque (lo que hacía que el ítem desapareciera de
+  // golpe y pareciera que el click no sirvió de nada), lo dejamos marcado "listo" un instante para
+  // que se vea el flash verde, y recién ahí pedimos los datos nuevos.
+  const [justDone, setJustDone] = useState<Set<string>>(new Set());
   const [, start] = useTransition();
 
   const reload = () => { loadCatalogManagerPanel().then(setData); };
@@ -74,8 +84,20 @@ export function CatalogManagerPanel() {
       const r = await action();
       setMsg(r.message);
       setPendingId(null);
-      if (r.ok && done) setDoneVisibility((prev) => new Map(prev).set(key, done));
-      reload();
+      if (!r.ok) {
+        reload();
+        return;
+      }
+      setJustDone((prev) => new Set(prev).add(key));
+      if (done) setDoneVisibility((prev) => new Map(prev).set(key, done));
+      setTimeout(() => {
+        setJustDone((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        reload();
+      }, 650);
     });
   }
 
@@ -98,7 +120,7 @@ export function CatalogManagerPanel() {
           disabled={pendingId === "auto-toggle"}
           onClick={() => run("auto-toggle", () => setCatalogManagerAuto(!data.auto))}
         >
-          {data.auto ? "Pasar a manual" : "Pasar a automático"}
+          {pendingId === "auto-toggle" ? <Spinner /> : data.auto ? "Pasar a manual" : "Pasar a automático"}
         </button>
       </div>
 
@@ -117,58 +139,66 @@ export function CatalogManagerPanel() {
               {CATEGORY_LABEL[category]}
             </div>
             <div className="flex flex-col divide-y divide-white/5">
-              {priced.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 px-2 py-1.5">
-                  <div className="min-w-0">
-                    <div className={`truncate font-semibold ${p.confirmed ? "text-green-400" : "text-white/90"}`}>{label(p.model, p.capacity)}</div>
-                    <div className={p.confirmed ? "text-green-400/60" : "text-white/50"}>
-                      {p.previousCost != null ? `${money(p.previousCost)} en la app → ` : "sin precio previo → "}
-                      <span className={`font-semibold ${p.confirmed ? "text-green-400" : "text-amber-300"}`}>{money(p.newCost)}</span>
-                      {p.supplierName ? ` · ${p.supplierName}` : ""}
+              {priced.map((p) => {
+                const isPending = pendingId === p.id;
+                const isDone = p.confirmed || justDone.has(p.id);
+                return (
+                  <div key={p.id} className="flex items-center justify-between gap-2 px-2 py-1.5 transition-colors duration-300">
+                    <div className="min-w-0">
+                      <div className={`truncate font-semibold transition-colors duration-300 ${isDone ? "text-green-400" : "text-white/90"}`}>{label(p.model, p.capacity)}</div>
+                      <div className={`transition-colors duration-300 ${isDone ? "text-green-400/60" : "text-white/50"}`}>
+                        {p.previousCost != null ? `${money(p.previousCost)} en la app → ` : "sin precio previo → "}
+                        <span className={`font-semibold ${isDone ? "text-green-400" : "text-amber-300"}`}>{money(p.newCost)}</span>
+                        {p.supplierName ? ` · ${p.supplierName}` : ""}
+                      </div>
                     </div>
+                    {isDone ? (
+                      <span className="text-sm text-green-400">✓</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={btn}
+                        disabled={isPending}
+                        onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}
+                      >
+                        {isPending ? <Spinner /> : "Habilitar"}
+                      </button>
+                    )}
                   </div>
-                  {p.confirmed ? (
-                    <span className="text-sm text-green-400">✓</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={btn}
-                      disabled={pendingId === p.id}
-                      onClick={() => run(p.id, () => confirmPriceUpdate(p.id))}
-                    >
-                      {pendingId === p.id ? "…" : "Habilitar"}
-                    </button>
-                  )}
-                </div>
-              ))}
-              {fresh.map((m) => (
-                <div key={m.id} className={`flex items-center justify-between gap-2 px-2 py-1.5 ${m.confirmed ? "" : "border-sky-400/30 bg-sky-400/10"}`}>
-                  <div className="min-w-0">
-                    <div className={`truncate font-semibold ${m.confirmed ? "text-green-400" : "text-sky-200"}`}>
-                      {newModelLabel(m)}{" "}
-                      <span className={`ml-1 text-[9px] font-bold uppercase tracking-wide ${m.confirmed ? "text-green-400" : "text-sky-300"}`}>
-                        {m.confirmed ? "creado" : "nuevo"}
-                      </span>
+                );
+              })}
+              {fresh.map((m) => {
+                const isPending = pendingId === m.id;
+                const isDone = m.confirmed || justDone.has(m.id);
+                return (
+                  <div key={m.id} className={`flex items-center justify-between gap-2 px-2 py-1.5 transition-colors duration-300 ${isDone ? "" : "border-sky-400/30 bg-sky-400/10"}`}>
+                    <div className="min-w-0">
+                      <div className={`truncate font-semibold transition-colors duration-300 ${isDone ? "text-green-400" : "text-sky-200"}`}>
+                        {newModelLabel(m)}{" "}
+                        <span className={`ml-1 text-[9px] font-bold uppercase tracking-wide ${isDone ? "text-green-400" : "text-sky-300"}`}>
+                          {isDone ? "creado" : "nuevo"}
+                        </span>
+                      </div>
+                      <div className={`transition-colors duration-300 ${isDone ? "text-green-400/60" : "text-sky-200/60"}`}>
+                        costo {money(m.detectedCostUsd)} de {m.supplierName ?? "proveedor"}
+                        {m.suggestedPrice != null && <> · sugerido {money(m.suggestedPrice)} (margen {money(m.suggestedMargin!)})</>}
+                      </div>
                     </div>
-                    <div className={m.confirmed ? "text-green-400/60" : "text-sky-200/60"}>
-                      costo {money(m.detectedCostUsd)} de {m.supplierName ?? "proveedor"}
-                      {m.suggestedPrice != null && <> · sugerido {money(m.suggestedPrice)} (margen {money(m.suggestedMargin!)})</>}
-                    </div>
+                    {isDone ? (
+                      <span className="text-sm text-green-400">✓</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
+                        disabled={isPending}
+                        onClick={() => run(m.id, () => createCatalogProduct(m.id))}
+                      >
+                        {isPending ? <Spinner /> : "Crear"}
+                      </button>
+                    )}
                   </div>
-                  {m.confirmed ? (
-                    <span className="text-sm text-green-400">✓</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="rounded-full border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-40"
-                      disabled={pendingId === m.id}
-                      onClick={() => run(m.id, () => createCatalogProduct(m.id))}
-                    >
-                      {pendingId === m.id ? "Creando…" : "Crear"}
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -195,43 +225,65 @@ export function CatalogManagerPanel() {
           {data.pendingVisibility.length === 0 && doneVisibility.size === 0 && <p className="text-white/50">Nada esperando confirmación.</p>}
           {data.pendingVisibility.map((v: PendingVisibility) => {
             const isShow = v.action === "show";
+            const isPending = pendingId === v.id;
+            const isDone = justDone.has(v.id);
             return (
               <div
                 key={v.id}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 ${isShow ? "border-green-400/25 bg-green-400/5" : "border-amber-400/25 bg-amber-400/5"}`}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 transition-all duration-300 ${
+                  isDone
+                    ? "scale-[0.99] border-green-400/40 bg-green-400/15 opacity-90"
+                    : isShow
+                      ? "border-green-400/25 bg-green-400/5"
+                      : "border-amber-400/25 bg-amber-400/5"
+                }`}
               >
-                <div className="min-w-0">
-                  <div className={`text-[9px] font-bold uppercase tracking-wide ${isShow ? "text-green-300" : "text-amber-300"}`}>
-                    {isShow ? "Volvió a tener stock" : "Sin stock hoy"}
+                {isDone ? (
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-bold uppercase tracking-wide text-green-300">Listo</div>
+                    <div className="mt-0.5 truncate font-semibold text-green-200">
+                      {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
+                    </div>
+                    <div className="text-green-300/60">{isShow ? "mostrado en la tienda" : "ocultado de la tienda"}</div>
                   </div>
-                  <div className="mt-0.5 truncate font-semibold text-white/90">
-                    {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
+                ) : (
+                  <div className="min-w-0">
+                    <div className={`text-[9px] font-bold uppercase tracking-wide ${isShow ? "text-green-300" : "text-amber-300"}`}>
+                      {isShow ? "Volvió a tener stock" : "Sin stock hoy"}
+                    </div>
+                    <div className="mt-0.5 truncate font-semibold text-white/90">
+                      {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
+                    </div>
+                    <div className="text-white/50">
+                      {isShow
+                        ? `No estaba disponible y hoy ${v.supplierName ?? "un proveedor"} lo cotizó${v.cost != null ? ` a ${money(v.cost)}` : ""}.`
+                        : "Ningún proveedor lo cotizó hoy: nadie tiene stock."}
+                    </div>
                   </div>
-                  <div className="text-white/50">
-                    {isShow
-                      ? `No estaba disponible y hoy ${v.supplierName ?? "un proveedor"} lo cotizó${v.cost != null ? ` a ${money(v.cost)}` : ""}.`
-                      : "Ningún proveedor lo cotizó hoy: nadie tiene stock."}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className={
-                    isShow
-                      ? "rounded-full border border-green-400/40 bg-green-400/15 px-3 py-1 text-xs font-semibold text-green-200 transition hover:bg-green-400/25 disabled:opacity-40"
-                      : "rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/25 disabled:opacity-40"
-                  }
-                  disabled={pendingId === v.id}
-                  onClick={() => run(
-                    v.id,
-                    () => applyCatalogVisibility(v.id, v.action),
-                    {
-                      title: `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""}`,
-                      subtitle: isShow ? "vuelto a mostrar" : "ocultado",
-                    },
-                  )}
-                >
-                  {pendingId === v.id ? "…" : isShow ? "Mostrar en la tienda" : "Ocultar de la tienda"}
-                </button>
+                )}
+                {isDone ? (
+                  <span className="text-base text-green-400">✓</span>
+                ) : (
+                  <button
+                    type="button"
+                    className={
+                      isShow
+                        ? "rounded-full border border-green-400/40 bg-green-400/15 px-3 py-1 text-xs font-semibold text-green-200 transition hover:bg-green-400/25 disabled:opacity-40"
+                        : "rounded-full border border-amber-400/40 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-200 transition hover:bg-amber-400/25 disabled:opacity-40"
+                    }
+                    disabled={isPending}
+                    onClick={() => run(
+                      v.id,
+                      () => applyCatalogVisibility(v.id, v.action),
+                      {
+                        title: `${v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}${v.model}${v.capacity ? ` ${v.capacity}` : ""}`,
+                        subtitle: isShow ? "vuelto a mostrar" : "ocultado",
+                      },
+                    )}
+                  >
+                    {isPending ? <Spinner /> : isShow ? "Mostrar en la tienda" : "Ocultar de la tienda"}
+                  </button>
+                )}
               </div>
             );
           })}
