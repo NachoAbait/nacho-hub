@@ -4,7 +4,7 @@ import type { Product, ProductAttributes } from "@/lib/types";
 import type { Category } from "@/lib/types";
 
 /** Subir cuando cambie el diseño; queda guardado en snapshot_json. */
-export const BANNER_TEMPLATE_VERSION = 5;
+export const BANNER_TEMPLATE_VERSION = 6;
 
 export const BANNER_SIZE = { width: 1080, height: 1920 } as const;
 
@@ -64,7 +64,7 @@ function normalizeInches(raw: string): string {
 
 interface Chip {
   label: string;
-  kind: "size" | "capacity" | "ram";
+  kind: "size" | "capacity" | "ram" | "connectivity";
 }
 
 /** Qué chips le corresponden a un SKU según la categoría: nunca inventa un dato que no esté en attributes/capacity. */
@@ -78,6 +78,11 @@ function buildChips(category: Category, capacity: string | null, attrs: ProductA
     if (attrs?.ram) chips.push({ label: /gb|tb/i.test(attrs.ram) ? `${attrs.ram} RAM` : `${attrs.ram}GB RAM`, kind: "ram" });
   } else if (capacity) {
     chips.push({ label: capacity, kind: "capacity" });
+  }
+  // Sin esto, un wifi-only y un wifi+celular del mismo modelo/capacidad/chip quedan como dos filas
+  // idénticas (mismo texto, precio distinto) — el chip es lo único que los distingue.
+  if (attrs?.connectivity && /cellular/i.test(attrs.connectivity)) {
+    chips.push({ label: "+ CELL", kind: "connectivity" });
   }
   return chips;
 }
@@ -183,10 +188,12 @@ const BENEFIT_ICONS = [ICONS.truck, ICONS.shield, ICONS.award, ICONS.card];
 function css(accent: string, light: string, dark: string, scale: number) {
   const s = (n: number) => Math.round(n * scale);
   const cardPad = `${s(13)}px ${s(22)}px`;
-  const thumbW = s(92);
-  const thumbImgH = s(128);
-  const thumbPhW = s(56);
-  const thumbPhH = s(108);
+  // El ancho base (92) es el que ya entraba justo en iPhone (scale 1, el catálogo más apretado) —
+  // no se toca ahí. El extra solo aparece cuando hay margen de sobra (scale > 1, menos modelos),
+  // para que la foto crezca sin angostar el texto hasta que haga wrap y desborde el cuadro.
+  const thumbW = s(92) + Math.round((scale - 1) * 160);
+  const thumbPhW = s(56) + Math.round((scale - 1) * 100);
+  const thumbPhH = s(108) + Math.round((scale - 1) * 190);
   const titleSize = s(33);
   const rowPad = `${s(7)}px 0`;
   const chipSize = s(19);
@@ -227,7 +234,7 @@ function css(accent: string, light: string, dark: string, scale: number) {
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); overflow: hidden; }
   .card-inner { display: flex; align-items: stretch; padding: ${cardPad}; gap: ${cardGap}px; }
   .thumb { flex: none; width: ${thumbW}px; display: flex; align-items: center; justify-content: center; }
-  .thumb img { max-width: 100%; max-height: ${thumbImgH}px; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
+  .thumb img { max-width: 100%; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.6)); }
   .thumb-placeholder { width: ${thumbPhW}px; height: ${thumbPhH}px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.15);
     background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -243,6 +250,7 @@ function css(accent: string, light: string, dark: string, scale: number) {
   .chip-size { color: #f3b96a; border-color: #f3b96a80; }
   .chip-capacity { color: #7fb6ff; border-color: #7fb6ff80; }
   .chip-ram { color: #c6a4ff; border-color: #c6a4ff80; }
+  .chip-connectivity { color: #8de3a8; border-color: #8de3a880; }
   .simple-name { font-size: ${simpleSize}px; font-weight: 700; color: #fff; }
   .prices { text-align: right; flex: none; }
   .usd { font-weight: 900; font-size: ${usdSize}px; line-height: 1; letter-spacing: -0.01em;
@@ -265,6 +273,13 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
   const rawGroups = groupProducts(category, products);
   const totalRows = rawGroups.reduce((sum, g) => sum + g.variants.length, 0);
   const groups = capRows(rawGroups, MAX_VARIANT_ROWS);
+  const scale = sizeScale(totalRows);
+  const s = (n: number) => Math.round(n * scale);
+  // Alto de imagen por CARD, no global: una card de 1 fila (128, igual que siempre) no necesita lo
+  // mismo que una de 4 filas (iPad A16) — ahí la foto puede crecer porque el texto ya hizo crecer
+  // la card. El bonus por fila extra es a propósito MENOR al alto real que agrega una fila de texto,
+  // así la imagen nunca es la que empuja la card a desbordar el cuadro.
+  const imgMaxH = (variantRows: number) => s(128) + Math.max(0, variantRows - 1) * s(34);
 
   return (
     <html lang="es">
@@ -276,7 +291,7 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=block"
         />
-        <style dangerouslySetInnerHTML={{ __html: css(style.accent, style.light, style.dark, sizeScale(totalRows)) }} />
+        <style dangerouslySetInnerHTML={{ __html: css(style.accent, style.light, style.dark, scale) }} />
       </head>
       <body>
         <div className="backdrop" />
@@ -306,7 +321,7 @@ export function CategoryBanner({ category, products, usdArs }: CategoryBannerPro
                     <div className="thumb">
                       {g.heroImageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={g.heroImageUrl} alt="" />
+                        <img src={g.heroImageUrl} alt="" style={{ maxHeight: imgMaxH(g.variants.length) }} />
                       ) : (
                         <div className="thumb-placeholder" />
                       )}
