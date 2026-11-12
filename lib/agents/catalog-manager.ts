@@ -151,13 +151,40 @@ export const catalogManager: AgentModule = {
       };
     });
 
+    // Nombre legible de una fila de NexiOS para el detalle debajo de cada conteo (ocultados/
+    // mostrados/pendientes): sin esto el informe solo decía "oculté 3" sin decir cuáles 3.
+    const fmtRow = (r: NexiosCatalogRow) => {
+      const cat = DEVICE_TO_CATEGORY[r.device_type];
+      return `${cat ? CATEGORY_LABEL[cat] + ": " : ""}${catalogModelText(r)}${r.capacity ? " " + r.capacity : ""}`;
+    };
+
     const lines: string[] = ["# Catálogo"];
     lines.push("", `Modo: ${auto ? "automático" : "manual, esperando tu confirmación"}.`);
     if (auto) {
-      lines.push(applied.shown ? `Volvieron a mostrarse ${applied.shown} (un proveedor los cotizó de nuevo hoy).` : "Nadie volvió a tener stock de algo que estaba oculto.");
-      if (ctx.trigger !== "ingest") lines.push(applied.hidden ? `Oculté ${applied.hidden} del catálogo público: ningún proveedor los cotizó hoy.` : "Todo lo que estaba visible, algún proveedor lo cotizó hoy.");
+      if (applied.shown) {
+        lines.push(`Volvieron a mostrarse ${applied.shown} (un proveedor los cotizó de nuevo hoy):`);
+        for (const r of showCandidates) lines.push(`- ${fmtRow(r)}`);
+      } else {
+        lines.push("Nadie volvió a tener stock de algo que estaba oculto.");
+      }
+      if (ctx.trigger !== "ingest") {
+        if (applied.hidden) {
+          lines.push("", `Oculté ${applied.hidden} del catálogo público: ningún proveedor los cotizó hoy:`);
+          for (const r of hideCandidates) lines.push(`- ${fmtRow(r)}`);
+        } else {
+          lines.push("Todo lo que estaba visible, algún proveedor lo cotizó hoy.");
+        }
+      }
     } else if (pendingVisibility.length) {
-      lines.push(`Hay ${pendingVisibility.length} cambios de visibilidad esperando que los confirmes uno por uno en mi panel.`);
+      lines.push(`Hay ${pendingVisibility.length} cambios de visibilidad esperando que los confirmes uno por uno en mi panel:`);
+      if (showCandidates.length) {
+        lines.push(`- Volver a mostrar (${showCandidates.length}):`);
+        for (const r of showCandidates) lines.push(`  - ${fmtRow(r)}`);
+      }
+      if (hideCandidates.length) {
+        lines.push(`- Ocultar (${hideCandidates.length}):`);
+        for (const r of hideCandidates) lines.push(`  - ${fmtRow(r)}`);
+      }
     } else {
       lines.push("Nada para mostrar u ocultar por ahora.");
     }
