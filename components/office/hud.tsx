@@ -7,6 +7,7 @@ import { BRIEFS } from "@/lib/agent-briefs";
 import { RunNowButton } from "@/components/office/run-now-button";
 import { PriceReaderPanel } from "@/components/office/price-reader-panel";
 import { PriceAnalystPanel } from "@/components/office/price-analyst-panel";
+import { PriceHistorianPanel } from "@/components/office/price-historian-panel";
 import { StockAnalystPanel } from "@/components/office/stock-analyst-panel";
 import { CatalogManagerPanel } from "@/components/office/catalog-manager-panel";
 import { MarketWatcherPanel } from "@/components/office/market-watcher-panel";
@@ -107,7 +108,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
 
       {/* panel del agente */}
       {agent && (
-        <aside key={agent.id} className={`panel-enter absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" || agent.id === "catalog-manager" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
+        <aside key={agent.id} className={`panel-enter absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" || agent.id === "catalog-manager" || agent.id === "price-historian" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
           <header className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">
@@ -189,6 +190,12 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "price-historian" && (
+            <div className="border-t border-white/10 pt-4">
+              <PriceHistorianPanel />
+            </div>
+          )}
+
           {agent.id === "market-watcher" && focus && (
             <div className="border-t border-white/10 pt-4">
               <MarketWatcherPanel context={focus.floor} />
@@ -243,7 +250,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "price-historian" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 

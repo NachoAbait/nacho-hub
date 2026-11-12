@@ -27,6 +27,7 @@ import {
 import { confirmAllUpdates, confirmUpdate, correctUpdate } from "@/lib/price-review";
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
 import { computeStockReport, type StockReport } from "@/lib/stock-report";
+import { computePriceHistory, type PriceHistoryResult } from "@/lib/price-history";
 import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
@@ -155,6 +156,13 @@ export type { StockReport } from "@/lib/stock-report";
 /** El cuadro visual de Julieta: siempre en vivo contra NexiOS, no espera a la próxima corrida programada. */
 export async function loadStockReport(): Promise<StockReport> {
   return computeStockReport();
+}
+
+export type { PriceHistoryResult } from "@/lib/price-history";
+
+/** El gráfico de Delfina: todo el historial de cotizaciones, siempre en vivo. */
+export async function loadPriceHistory(): Promise<PriceHistoryResult> {
+  return computePriceHistory(supabaseAdmin());
 }
 
 export type { MarketReport } from "@/lib/market-report";
