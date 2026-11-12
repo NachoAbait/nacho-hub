@@ -6,12 +6,8 @@ import { PanelSkeleton } from "@/components/office/skeleton";
 import { CATEGORIES, CATEGORY_LABEL, type Category } from "@/lib/types";
 import type { ModelLine, ProductHistory } from "@/lib/price-history";
 
-// Paleta categórica (dark) del sistema de dataviz: orden fijo, nunca ciclada dentro de las 8.
-const PALETTE = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
 const STATUS_GOOD = "#0ca30c";
 const STATUS_CRITICAL = "#d03b3b";
-const GRID = "#2c2c2a";
-const AXIS = "#52514e";
 
 function money(n: number): string {
   return `US$ ${Math.round(n).toLocaleString("es-AR")}`;
@@ -30,150 +26,99 @@ function productLabel(p: ProductHistory): string {
   return `${p.model}${p.capacity ? ` ${p.capacity}` : ""}`;
 }
 
-/** Ticks "lindos" (0, 50, 100, 150...) para el eje Y, sin decimales feos. */
-function niceStep(range: number, targetTicks: number): number {
-  const raw = range / targetTicks;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
-  const norm = raw / mag;
-  const step = norm >= 5 ? 5 : norm >= 2 ? 2 : 1;
-  return step * mag;
+/** Posición 0-100 de `cost` entre el mín y el máx de la fila (50 = punto medio). */
+function rowPosition(cost: number, min: number, max: number): number {
+  const range = max - min;
+  return range > 0 ? ((cost - min) / range) * 100 : 50;
 }
 
-const W = 620, H = 220, PAD_L = 46, PAD_R = 10, PAD_T = 10, PAD_B = 22;
+/** Color divergente verde(barato)->neutro->rojo(caro), mismos polos que la barra de IndexCard. */
+function heatColor(pos: number): string {
+  if (pos <= 50) {
+    const t = (50 - pos) / 50;
+    return `rgba(12,163,12,${(t * 0.75).toFixed(2)})`;
+  }
+  const t = (pos - 50) / 50;
+  return `rgba(208,59,59,${(t * 0.75).toFixed(2)})`;
+}
 
-/** Gráfico de líneas: una por modelo, eje Y precio en USD, eje X fecha. Crosshair + tooltip con
- * todas las series visibles en esa fecha; leyenda clickeable para ocultar/mostrar líneas. */
-function PriceChart({ lines }: { lines: ModelLine[] }) {
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-
-  const colored = useMemo(
-    () => lines.map((l, i) => ({ ...l, color: PALETTE[i % PALETTE.length], id: `${l.model}|${l.capacity ?? ""}` })),
-    [lines],
-  );
-  const visible = colored.filter((l) => !hidden.has(l.id));
+/** Grilla: eje Y = cada modelo (con su precio actual), eje X = cada día. El color de cada celda
+ * es la posición del precio de ese día dentro del mín→máx histórico de esa fila (verde = barato,
+ * rojo = caro). Hover muestra el valor exacto. */
+function PriceHeatmap({ lines }: { lines: ModelLine[] }) {
+  const [hover, setHover] = useState<{ row: number; col: number } | null>(null);
 
   const dates = useMemo(() => {
     const set = new Set<string>();
     for (const l of lines) for (const p of l.series) set.add(p.date);
     return [...set].sort();
   }, [lines]);
-  const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
 
-  const values = visible.flatMap((l) => l.series.map((p) => p.cost));
-  const yMin = values.length ? Math.min(...values) : 0;
-  const yMax = values.length ? Math.max(...values) : 1;
-  const pad = Math.max((yMax - yMin) * 0.12, 1);
-  const domainMin = Math.max(0, yMin - pad);
-  const domainMax = yMax + pad;
+  const rows = useMemo(
+    () =>
+      lines.map((l) => {
+        const byDate = new Map(l.series.map((p) => [p.date, p.cost]));
+        const costs = l.series.map((p) => p.cost);
+        return { l, byDate, min: Math.min(...costs), max: Math.max(...costs), current: l.series[l.series.length - 1].cost };
+      }),
+    [lines],
+  );
 
-  const innerW = W - PAD_L - PAD_R;
-  const innerH = H - PAD_T - PAD_B;
-  const xAt = (i: number) => PAD_L + (dates.length <= 1 ? innerW / 2 : (i / (dates.length - 1)) * innerW);
-  const yAt = (v: number) => PAD_T + innerH - ((v - domainMin) / (domainMax - domainMin || 1)) * innerH;
-
-  const step = niceStep(domainMax - domainMin, 4);
-  const yTicks: number[] = [];
-  for (let v = Math.ceil(domainMin / step) * step; v <= domainMax; v += step) yTicks.push(Math.round(v));
-
-  const xLabelEvery = Math.max(1, Math.ceil(dates.length / 6));
-
-  function onMove(e: React.PointerEvent<SVGRectElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const frac = dates.length <= 1 ? 0 : (px / rect.width) * (dates.length - 1);
-    setHoverIdx(Math.max(0, Math.min(dates.length - 1, Math.round(frac))));
-  }
-
-  const hoverDate = hoverIdx != null ? dates[hoverIdx] : null;
-  const hoverRows = hoverDate
-    ? visible
-        .map((l) => ({ l, cost: l.series.find((p) => p.date === hoverDate)?.cost }))
-        .filter((r): r is { l: typeof visible[number]; cost: number } => r.cost != null)
-        .sort((a, b) => b.cost - a.cost)
-    : [];
-  const tooltipX = hoverIdx != null ? xAt(hoverIdx) : 0;
-  const tooltipLeft = tooltipX > W * 0.6;
+  const xLabelEvery = Math.max(1, Math.ceil(dates.length / 10));
+  const hoverCost = hover ? rows[hover.row]?.byDate.get(dates[hover.col]) : undefined;
 
   return (
-    <div className="flex flex-col gap-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full select-none" style={{ touchAction: "none" }}>
-        {yTicks.map((t) => (
-          <g key={t}>
-            <line x1={PAD_L} x2={W - PAD_R} y1={yAt(t)} y2={yAt(t)} stroke={GRID} strokeWidth={1} />
-            <text x={PAD_L - 6} y={yAt(t)} textAnchor="end" dominantBaseline="middle" fontSize={9} fill="rgba(255,255,255,0.4)">
-              {t >= 1000 ? `${Math.round(t / 100) / 10}K` : t}
-            </text>
-          </g>
-        ))}
-        <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + innerH} y2={PAD_T + innerH} stroke={AXIS} strokeWidth={1} />
-        {dates.map((d, i) =>
-          i % xLabelEvery === 0 ? (
-            <text key={d} x={xAt(i)} y={H - 6} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)">
-              {fmtDate(d)}
-            </text>
-          ) : null,
-        )}
+    <div className="flex flex-col gap-1.5">
+      <div className="overflow-x-auto rounded-lg border border-white/10">
+        <table className="border-collapse text-[10px]">
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-10 min-w-[120px] bg-[#1a1a19] px-2 py-1 text-left font-semibold text-white/50">Modelo</th>
+              {dates.map((d, i) => (
+                <th key={d} className="min-w-[30px] px-0.5 py-1 text-center font-normal whitespace-nowrap text-white/35">
+                  {i % xLabelEvery === 0 ? fmtDate(d) : ""}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={`${row.l.model}|${row.l.capacity ?? ""}`}>
+                <td className="sticky left-0 z-10 min-w-[120px] bg-[#1a1a19] px-2 py-1">
+                  <div className="truncate font-semibold text-white/85">{lineLabel(row.l)}</div>
+                  <div className="text-white/45">{money(row.current)}</div>
+                </td>
+                {dates.map((d, ci) => {
+                  const cost = row.byDate.get(d);
+                  const isHover = hover?.row === ri && hover?.col === ci;
+                  return (
+                    <td key={d} className="min-w-[30px] px-0.5 py-1" onPointerEnter={() => cost != null && setHover({ row: ri, col: ci })} onPointerLeave={() => setHover(null)}>
+                      {cost != null && (
+                        <div
+                          className={`mx-auto h-5 w-full rounded ${isHover ? "ring-1 ring-white/70" : ""}`}
+                          style={{ background: heatColor(rowPosition(cost, row.min, row.max)) }}
+                        />
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        {visible.map((l) => {
-          const pts = l.series
-            .filter((p) => dateIndex.has(p.date))
-            .map((p) => [xAt(dateIndex.get(p.date)!), yAt(p.cost)] as const);
-          if (pts.length === 0) return null;
-          if (pts.length === 1) {
-            return <circle key={l.id} cx={pts[0][0]} cy={pts[0][1]} r={3} fill={l.color} />;
-          }
-          const d = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-          const last = pts[pts.length - 1];
-          return (
-            <g key={l.id}>
-              <path d={d} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-              <circle cx={last[0]} cy={last[1]} r={3.5} fill={l.color} stroke="#1a1a19" strokeWidth={1.5} />
-            </g>
-          );
-        })}
-
-        {hoverIdx != null && (
-          <line x1={xAt(hoverIdx)} x2={xAt(hoverIdx)} y1={PAD_T} y2={PAD_T + innerH} stroke="rgba(255,255,255,0.3)" strokeWidth={1} />
-        )}
-        <rect
-          x={PAD_L} y={PAD_T} width={innerW} height={innerH}
-          fill="transparent"
-          onPointerMove={onMove}
-          onPointerLeave={() => setHoverIdx(null)}
-        />
-      </svg>
-
-      {hoverDate && hoverRows.length > 0 && (
-        <div className={`pointer-events-none absolute z-10 w-44 rounded-lg border border-white/15 bg-black/90 p-2 text-[10px] shadow-xl ${tooltipLeft ? "right-4" : "left-4"}`} style={{ top: 8 }}>
-          <div className="mb-1 font-semibold text-white/70">{fmtDate(hoverDate)}</div>
-          {hoverRows.map(({ l, cost }) => (
-            <div key={l.id} className="flex items-center justify-between gap-2 py-0.5">
-              <span className="flex items-center gap-1.5 truncate text-white/60">
-                <span className="inline-block h-[2px] w-3 shrink-0 rounded" style={{ background: l.color }} />
-                <span className="truncate">{lineLabel(l)}</span>
-              </span>
-              <span className="font-semibold text-white/90">{money(cost)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-1.5">
-        {colored.map((l) => {
-          const isHidden = hidden.has(l.id);
-          return (
-            <button
-              key={l.id}
-              type="button"
-              onClick={() => setHidden((prev) => { const next = new Set(prev); if (next.has(l.id)) next.delete(l.id); else next.add(l.id); return next; })}
-              className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] transition ${isHidden ? "border-white/5 text-white/30" : "border-white/15 text-white/75"}`}
-            >
-              <span className="inline-block h-[2px] w-3 rounded" style={{ background: isHidden ? "rgba(255,255,255,0.25)" : l.color }} />
-              {lineLabel(l)}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between text-[9px] text-white/35">
+        <span>
+          {hover && hoverCost != null
+            ? <>{lineLabel(rows[hover.row].l)} · {fmtDate(dates[hover.col])}: <span className="font-semibold text-white/85">{money(hoverCost)}</span></>
+            : "Pasá el mouse por una celda para ver el precio exacto."}
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded" style={{ background: "rgba(12,163,12,0.75)" }} /> barato</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded bg-white/10" /> neutro</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded" style={{ background: "rgba(208,59,59,0.75)" }} /> caro</span>
+        </span>
       </div>
     </div>
   );
@@ -208,9 +153,10 @@ const CHEAP_MAX_POS = 35;
 const EXPENSIVE_MIN_POS = 65;
 
 /**
- * Panel de Delfina: sin texto para leer — tabs por categoría, un gráfico con una línea por modelo
- * (la capacidad más chica cuando hay varias), y abajo tarjetas con un índice visual (barra min→máx)
- * de qué conviene stockear por barato histórico y qué está caro ahora. Siempre en vivo.
+ * Panel de Delfina: sin texto para leer — tabs por categoría, una grilla con un modelo por fila
+ * (la capacidad más chica cuando hay varias) y un día por columna, coloreada barato→caro, y abajo
+ * tarjetas con un índice visual (barra min→máx) de qué conviene stockear y qué está caro ahora.
+ * Siempre en vivo.
  */
 export function PriceHistorianPanel() {
   const [data, setData] = useState<PriceHistoryResult | null>(null);
@@ -255,8 +201,8 @@ export function PriceHistorianPanel() {
         ))}
       </div>
 
-      <div className="relative">
-        {lines.length ? <PriceChart lines={lines} /> : <p className="text-white/50">Sin historial en esta categoría.</p>}
+      <div>
+        {lines.length ? <PriceHeatmap lines={lines} /> : <p className="text-white/50">Sin historial en esta categoría.</p>}
       </div>
 
       {(cheap.length > 0 || expensive.length > 0) && (
