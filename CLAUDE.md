@@ -25,7 +25,7 @@ isométrica estilo "Seven Brand".
 NACHO Hub tiene selector de contexto `[BNB] [AgroScan] [AMBOS]`. 
 Cada agente lee el contexto activo y adapta su análisis.
 
-## Arquitectura de 13 agentes en 4 TIERS
+## Arquitectura de 14 agentes en 4 TIERS
 
 ### TIER 1 — READERS (recolectan datos crudos)
 1. **Price Reader** (BNB) — Lee WhatsApp de proveedores Apple/Samsung, 
@@ -39,6 +39,8 @@ Cada agente lee el contexto activo y adapta su análisis.
 
 ### TIER 2 — ANALYSTS (interpretan datos)
 5. **Price Analyst** (BNB) — Compara precios propios vs competencia
+5b. **Price Historian** (BNB) — Sigue el historial de cotizaciones día por día: avisa mínimos/máximos
+    desde que hay registro y movimientos fuertes en la semana; con meses de datos, suma estacionalidad
 6. **Content Analyst** (BNB+Agro) — Qué posts rinden y por qué
 7. **Ads Analyst** (BNB) — Performance Meta Ads, detecta anomalías
 8. **Stock Analyst** (BNB) — Rotación, márgenes, cash flow

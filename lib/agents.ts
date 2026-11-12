@@ -32,7 +32,7 @@ export interface AgentDef {
   live: boolean;
 }
 
-/** Los 13 agentes de CLAUDE.md. El orden define la posición del escritorio dentro del sector. */
+/** Los 14 agentes de CLAUDE.md. El orden define la posición del escritorio dentro del sector. */
 export const AGENTS: AgentDef[] = [
   // TIER 1 — READERS
   { id: "price-reader", task: "Lee precios de proveedores", persona: "Lucas", name: "Price Reader", tier: "readers", contexts: ["BNB"], phase: 2, live: true,
@@ -47,6 +47,8 @@ export const AGENTS: AgentDef[] = [
   // TIER 2 — ANALYSTS
   { id: "price-analyst", task: "Elige el proveedor más barato", persona: "Martín", name: "Price Analyst", tier: "analysts", contexts: ["BNB"], phase: 1, live: true,
     description: "Compara las cotizaciones del día entre todos los proveedores y aplica la más barata de cada producto." },
+  { id: "price-historian", task: "Sigue la variación de precios en el tiempo", persona: "Delfina", name: "Price Historian", tier: "analysts", contexts: ["BNB"], phase: 3, live: true,
+    description: "Mira el historial de cotizaciones día por día: avisa cuándo un producto está en su precio más bajo/alto desde que hay registro, o moviéndose fuerte en la semana. Con el tiempo, suma lectura de estacionalidad." },
   { id: "content-analyst", task: "Mide qué contenido rinde", persona: "Camila", name: "Content Analyst", tier: "analysts", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Qué posts rinden y por qué." },
   { id: "ads-analyst", task: "Vigila las campañas de Meta", persona: "Joaquín", name: "Ads Analyst", tier: "analysts", contexts: ["BNB"], phase: 3, live: false,
@@ -118,6 +120,7 @@ export const TIER_WINDOW: Record<Tier, [number, number]> = {
 export const REGISTERED_AGENT_IDS = [
   "price-reader",
   "price-analyst",
+  "price-historian",
   "stock-analyst",
   "catalog-manager",
   "market-watcher",

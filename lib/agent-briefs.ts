@@ -72,6 +72,18 @@ export const BRIEFS: Record<string, AgentBrief> = {
     delivers: "Precios actualizados al más barato del día, y una lista corta de lo que necesita tu ojo.",
     schedule: "11:00, cuando ya pasó la ventana de difusiones de la mañana.",
   },
+  "price-historian": {
+    summary: "Miro cómo viene variando el costo de cada producto en el tiempo, no solo el precio de hoy.",
+    steps: [
+      "Reviso todo el historial de cotizaciones que Lucas fue guardando día por día, por producto.",
+      "Calculo el precio más barato de cada día y lo comparo contra el mínimo y el máximo desde que hay registro.",
+      "Marco qué productos están en su precio más bajo o más alto histórico, y qué se movió fuerte en la última semana.",
+      "Con pocos meses de historial todavía no hablo de estacionalidad real; eso se va a ir afinando solo, a medida que se acumulen más días.",
+    ],
+    sources: ["Cotizaciones históricas guardadas por Lucas (price_quotes)"],
+    delivers: "Qué productos están baratos o caros como nunca, y qué conviene stockear esta semana.",
+    schedule: "11:00, junto con Martín.",
+  },
   "catalog-manager": {
     summary: "Me ocupo de lo que Martín no toca: qué modelos faltan en el catálogo y qué se tiene que ocultar por falta de stock.",
     steps: [

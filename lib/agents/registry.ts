@@ -3,6 +3,7 @@ import { AGENTS, type Tier } from "@/lib/agents";
 import { designer } from "@/lib/agents/designer";
 import { priceReader } from "@/lib/agents/price-reader";
 import { priceAnalyst } from "@/lib/agents/price-analyst";
+import { priceHistorian } from "@/lib/agents/price-historian";
 import { catalogManager } from "@/lib/agents/catalog-manager";
 import { stockAnalyst } from "@/lib/agents/stock-analyst";
 import { marketWatcher } from "@/lib/agents/market-watcher";
@@ -21,6 +22,7 @@ import { dmHandler } from "@/lib/agents/dm-handler";
 const MODULES: AgentModule[] = [
   priceReader,
   priceAnalyst,
+  priceHistorian,
   catalogManager,
   stockAnalyst,
   marketWatcher,
