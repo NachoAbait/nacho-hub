@@ -61,6 +61,7 @@ export interface NexiosCatalogRow {
   price_usd: number | null;
   is_active: boolean;
   public_visible: boolean;
+  created_at: string;
   updated_at: string;
   attributes: { screen?: string; chip?: string; ram?: string; material?: string; connectivity?: string; edition?: string } | null;
 }
@@ -71,7 +72,7 @@ export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
   if (!db) return null;
   const { data, error } = await db
     .from("price_catalog")
-    .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, updated_at, attributes")
+    .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, created_at, updated_at, attributes")
     .eq("organization_id", NEXIOS_ORG_ID)
     .eq("is_active", true)
     .eq("condition", "new_sealed")

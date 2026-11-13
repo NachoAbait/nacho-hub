@@ -204,7 +204,9 @@ export function CatalogManagerPanel() {
         );
       })}
 
-      {data.auto ? (
+      {/* En automático van los conteos, salvo que el freno haya dejado cambios esperando: ahí
+          manda la lista para confirmarlos, que es lo único que desbloquea el catálogo. */}
+      {data.auto && data.pendingVisibility.length === 0 && doneVisibility.size === 0 ? (
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
             <div className="text-[9px] uppercase tracking-wider text-white/45">Ocultados hoy</div>
@@ -249,7 +251,7 @@ export function CatalogManagerPanel() {
                 ) : (
                   <div className="min-w-0">
                     <div className={`text-[9px] font-bold uppercase tracking-wide ${isShow ? "text-green-300" : "text-amber-300"}`}>
-                      {isShow ? "Volvió a tener stock" : "Sin stock hoy"}
+                      {isShow ? "Volvió a tener stock" : "Sin stock"}
                     </div>
                     <div className="mt-0.5 truncate font-semibold text-white/90">
                       {v.category ? `${CATEGORY_LABEL[v.category]}: ` : ""}{v.model}{v.capacity ? ` ${v.capacity}` : ""}
@@ -257,7 +259,7 @@ export function CatalogManagerPanel() {
                     <div className="text-white/50">
                       {isShow
                         ? `No estaba disponible y hoy ${v.supplierName ?? "un proveedor"} lo cotizó${v.cost != null ? ` a ${money(v.cost)}` : ""}.`
-                        : "Ningún proveedor lo cotizó hoy: nadie tiene stock."}
+                        : "Hace días que ningún proveedor lo cotiza: parece que no hay stock."}
                     </div>
                   </div>
                 )}
