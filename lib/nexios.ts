@@ -36,6 +36,7 @@ export const DEVICE_TO_CATEGORY: Record<string, Category | null> = {
   apple_watch: "watch",
   airpods: "airpods",
   samsung: "samsung",
+  console: "console",
   accessory: null,
 };
 
@@ -46,6 +47,7 @@ export const CATEGORY_TO_DEVICE: Record<Category, string> = {
   watch: "apple_watch",
   airpods: "airpods",
   samsung: "samsung",
+  console: "console",
 };
 
 export interface NexiosCatalogRow {
@@ -60,7 +62,7 @@ export interface NexiosCatalogRow {
   is_active: boolean;
   public_visible: boolean;
   updated_at: string;
-  attributes: { screen?: string; chip?: string; ram?: string; material?: string; connectivity?: string } | null;
+  attributes: { screen?: string; chip?: string; ram?: string; material?: string; connectivity?: string; edition?: string } | null;
 }
 
 /** Catálogo de sellados activo. */
@@ -106,6 +108,8 @@ export function catalogModelText(r: Pick<NexiosCatalogRow, "device_type" | "mode
     if (attrs.screen) parts.push(attrs.screen);
   }
   if (attrs.connectivity?.includes("Cellular")) parts.push("Cell");
+  // Consolas: Digital/Física es un producto distinto del mismo modelo, igual que +Cell en iPad/Watch.
+  if (attrs.edition) parts.push(attrs.edition);
   return parts.join(" ");
 }
 

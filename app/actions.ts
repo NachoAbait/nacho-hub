@@ -475,8 +475,8 @@ function dedupeNewModelsBySubset(rows: PendingNewModel[]): PendingNewModel[] {
  * que el que acabás de crear desapareciera en vez de quedar marcado en verde.
  */
 async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<PendingNewModel[]> {
-  const NEW_MODEL_COLS = "id, category, model, capacity, chip, cellular, inches, screen_mm, detected_cost_usd, supplier_id";
-  interface NewModelRow { id: string; category: Category; model: string; capacity: string | null; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; detected_cost_usd: number; supplier_id: string | null }
+  const NEW_MODEL_COLS = "id, category, model, capacity, chip, cellular, inches, screen_mm, edition, detected_cost_usd, supplier_id";
+  interface NewModelRow { id: string; category: Category; model: string; capacity: string | null; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; edition: string | null; detected_cost_usd: number; supplier_id: string | null }
   const [{ data: pending }, { data: doneToday }] = await Promise.all([
     db
       .from("price_updates")
@@ -508,7 +508,7 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
     const cost = Number(r.detected_cost_usd);
     return {
       id: r.id, category: r.category, model: r.model, capacity: r.capacity,
-      chip: r.chip, cellular: r.cellular, inches: r.inches, screenMm: r.screen_mm,
+      chip: r.chip, cellular: r.cellular, inches: r.inches, screenMm: r.screen_mm, edition: r.edition,
       detectedCostUsd: cost,
       supplierName: r.supplier_id ? supplierNames.get(r.supplier_id) ?? null : null,
       suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
@@ -584,7 +584,7 @@ export async function applyCatalogVisibility(id: string, action: "hide" | "show"
  */
 function buildAttributes(
   device: string,
-  u: { chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; ram_gb: number | null },
+  u: { chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; ram_gb: number | null; edition: string | null },
 ): NexiosCatalogRow["attributes"] {
   const attrs: NonNullable<NexiosCatalogRow["attributes"]> = {};
   if (device === "apple_watch") {
@@ -595,6 +595,8 @@ function buildAttributes(
     if (u.inches) attrs.screen = `${u.inches}"`;
     if (u.ram_gb) attrs.ram = `${u.ram_gb}GB`;
     if (device === "ipad" && u.cellular) attrs.connectivity = "WiFi + Cellular";
+  } else if (device === "console") {
+    if (u.edition) attrs.edition = u.edition;
   }
   return Object.keys(attrs).length ? attrs : null;
 }
@@ -609,11 +611,11 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     const db = supabaseAdmin();
     const { data: u } = await db
       .from("price_updates")
-      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, ram_gb, detected_cost_usd")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, edition, ram_gb, detected_cost_usd")
       .eq("id", updateId)
       .single<{
         id: string; category: string; model: string; capacity: string | null;
-        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; ram_gb: number | null;
+        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; edition: string | null; ram_gb: number | null;
         detected_cost_usd: number;
       }>();
     if (!u) return { ok: false, message: "No encontré esa recomendación" };
@@ -633,7 +635,7 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     // 256GB y 512GB ya cargados, esto es el 1TB), usamos el MISMO texto y atributos que esa fila en
     // vez del texto que armó Lucas/Martín: si no, NexiOS guarda "iPhone 18 Pro" para el nuevo y "18
     // Pro" para los viejos, y quedan como dos productos distintos en vez de variantes del mismo.
-    const familyKey = entryKey(u.category as Category, u.model, null, u.chip, u.inches, u.cellular, u.screen_mm);
+    const familyKey = entryKey(u.category as Category, u.model, null, u.chip, u.inches, u.cellular, u.screen_mm, u.edition);
     const sibling = catalog.find(
       (r) => DEVICE_TO_CATEGORY[r.device_type] === u.category && entryKey(u.category as Category, catalogModelText(r), null) === familyKey,
     );

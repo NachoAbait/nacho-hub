@@ -5,6 +5,7 @@ export const CATEGORIES = [
   "watch",
   "airpods",
   "samsung",
+  "console",
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -16,6 +17,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   watch: "Apple Watch",
   airpods: "AirPods",
   samsung: "Samsung",
+  console: "Consolas",
 };
 
 export function isCategory(value: unknown): value is Category {
@@ -32,6 +34,8 @@ export interface ProductAttributes {
   ram?: string;
   material?: string;
   connectivity?: string;
+  /** Solo consolas por ahora: "Digital" | "Física". Separado del modelo, igual que connectivity. */
+  edition?: string;
 }
 
 export interface Product {

@@ -62,8 +62,8 @@ export function wordsMatch(a: string, b: string): boolean {
  * clave un producto con una sola variante de RAM dejaría de machear apenas un proveedor no la
  * dijera. Cuando hay más de una fila del catálogo con la misma clave (un modelo que sí existe en
  * más de una RAM), matchCatalog desambigua aparte con la RAM si la cotización la trae. */
-function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null, screenMm?: number | null): string {
-  return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null, screenMm ? `${screenMm}mm` : null].filter(Boolean).join(" ");
+function fullModelText(model: string, chip: string | null | undefined, cellular?: boolean | null, inches?: number | null, screenMm?: number | null, edition?: string | null): string {
+  return [model, chip, cellular ? "Cell" : null, inches ? `${Math.floor(inches)}"` : null, screenMm ? `${screenMm}mm` : null, edition ?? null].filter(Boolean).join(" ");
 }
 
 /**
@@ -81,8 +81,9 @@ export function entryKey(
   inches?: number | null,
   cellular?: boolean | null,
   screenMm?: number | null,
+  edition?: string | null,
 ): string {
-  const tokens = normalizeModel(fullModelText(model, chip, cellular, inches, screenMm)).split(/\s+/).filter(Boolean).sort();
+  const tokens = normalizeModel(fullModelText(model, chip, cellular, inches, screenMm, edition)).split(/\s+/).filter(Boolean).sort();
   return `${category}|${tokens.join(" ")}|${normalizeCapacity(capacity)}`;
 }
 
@@ -142,6 +143,7 @@ export function matchCatalog(
   cellular?: boolean | null,
   ramGb?: number | null,
   screenMm?: number | null,
+  edition?: string | null,
 ): CatalogEntry | null {
   const pick = (list: CatalogEntry[]): CatalogEntry | null => {
     if (list.length === 1) return list[0];
@@ -153,7 +155,7 @@ export function matchCatalog(
     return matches.length === 1 ? matches[0] : null;
   };
 
-  const exactList = index.get(entryKey(category, model, capacity, chip, inches, cellular, screenMm));
+  const exactList = index.get(entryKey(category, model, capacity, chip, inches, cellular, screenMm, edition));
   if (exactList) {
     const exact = pick(exactList);
     if (exact) return exact;
@@ -164,7 +166,7 @@ export function matchCatalog(
   // que el catálogo no tiene (ej. "AirPods 4 Noise Cancelling" cuando el catálogo solo tiene
   // "AirPods 4" a secas), esas palabras de más pueden ser un producto realmente distinto, así que
   // no se adivina: queda sin aplicar y aparece como modelo nuevo para que Nacho decida.
-  const wantTokens = new Set(normalizeModel(fullModelText(model, chip, cellular, inches, screenMm)).split(/\s+/).filter(Boolean));
+  const wantTokens = new Set(normalizeModel(fullModelText(model, chip, cellular, inches, screenMm, edition)).split(/\s+/).filter(Boolean));
   const wantCap = normalizeCapacity(capacity);
   const candidates = [...index.values()].flat().filter((e) => {
     if (e.category !== category || normalizeCapacity(e.capacity) !== wantCap) return false;

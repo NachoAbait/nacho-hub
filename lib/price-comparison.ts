@@ -22,6 +22,7 @@ export interface ComparisonRow {
   cellular: boolean;
   inches: number | null;
   screenMm: number | null;
+  edition: string | null;
   capacity: string | null;
   ramGb: number | null;
   quotes: ComparisonQuote[];
@@ -42,6 +43,7 @@ interface RawQuote {
   cellular: boolean;
   inches: number | null;
   screen_mm: number | null;
+  edition: string | null;
   capacity: string | null;
   ram_gb: number | null;
   cost_usd: number;
@@ -62,6 +64,7 @@ interface RawUpdate {
   cellular: boolean;
   inches: number | null;
   screen_mm: number | null;
+  edition: string | null;
   supplier_id: string | null;
   review_status: string;
   status: string;
@@ -73,7 +76,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
   const [{ data: quotes }, { data: suppliers }, { data: updates }] = await Promise.all([
     db
       .from("price_quotes")
-      .select("supplier_id, category, model, chip, cellular, inches, screen_mm, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("supplier_id, category, model, chip, cellular, inches, screen_mm, edition, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<RawQuote[]>(),
     db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>(),
@@ -82,7 +85,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
     // desaparece de la tabla apenas lo aplica.
     db
       .from("price_updates")
-      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, supplier_id, review_status, status, created_at")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, edition, supplier_id, review_status, status, created_at")
       .gte("created_at", `${today}T00:00:00-03:00`)
       .order("created_at", { ascending: true })
       .returns<RawUpdate[]>(),
@@ -92,17 +95,17 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
   // price_updates.model queda LIMPIO (sin chip/celular/pulgadas/mm pegados, ver price-analyst.ts),
   // así que la clave se arma igual que la de las cotizaciones, con esos campos aparte.
   const updateByKey = new Map(
-    (updates ?? []).map((u) => [entryKey((u.category ?? "other") as Category, u.model, u.capacity, u.chip, u.inches, u.cellular, u.screen_mm), u]),
+    (updates ?? []).map((u) => [entryKey((u.category ?? "other") as Category, u.model, u.capacity, u.chip, u.inches, u.cellular, u.screen_mm, u.edition), u]),
   );
 
-  interface Row { category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screenMm: number | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
+  interface Row { category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screenMm: number | null; edition: string | null; capacity: string | null; ramGb: number | null; bySupplier: Map<string, ComparisonQuote> }
   const rows = new Map<string, Row>();
   for (const q of quotes ?? []) {
     if (!q.supplier_id) continue;
-    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
+    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm, q.edition);
     let row = rows.get(key);
     if (!row) {
-      row = { category: q.category, model: q.model, chip: q.chip, cellular: q.cellular, inches: q.inches, screenMm: q.screen_mm, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
+      row = { category: q.category, model: q.model, chip: q.chip, cellular: q.cellular, inches: q.inches, screenMm: q.screen_mm, edition: q.edition, capacity: q.capacity, ramGb: q.ram_gb, bySupplier: new Map() };
       rows.set(key, row);
     } else {
       if (!row.chip && q.chip) row.chip = q.chip;
@@ -136,6 +139,7 @@ export async function loadComparisonRows(db: SupabaseClient, today: string): Pro
       cellular: row.cellular,
       inches: row.inches,
       screenMm: row.screenMm,
+      edition: row.edition,
       capacity: row.capacity,
       ramGb: row.ramGb,
       quotes: [...row.bySupplier.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName)),

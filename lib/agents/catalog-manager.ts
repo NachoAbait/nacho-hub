@@ -15,6 +15,7 @@ export interface PendingNewModel {
   cellular: boolean;
   inches: number | null;
   screenMm: number | null;
+  edition: string | null;
   detectedCostUsd: number;
   supplierName: string | null;
   suggestedMargin: number | null;
@@ -65,14 +66,14 @@ export const catalogManager: AgentModule = {
 
     const { data: quotesToday } = await ctx.db
       .from("price_quotes")
-      .select("category, model, chip, cellular, inches, screen_mm, capacity, cost_usd, supplier_id")
+      .select("category, model, chip, cellular, inches, screen_mm, edition, capacity, cost_usd, supplier_id")
       .eq("quote_date", ctx.today)
-      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; capacity: string | null; cost_usd: number; supplier_id: string | null }[]>();
+      .returns<{ category: Category; model: string; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; edition: string | null; capacity: string | null; cost_usd: number; supplier_id: string | null }[]>();
     // Más barata por producto, con quién la cotizó: para "volvió a aparecer" le podemos decir a
     // Nacho a qué precio y de quién, no solo que "alguien lo cotizó de nuevo".
     const quoteInfoByKey = new Map<string, { cost: number; supplierId: string | null }>();
     for (const q of quotesToday ?? []) {
-      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
+      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm, q.edition);
       const prev = quoteInfoByKey.get(key);
       if (!prev || q.cost_usd < prev.cost) quoteInfoByKey.set(key, { cost: q.cost_usd, supplierId: q.supplier_id });
     }
@@ -122,12 +123,12 @@ export const catalogManager: AgentModule = {
     // que ocultar/mostrar uno que ya existe.
     const { data: pending } = await ctx.db
       .from("price_updates")
-      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, detected_cost_usd, supplier_id")
+      .select("id, category, model, capacity, chip, cellular, inches, screen_mm, edition, detected_cost_usd, supplier_id")
       .eq("status", "new_model")
       .eq("review_status", "pending")
       .returns<{
         id: string; category: Category; model: string; capacity: string | null;
-        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null;
+        chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; edition: string | null;
         detected_cost_usd: number; supplier_id: string | null;
       }[]>();
 
@@ -143,7 +144,7 @@ export const catalogManager: AgentModule = {
       const cost = Number(p.detected_cost_usd);
       return {
         id: p.id, category: p.category, model: p.model, capacity: p.capacity,
-        chip: p.chip, cellular: p.cellular, inches: p.inches, screenMm: p.screen_mm,
+        chip: p.chip, cellular: p.cellular, inches: p.inches, screenMm: p.screen_mm, edition: p.edition,
         detectedCostUsd: cost,
         supplierName: p.supplier_id ? supplierNames.get(p.supplier_id) ?? null : null,
         suggestedMargin: margin, suggestedPrice: margin == null ? null : cost + margin,
@@ -191,7 +192,7 @@ export const catalogManager: AgentModule = {
     if (newModels.length) {
       lines.push("", "## Modelos nuevos esperando que los crees");
       for (const m of newModels) {
-        const detail = [m.chip, m.cellular ? "+Cell" : null, m.inches ? `${m.inches}"` : null, m.screenMm ? `${m.screenMm}mm` : null].filter(Boolean).join(" ");
+        const detail = [m.chip, m.cellular ? "+Cell" : null, m.inches ? `${m.inches}"` : null, m.screenMm ? `${m.screenMm}mm` : null, m.edition].filter(Boolean).join(" ");
         lines.push(`- **${CATEGORY_LABEL[m.category]}: ${m.model}${detail ? " " + detail : ""}${m.capacity ? " " + m.capacity : ""}** — costo US$ ${m.detectedCostUsd} de ${m.supplierName ?? "proveedor"}${m.suggestedPrice != null ? `, precio sugerido US$ ${m.suggestedPrice} (margen US$ ${m.suggestedMargin})` : ""}`);
       }
     }

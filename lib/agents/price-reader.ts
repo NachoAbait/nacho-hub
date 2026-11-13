@@ -6,8 +6,10 @@ import { systemPrompt } from "@/lib/agents/skills";
 import type { Category } from "@/lib/types";
 
 const ItemSchema = z.object({
-  category: z.enum(["iphone", "ipad", "macbook", "watch", "airpods", "samsung", "other"]),
+  category: z.enum(["iphone", "ipad", "macbook", "watch", "airpods", "samsung", "console", "other"]),
   model: z.string(),
+  /** SOLO consolas: "Digital" | "Física". Null para cualquier otra categoría. */
+  edition: z.string().nullable(),
   /** Chip/procesador (M5, M5 Pro, A18 Pro…), SIEMPRE separado del modelo. Null si no lo menciona. */
   chip: z.string().nullable(),
   /** Conectividad celular/eSIM (iPad, Apple Watch): producto distinto del WiFi-only. */
@@ -206,6 +208,7 @@ export const priceReader: AgentModule = {
             supplier_id: msg.supplier_id,
             category: item.category as Category,
             model: item.model,
+            edition: item.edition,
             chip: item.chip,
             cellular: item.cellular,
             inches: item.inches,

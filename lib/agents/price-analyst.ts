@@ -16,6 +16,7 @@ interface DecisionKey {
   cellular?: boolean | null;
   inches?: number | null;
   screenMm?: number | null;
+  edition?: string | null;
 }
 
 /**
@@ -45,16 +46,16 @@ async function upsertDecision(db: SupabaseClient, today: string, key: DecisionKe
   // en el panel de Bruno. Comparamos con la misma clave normalizada que usa el resto del matching.
   const { data: candidates } = await db
     .from("price_updates")
-    .select("id, model, capacity, chip, cellular, inches, screen_mm")
+    .select("id, model, capacity, chip, cellular, inches, screen_mm, edition")
     .gte("created_at", `${today}T00:00:00-03:00`)
     .not("review_status", "in", "(confirmed,corrected)")
     .is("hub_product_id", null)
     .is("nexios_catalog_id", null)
     .eq("category", key.category)
-    .returns<{ id: string; model: string; capacity: string | null; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null }[]>();
-  const targetKey = entryKey(key.category, key.model, key.capacity, key.chip, key.inches, key.cellular, key.screenMm);
+    .returns<{ id: string; model: string; capacity: string | null; chip: string | null; cellular: boolean; inches: number | null; screen_mm: number | null; edition: string | null }[]>();
+  const targetKey = entryKey(key.category, key.model, key.capacity, key.chip, key.inches, key.cellular, key.screenMm, key.edition);
   const existing = (candidates ?? []).find(
-    (c) => entryKey(key.category, c.model, c.capacity, c.chip, c.inches, c.cellular, c.screen_mm) === targetKey,
+    (c) => entryKey(key.category, c.model, c.capacity, c.chip, c.inches, c.cellular, c.screen_mm, c.edition) === targetKey,
   );
   if (existing) await db.from("price_updates").update(fields).eq("id", existing.id);
   else await db.from("price_updates").insert(fields);
@@ -69,6 +70,7 @@ interface Quote {
   cellular: boolean;
   inches: number | null;
   screen_mm: number | null;
+  edition: string | null;
   capacity: string | null;
   ram_gb: number | null;
   cost_usd: number;
@@ -112,7 +114,7 @@ export const priceAnalyst: AgentModule = {
     const today = todayArt();
     const { data: quotes, error } = await ctx.db
       .from("price_quotes")
-      .select("id, supplier_id, category, model, chip, cellular, inches, screen_mm, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
+      .select("id, supplier_id, category, model, chip, cellular, inches, screen_mm, edition, capacity, ram_gb, cost_usd, original_price_usd, pricing_basis, bulk_qty, confidence, raw_line, message_id")
       .eq("quote_date", today)
       .returns<Quote[]>();
     if (error) throw new Error(`price_quotes: ${error.message}`);
@@ -139,7 +141,7 @@ export const priceAnalyst: AgentModule = {
     // producto, orden de palabras distinto) se comparen juntos.
     const groups = new Map<string, Quote[]>();
     for (const q of quotes) {
-      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
+      const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm, q.edition);
       const list = groups.get(key) ?? [];
       list.push(q);
       groups.set(key, list);
@@ -152,7 +154,7 @@ export const priceAnalyst: AgentModule = {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
       const best = sorted[0];
       const second = sorted[1];
-      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches, best.cellular, best.ram_gb, best.screen_mm);
+      const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches, best.cellular, best.ram_gb, best.screen_mm, best.edition);
 
       if (!entry) {
         // Sin match en el catálogo: el modelo que se guarda queda LIMPIO (sin chip/celular/pulgadas/mm
@@ -165,13 +167,13 @@ export const priceAnalyst: AgentModule = {
         // de otro proveedor que sí redondeó.
         const inchesRounded = best.inches ? Math.floor(best.inches) : null;
         // Solo para el texto legible del informe (markdown): acá sí se pegan todos los detalles.
-        const fullModel = [best.model, best.chip, best.cellular ? "+ Cell" : null, inchesRounded ? `${inchesRounded}"` : null, best.screen_mm ? `${best.screen_mm}mm` : null].filter(Boolean).join(" ");
+        const fullModel = [best.model, best.chip, best.cellular ? "+ Cell" : null, inchesRounded ? `${inchesRounded}"` : null, best.screen_mm ? `${best.screen_mm}mm` : null, best.edition].filter(Boolean).join(" ");
         await upsertDecision(
           ctx.db, today,
-          { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: best.model, capacity: best.capacity, chip: best.chip, cellular: best.cellular, inches: inchesRounded, screenMm: best.screen_mm },
+          { hub_product_id: null, nexios_catalog_id: null, category: best.category, model: best.model, capacity: best.capacity, chip: best.chip, cellular: best.cellular, inches: inchesRounded, screenMm: best.screen_mm, edition: best.edition },
           {
             category: best.category, model: best.model, capacity: best.capacity,
-            chip: best.chip, cellular: best.cellular, inches: inchesRounded, screen_mm: best.screen_mm, ram_gb: best.ram_gb,
+            chip: best.chip, cellular: best.cellular, inches: inchesRounded, screen_mm: best.screen_mm, ram_gb: best.ram_gb, edition: best.edition,
             detected_cost_usd: best.cost_usd, original_price_usd: best.original_price_usd,
             pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty, confidence: best.confidence,
             raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,

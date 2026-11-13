@@ -49,6 +49,11 @@ const SAMPLE: Record<Category, BannerProduct[]> = {
     { id: "3", model: "Galaxy S26 Ultra", capacity: "256GB", price_usd: 1120, hero_image_url: null, attributes: null },
     { id: "4", model: "Galaxy A57", capacity: "256GB", price_usd: 620, hero_image_url: null, attributes: null },
   ],
+  console: [
+    { id: "1", model: "PlayStation 5 Slim", capacity: "1TB", price_usd: 480, hero_image_url: null, attributes: { edition: "Digital" } },
+    { id: "2", model: "PlayStation 5 Slim", capacity: "1TB", price_usd: 520, hero_image_url: null, attributes: { edition: "Física" } },
+    { id: "3", model: "PlayStation 5 Pro", capacity: "2TB", price_usd: 720, hero_image_url: null, attributes: { edition: "Física" } },
+  ],
 };
 
 async function main() {

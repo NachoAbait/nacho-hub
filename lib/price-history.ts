@@ -9,6 +9,7 @@ interface QuoteRow {
   cellular: boolean;
   inches: number | null;
   screen_mm: number | null;
+  edition: string | null;
   capacity: string | null;
   cost_usd: number;
   quote_date: string;
@@ -79,7 +80,7 @@ function capacityGb(capacity: string | null): number {
 export async function computePriceHistory(db: SupabaseClient): Promise<PriceHistoryResult> {
   const { data: quotes, error } = await db
     .from("price_quotes")
-    .select("category, model, chip, cellular, inches, screen_mm, capacity, cost_usd, quote_date")
+    .select("category, model, chip, cellular, inches, screen_mm, edition, capacity, cost_usd, quote_date")
     .returns<QuoteRow[]>();
   if (error) throw new Error(`price_quotes: ${error.message}`);
   if (!quotes?.length) return EMPTY;
@@ -91,9 +92,12 @@ export async function computePriceHistory(db: SupabaseClient): Promise<PriceHist
   interface Raw { category: Category; model: string; capacity: string | null; byDate: Map<string, number> }
   const raw = new Map<string, Raw>();
   for (const q of quotes) {
-    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm);
+    const key = entryKey(q.category, q.model, q.capacity, q.chip, q.inches, q.cellular, q.screen_mm, q.edition);
     let r = raw.get(key);
-    if (!r) { r = { category: q.category, model: q.model, capacity: q.capacity, byDate: new Map() }; raw.set(key, r); }
+    // Digital/Física son líneas distintas en el gráfico: el texto del modelo lleva la edición pegada
+    // (como ya hace catalogModelText del lado de NexiOS) para que no se vean dos filas iguales.
+    const model = q.edition ? `${q.model} ${q.edition}` : q.model;
+    if (!r) { r = { category: q.category, model, capacity: q.capacity, byDate: new Map() }; raw.set(key, r); }
     const prev = r.byDate.get(q.quote_date);
     if (prev == null || q.cost_usd < prev) r.byDate.set(q.quote_date, q.cost_usd);
   }

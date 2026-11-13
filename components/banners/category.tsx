@@ -44,6 +44,7 @@ export const CATEGORY_STYLE: Record<Category, { title: string; upper?: boolean; 
   watch: { title: "Apple Watch", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   airpods: { title: "AirPods", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
   samsung: { title: "Samsung", upper: true, accent: "#8fb7ff", light: "#d6e4ff", dark: "#3b63b8" },
+  console: { title: "PlayStation", accent: "#d4a640", light: "#f5d98a", dark: "#8a6a1e" },
 };
 
 const BENEFITS = ["Entrega inmediata", "Garantía BNB", "Productos originales", "Cuotas disponibles"];

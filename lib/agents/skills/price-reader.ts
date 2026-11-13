@@ -53,8 +53,10 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
    almacenamiento. Formato típico: "16GB/512GB" → ram_gb 16, capacity "512GB" (la primera cifra junto a una barra o
    un "/" antes del almacenamiento casi siempre es RAM, no un segundo almacenamiento). Si no la menciona, null: no
    la inventes ni la copies de otro ítem.
-9. Categorías posibles: iphone, ipad, macbook, watch, airpods, samsung. Lo que no entre ahí (fundas, cargadores, cables,
-   Xiaomi, Motorola, PlayStation) va a category "other" y después se descarta.
+9. Categorías posibles: iphone, ipad, macbook, watch, airpods, samsung, console (consolas, ver sección aparte más abajo).
+   Lo que no entre ahí (fundas, cargadores, cables, Xiaomi, Motorola) va a category "other" y después se descarta.
+9b. edition: SOLO se usa en category "console" ("Digital" o "Física", ver sección de Consolas). Para cualquier otra
+   categoría, edition es siempre null.
 10. Si el mismo modelo, chip, celular, pulgadas y capacidad aparece dos veces con precios distintos, quedate con el
     más bajo y anotalo en note.
 11. Condición: si dice "usado", "open box", "reacondicionado", "seminuevo", condition "used"; si no, "new".
@@ -98,6 +100,25 @@ Nacho SOLO quiere el precio UNITARIO de una unidad suelta. Para cada ítem:
 6. raw_line es la línea o fragmento original del mensaje de donde sacaste el ítem, copiado tal cual.
 7. Si te paso correcciones anteriores de Nacho con este proveedor, son la verdad: aprendé el patrón (a qué columna o
    escalón corresponde el precio unitario) y aplicalo.
+
+## Consolas (PlayStation, categoría "console")
+
+1. Modelo: SIEMPRE con el prefijo "PlayStation" + la revisión física, nunca la edición pegada ahí. Los modelos que
+   existen hoy: "PlayStation 5", "PlayStation 5 Slim", "PlayStation 5 Pro", "PlayStation 4 Slim". Si el proveedor
+   escribe "PS5" es "PlayStation 5" igual.
+2. edition: "Digital" o "Física", SIEMPRE como campo propio, nunca parte del modelo. "PS5 Slim Digital" → model
+   "PlayStation 5 Slim", edition "Digital" (NUNCA model "PlayStation 5 Slim Digital"). Si el proveedor no aclara
+   digital/física para una consola que solo se vende en una edición, dejalo null en vez de adivinar.
+3. chip, cellular, inches, screen_mm, ram_gb: siempre null, las consolas no tienen nada de eso.
+4. capacity: "500GB", "825GB", "1TB" o "2TB" tal como lo dé el proveedor.
+5. Condición: las consolas SÍ se venden usadas con frecuencia (a diferencia de Samsung) — aplicá la regla 11 general
+   (usado/open box/reacondicionado → "used") igual que con el resto.
+
+Ejemplos:
+- "PS5 SLIM DIGITAL 1TB · U$S 480" → category "console", model "PlayStation 5 Slim", edition "Digital", capacity "1TB".
+- "PlayStation 5 Pro 2TB Física u$d 720" → category "console", model "PlayStation 5 Pro", edition "Física", capacity "2TB".
+- "PS4 SLIM 500GB USADA 180u$s" → category "console", model "PlayStation 4 Slim", edition null (PS4 no distingue
+  digital/física en esta lista), capacity "500GB", condition "used".
 
 ## Contexto del catálogo
 
