@@ -224,8 +224,15 @@ export const priceReader: AgentModule = {
             quote_date: today,
           });
         }
-        if (rows.length) await ctx.db.from("price_quotes").insert(rows);
-        return { supplierLabel, items: parsed.items.length, skipped: parsed.skipped.length, quotes: rows.length };
+        let inserted = rows.length;
+        if (rows.length) {
+          const { error } = await ctx.db.from("price_quotes").insert(rows);
+          if (error) {
+            ctx.log(`no pude guardar ${rows.length} cotizaciones de ${supplierLabel}: ${error.message}`);
+            inserted = 0;
+          }
+        }
+        return { supplierLabel, items: parsed.items.length, skipped: parsed.skipped.length, quotes: inserted };
       }),
     );
 
