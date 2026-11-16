@@ -33,16 +33,18 @@ export const reelScout: AgentModule = {
   async run(ctx) {
     const prompt =
       `Contexto: ${ctx.context}. Hoy es ${ctx.today}.\n\n` +
-      `Buscá reels y videos cortos virales de las últimas dos semanas en el nicho de reventa de celulares y mundo Apple/iPhone ` +
-      `(Argentina y Latinoamérica primero). Para cada referencia: fuente, hook, estructura, ritmo y por qué funcionó. ` +
+      `Buscá vos misma (en TikTok, YouTube Shorts y notas de marketing — Instagram está bloqueado, no lo intentes ahí) ` +
+      `reels y videos cortos virales del último mes en el nicho de reventa de celulares y mundo Apple/iPhone ` +
+      `(Argentina y Latinoamérica primero, después global si hace falta). Para cada referencia: fuente, hook, estructura, ritmo y por qué funcionó. ` +
+      `Si una búsqueda no da resultados, probá otra query vos misma antes de rendirte — no le dejes esa tarea a Nacho. ` +
       `Cerrá con los patrones que se repiten y cómo BNB Store podría hacer algo propio con ellos.`;
 
     const research = await askWithWeb({
       agent: "reel-scout",
       system: systemPrompt("reel-scout"),
       prompt,
-      maxSearches: 6,
-      maxTokens: 2500,
+      maxSearches: 12,
+      maxTokens: 3000,
       usage: ctx.usage,
     });
 
