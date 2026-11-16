@@ -28,6 +28,7 @@ import { confirmAllUpdates, confirmUpdate, correctUpdate } from "@/lib/price-rev
 import { loadComparisonRows, selectSupplierForProduct as selectSupplierForProductDb, type ComparisonQuote, type ComparisonRow } from "@/lib/price-comparison";
 import { computeStockReport, type StockReport } from "@/lib/stock-report";
 import { computePriceHistory, type PriceHistoryResult } from "@/lib/price-history";
+import type { ReelScoutFindings } from "@/lib/agents/reel-scout";
 import { computeMarketReport, type MarketReport } from "@/lib/market-report";
 import { getSetting, latestReport, todayArt } from "@/lib/agents/runtime";
 import { generateAllBanners } from "@/lib/designer/generate";
@@ -206,6 +207,60 @@ export async function loadCaptionSets(context: BusinessContext): Promise<{ date:
   if (!rep) return null;
   const raw = (rep.raw_data_json ?? {}) as { sets?: CaptionSetData[] };
   return { date: rep.date, sets: raw.sets ?? [] };
+}
+
+export interface BacklogItem {
+  id: string;
+  project: string;
+  title: string;
+  status: "pending" | "in_progress" | "blocked" | "done";
+  blockedReason: string | null;
+  startedAt: string | null;
+  doneAt: string | null;
+}
+
+const STATUS_ORDER: Record<BacklogItem["status"], number> = { blocked: 0, in_progress: 1, pending: 2, done: 3 };
+
+/**
+ * La lista de pendientes de "Ernesto autónomo" (la rutina en la nube que lee backlog_items y
+ * resuelve sola, separada del Ernesto/Chief of Staff de la oficina) — hoy sin ningún lugar visual,
+ * así que se muestra acá, en el mismo escritorio, para no abrir un tercer lugar donde mirar.
+ */
+export async function loadBacklogItems(project: string): Promise<BacklogItem[]> {
+  const { data } = await supabaseAdmin()
+    .from("backlog_items")
+    .select("id, project, title, status, blocked_reason, started_at, done_at")
+    .eq("project", project)
+    .order("created_at", { ascending: true })
+    .returns<{ id: string; project: string; title: string; status: BacklogItem["status"]; blocked_reason: string | null; started_at: string | null; done_at: string | null }[]>();
+  const items = (data ?? []).map((r) => ({
+    id: r.id,
+    project: r.project,
+    title: r.title,
+    status: r.status,
+    blockedReason: r.blocked_reason,
+    startedAt: r.started_at,
+    doneAt: r.done_at,
+  }));
+  return items.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+}
+
+export type { ReelScoutFindings };
+
+/** Los hallazgos de Renata, ya estructurados (de su última corrida). */
+export async function loadReelScoutReport(): Promise<{ date: string; findings: ReelScoutFindings } | null> {
+  const rep = await latestReport(supabaseAdmin(), "reel-scout", "BNB");
+  if (!rep) return null;
+  const raw = (rep.raw_data_json ?? {}) as Partial<ReelScoutFindings>;
+  return {
+    date: rep.date,
+    findings: {
+      foundReferences: raw.foundReferences ?? false,
+      references: raw.references ?? [],
+      patterns: raw.patterns ?? [],
+      todayAction: raw.todayAction ?? "",
+    },
+  };
 }
 
 export interface Highlight { label: string; value: string }

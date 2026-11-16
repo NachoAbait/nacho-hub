@@ -12,10 +12,12 @@ import { StockAnalystPanel } from "@/components/office/stock-analyst-panel";
 import { CatalogManagerPanel } from "@/components/office/catalog-manager-panel";
 import { MarketWatcherPanel } from "@/components/office/market-watcher-panel";
 import { ChiefOfStaffPanel } from "@/components/office/chief-of-staff-panel";
+import { ErnestoBacklogPanel } from "@/components/office/ernesto-backlog-panel";
 import { ContentCreatorPanel } from "@/components/office/content-creator-panel";
 import { CopyWriterPanel } from "@/components/office/copy-writer-panel";
 import { GlobalAnalystPanel } from "@/components/office/global-analyst-panel";
 import { CompetitorScraperPanel } from "@/components/office/competitor-scraper-panel";
+import { ReelScoutPanel } from "@/components/office/reel-scout-panel";
 import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
@@ -208,6 +210,8 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "chief-of-staff" && focus?.floor === "BNB" && <ErnestoBacklogPanel project="BNB" />}
+
           {agent.id === "content-creator" && focus && (
             <div className="border-t border-white/10 pt-4">
               <ContentCreatorPanel context={focus.floor} />
@@ -232,6 +236,12 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "reel-scout" && (
+            <div className="border-t border-white/10 pt-4">
+              <ReelScoutPanel />
+            </div>
+          )}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
@@ -250,7 +260,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "price-historian" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "price-historian" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && agent.id !== "reel-scout" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 
