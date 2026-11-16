@@ -93,8 +93,10 @@ function buildChips(category: Category, capacity: string | null, attrs: ProductA
   return chips;
 }
 
-/** Encabezado de card: marca (peso regular) + línea/chip (peso bold, con el acento). */
-function splitTitle(category: Category, model: string, chip: string | null | undefined): { brand: string; line: string } {
+/** Encabezado de card: marca (peso regular) + línea/variante (peso bold, con el acento). El tercer
+ * parámetro es el chip (iPad/MacBook) o la edición (consolas) según la categoría — lo que separa en
+ * cards distintas a dos SKU del mismo modelo. */
+function splitTitle(category: Category, model: string, variant: string | null | undefined): { brand: string; line: string } {
   if (category === "watch") {
     const line = model.replace(/^apple\s*watch\s*/i, "").trim();
     return { brand: "Apple Watch", line: line || model };
@@ -103,8 +105,8 @@ function splitTitle(category: Category, model: string, chip: string | null | und
     const line = model.replace(/^galaxy\s*/i, "").trim();
     return { brand: "Galaxy", line: line || model };
   }
-  if ((category === "ipad" || category === "macbook") && chip) {
-    return { brand: model, line: chip };
+  if ((category === "ipad" || category === "macbook" || category === "console") && variant) {
+    return { brand: model, line: variant };
   }
   return { brand: "", line: model };
 }
@@ -123,17 +125,21 @@ interface Group {
   variants: Variant[];
 }
 
-/** Agrupa por modelo (iPad/MacBook además por chip, porque "iPad Air" existe con M3 y M4 a la vez):
- * una Apple Watch con 40mm y 44mm es UNA card con dos filas, no dos cards sueltas. */
+/** Agrupa por modelo (iPad/MacBook además por chip, porque "iPad Air" existe con M3 y M4 a la vez;
+ * consolas además por edición, porque la Digital y la Física son objetos distintos con foto propia,
+ * no una variante de la misma caja): una Apple Watch con 40mm y 44mm es UNA card con dos filas, no
+ * dos cards sueltas — pero una PS5 Digital y una Física SÍ son dos cards. */
 function groupProducts(category: Category, products: BannerProduct[]): Group[] {
   const map = new Map<string, Group>();
   const order: string[] = [];
   for (const p of products) {
     const chip = p.attributes?.chip ?? null;
-    const key = category === "ipad" || category === "macbook" ? `${p.model}__${chip ?? ""}` : p.model;
+    const edition = p.attributes?.edition ?? null;
+    const variant = category === "ipad" || category === "macbook" ? chip : category === "console" ? edition : null;
+    const key = variant != null ? `${p.model}__${variant}` : p.model;
     let g = map.get(key);
     if (!g) {
-      const { brand, line } = splitTitle(category, p.model, chip);
+      const { brand, line } = splitTitle(category, p.model, variant);
       g = { key, brand, line, heroImageUrl: p.hero_image_url, variants: [] };
       map.set(key, g);
       order.push(key);
