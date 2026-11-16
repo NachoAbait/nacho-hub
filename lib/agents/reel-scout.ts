@@ -57,7 +57,7 @@ export const reelScout: AgentModule = {
       prompt: `Informe a estructurar:\n\n${research}`,
       schema: FindingsSchema,
       usage: ctx.usage,
-      maxTokens: 1200,
+      maxTokens: 2500,
     });
 
     return {
