@@ -99,6 +99,13 @@ async function start() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
+      // DIAGNÓSTICO TEMPORAL: si Nacho reenvía un mensaje de un Canal a otro chat (ej. a sí mismo),
+      // WhatsApp guarda acá el canal de origen — aunque el canal en sí nunca llegue en vivo. Esto
+      // va ANTES del filtro de fromMe porque un reenvío a uno mismo llega marcado fromMe=true.
+      for (const part of Object.values(msg.message ?? {})) {
+        const info = part?.contextInfo?.forwardedNewsletterMessageInfo;
+        if (info) console.log(`[debug] CANAL: jid=${info.newsletterJid} nombre="${info.newsletterName}"`);
+      }
       if (msg.key.fromMe) continue;
       const jid = msg.key.remoteJid ?? "";
       if (jid === "status@broadcast") continue; // estados: nunca
@@ -106,9 +113,33 @@ async function start() {
       // Quien manda el mensaje dentro del grupo/comunidad siempre viaja en participant/participantPn.
       const isGroup = jid.endsWith("@g.us");
       const body = extractText(msg.message).trim();
+      // DIAGNÓSTICO TEMPORAL: ver qué llega de grupos/comunidades (ej. el anuncio de Kondor), para
+      // entender si el mensaje ni siquiera llega al puente o si llega pero sin texto extraíble.
+      if (isGroup) {
+        console.log(
+          `[debug] GRUPO/COMUNIDAD jid=${jid} participant=${msg.key.participant ?? ""} senderPn=${msg.key.senderPn ?? ""} ` +
+          `participantPn=${msg.key.participantPn ?? ""} msgKeys=${Object.keys(msg.message ?? {}).join(",")} body="${body.slice(0, 60)}"`,
+        );
+      }
       if (!body) continue;
       // En chats con LID, y siempre dentro de un grupo, el número real viene en senderPn / participantPn.
-      const sender = (msg.key.senderPn ?? msg.key.participantPn ?? msg.key.participant ?? jid).toString();
+      let sender = (msg.key.senderPn ?? msg.key.participantPn ?? msg.key.participant ?? jid).toString();
+      // Comunidades/canales nuevos: WhatsApp manda un @lid (id anónimo) en vez del número real.
+      // Baileys guarda el mapeo lid->número si ya lo vio antes; si no, sigue sin resolver (no hay forma
+      // de "preguntarle" a WhatsApp el número de alguien que nunca escribió directo).
+      if (sender.endsWith("@lid")) {
+        try {
+          const resolved = await sock.signalRepository.lidMapping.getPNForLID(sender);
+          if (resolved) {
+            console.log(`[debug] LID resuelto: ${sender} -> ${resolved}`);
+            sender = resolved;
+          } else {
+            console.log(`[debug] LID sin resolver todavía: ${sender}`);
+          }
+        } catch (err) {
+          console.log(`[debug] error resolviendo LID ${sender}: ${err.message}`);
+        }
+      }
       await sendToHub({
         sender,
         sender_name: msg.pushName ?? null,
