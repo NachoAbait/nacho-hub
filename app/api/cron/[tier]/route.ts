@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 import { modulesOfTier } from "@/lib/agents/registry";
 import { runAgent } from "@/lib/agents/runtime";
+import { sendDailyWhatsAppBrief } from "@/lib/agents/daily-whatsapp-brief";
 import type { Tier } from "@/lib/agents";
 
 export const maxDuration = 120;
@@ -16,6 +17,8 @@ async function handle(request: Request, ctx: { params: Promise<{ tier: string }>
 
   const jobs = modulesOfTier(tier as Tier).flatMap((mod) => mod.contexts.map((c) => runAgent(mod, c, "cron")));
   const runs = await Promise.all(jobs);
+  // El brief de WhatsApp a Nacho sale después de que el Chief termina de leer a todos los demás.
+  if (tier === "chief") await sendDailyWhatsAppBrief();
   return NextResponse.json({ tier, ok: runs.every((r) => r.ok), runs });
 }
 
