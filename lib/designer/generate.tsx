@@ -5,7 +5,7 @@ import { fetchExchangeRateConfig } from "@/lib/nexios";
 import { computeEffectiveRate, isExchangeRateSource } from "@/lib/exchange-rates";
 import { CATEGORIES, type Banner, type BannerSnapshot, type Category, type Product } from "@/lib/types";
 import { renderFittedBanner } from "@/lib/designer/render";
-import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner, MAX_VARIANT_ROWS } from "@/components/banners/category";
+import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner, countVariantRows, MAX_VARIANT_ROWS } from "@/components/banners/category";
 
 type SnapshotProduct = BannerSnapshot["products"][number];
 
@@ -90,7 +90,8 @@ export async function generateBanner(category: Category): Promise<Banner> {
   // el bug de precios cortados, aunque cambie el CSS del template o el catálogo tenga muchos modelos.
   const buildHtml = (maxRows: number) =>
     "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} usdArs={usdArs} maxRows={maxRows} />);
-  const { png } = await renderFittedBanner(buildHtml, BANNER_SIZE, MAX_VARIANT_ROWS);
+  const maxPossibleRows = Math.min(MAX_VARIANT_ROWS, countVariantRows(category, products));
+  const { png } = await renderFittedBanner(buildHtml, BANNER_SIZE, maxPossibleRows);
 
   const storagePath = `${category}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
   const { error: uploadError } = await db.storage

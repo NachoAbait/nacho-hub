@@ -148,6 +148,13 @@ function groupProducts(category: Category, products: BannerProduct[]): Group[] {
   return groups;
 }
 
+/** Total de filas-variante del catálogo activo, sin recortar — lo usa generate.tsx para acotar
+ * renderFittedBanner al rango que realmente puede necesitar (nunca tiene sentido buscar más allá
+ * de lo que hay). */
+export function countVariantRows(category: Category, products: BannerProduct[]): number {
+  return groupProducts(category, products).reduce((sum, g) => sum + g.variants.length, 0);
+}
+
 /** Corta por FILA total (no por card): una card larga nunca empuja a las demás fuera del cuadro. */
 function capRows(groups: Group[], maxRows: number): Group[] {
   const out: Group[] = [];

@@ -81,20 +81,31 @@ export async function renderFittedBanner(
       });
     }
 
-    let lo = 1;
-    let hi = Math.max(1, maxPossibleRows);
-    let best = 1; // si ni 1 fila entra (no debería pasar), mejor mostrar algo apretado que nada.
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      if (await fits(mid)) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
+    const hi0 = Math.max(1, maxPossibleRows);
+    let best: number;
+    // Caso común (la gran mayoría de las categorías): el catálogo entero ya entra sin recortar nada
+    // — un solo render, el mismo costo que antes de este cambio. Solo las categorías con muchos
+    // modelos (ver bug de iPhone) pagan la búsqueda binaria de abajo; en serverless, repetir
+    // page.setContent de más en TODAS las categorías agota tiempo/memoria y Chromium termina
+    // tirando "Unable to capture screenshot" en las últimas — por eso este atajo no es opcional.
+    if (await fits(hi0)) {
+      best = hi0;
+    } else {
+      let lo = 1;
+      let hi = hi0 - 1;
+      best = 1; // si ni 1 fila entra (no debería pasar), mejor mostrar algo apretado que nada.
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (await fits(mid)) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
       }
+      await fits(best); // deja la page cargada con el HTML ganador para la captura final
     }
 
-    await fits(best); // deja la page cargada con el HTML ganador para la captura final
     const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, ...size } });
     return { png: Buffer.from(png), rowsUsed: best };
   } finally {
