@@ -41,6 +41,8 @@ export const AGENTS: AgentDef[] = [
     description: "Busca precios y promos de la competencia con la búsqueda web de Claude, cita la fuente de cada dato." },
   { id: "market-watcher", task: "Sigue noticias y dólar", persona: "Tomás", name: "Market Watcher", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: true,
     description: "Noticias Apple y dólar MEP para BNB; SENASA y mercado de hacienda para AgroScan." },
+  { id: "reel-scout", task: "Rastrea reels virales del nicho", persona: "Renata", name: "Reel Scout", tier: "readers", contexts: ["BNB"], phase: 3, live: true,
+    description: "Investiga cada día qué reels virales hay en el nicho Apple/iPhone y por qué funcionan (hook, estructura, ritmo), citando la fuente. Content Creator los usa para proponer reels propios." },
   { id: "social-collector", task: "Junta métricas de Instagram", persona: "Valentina", name: "Social Collector", tier: "readers", contexts: ["BNB", "AgroScan"], phase: 3, live: false,
     description: "Métricas de las cuentas propias de Instagram vía Graph API." },
 
@@ -125,6 +127,7 @@ export const REGISTERED_AGENT_IDS = [
   "catalog-manager",
   "market-watcher",
   "competitor-scraper",
+  "reel-scout",
   "content-creator",
   "copy-writer",
   "dm-handler",

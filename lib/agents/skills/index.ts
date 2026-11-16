@@ -5,6 +5,7 @@
 import { PRICE_READER } from "./price-reader";
 import { MARKET_WATCHER } from "./market-watcher";
 import { COMPETITOR_SCRAPER } from "./competitor-scraper";
+import { REEL_SCOUT } from "./reel-scout";
 import { SOCIAL_COLLECTOR } from "./social-collector";
 import { PRICE_ANALYST } from "./price-analyst";
 import { CONTENT_ANALYST } from "./content-analyst";
@@ -46,6 +47,7 @@ const SKILLS: Record<string, string> = {
   "price-reader": PRICE_READER,
   "market-watcher": MARKET_WATCHER,
   "competitor-scraper": COMPETITOR_SCRAPER,
+  "reel-scout": REEL_SCOUT,
   "social-collector": SOCIAL_COLLECTOR,
   "price-analyst": PRICE_ANALYST,
   "content-analyst": CONTENT_ANALYST,

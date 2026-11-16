@@ -37,6 +37,18 @@ export const BRIEFS: Record<string, AgentBrief> = {
     delivers: "Posts y precios de la competencia de las últimas 24 horas.",
     schedule: "03:00, junto con los otros Readers.",
   },
+  "reel-scout": {
+    summary: "Busco qué reels están funcionando en el nicho Apple/iPhone y explico por qué.",
+    steps: [
+      "Busco reels y videos cortos virales recientes de reventa de celulares y mundo iPhone.",
+      "De cada uno anoto hook, estructura, ritmo y la razón probable del éxito, con la fuente.",
+      "Detecto los patrones que se repiten entre varios.",
+      "Dejo el informe para que Content Creator arme reels propios inspirados en el patrón, sin copiar.",
+    ],
+    sources: ["Búsqueda web de Claude (reels, TikTok, Shorts, notas)"],
+    delivers: "Informe diario de reels virales con fuentes y patrones para replicar.",
+    schedule: "Todos los días, junto con los otros Readers.",
+  },
   "market-watcher": {
     summary: "Sigo las noticias que mueven el mercado de cada negocio.",
     steps: [

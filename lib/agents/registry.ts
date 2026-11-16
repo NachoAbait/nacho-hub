@@ -8,6 +8,7 @@ import { catalogManager } from "@/lib/agents/catalog-manager";
 import { stockAnalyst } from "@/lib/agents/stock-analyst";
 import { marketWatcher } from "@/lib/agents/market-watcher";
 import { competitorScraper } from "@/lib/agents/competitor-scraper";
+import { reelScout } from "@/lib/agents/reel-scout";
 import { contentCreator } from "@/lib/agents/content-creator";
 import { copyWriter } from "@/lib/agents/copy-writer";
 import { chiefOfStaff } from "@/lib/agents/chief-of-staff";
@@ -27,6 +28,7 @@ const MODULES: AgentModule[] = [
   stockAnalyst,
   marketWatcher,
   competitorScraper,
+  reelScout,
   designer,
   contentCreator,
   copyWriter,
