@@ -147,13 +147,28 @@ export const priceAnalyst: AgentModule = {
       groups.set(key, list);
     }
 
+    // Prioridad fija de Nacho: a precio igual o más barato, Cóndor (Kondor Group) gana siempre —
+    // es a quien más le compra y le hace descuento pagando en USDT, así que un empate no debería
+    // pedirle que confirme algo que ya sabe cómo resolver. Si Cóndor no cotizó hoy, no hay nada que
+    // priorizar y gana el más barato como siempre.
+    let kondorId: string | null = null;
+    for (const [id, name] of supplierNames) {
+      if (/kondor/i.test(name)) kondorId = id;
+    }
+
     const index = await loadCatalogIndex(ctx.db);
     const decisions: Decision[] = [];
 
     for (const [, group] of groups) {
       const sorted = [...group].sort((a, b) => a.cost_usd - b.cost_usd);
-      const best = sorted[0];
-      const second = sorted[1];
+      let best = sorted[0];
+      const kondorQuote = kondorId ? group.find((q) => q.supplier_id === kondorId) : undefined;
+      if (kondorQuote && kondorQuote.cost_usd <= best.cost_usd) best = kondorQuote;
+      const second = sorted.find((q) => q.supplier_id !== best.supplier_id) ?? null;
+      // ¿Un competidor le ganó a Cóndor en este producto (cotizó, pero no fue el elegido)? Es el
+      // ÚNICO motivo "por proveedor" para pedirle a Nacho que lo mire con cuidado antes de aprobar:
+      // si Cóndor empata, gana, o directamente no cotizó ese producto, no hace falta molestarlo.
+      const kondorBeaten = kondorQuote != null && best.supplier_id !== kondorId;
       const entry: CatalogEntry | null = matchCatalog(index, best.category, best.model, best.capacity, best.chip, best.inches, best.cellular, best.ram_gb, best.screen_mm, best.edition);
 
       if (!entry) {
@@ -209,7 +224,7 @@ export const priceAnalyst: AgentModule = {
 
       // Martín NUNCA aplica solo: decide y queda recomendado. Lo que modifica la app es la
       // aprobación de Nacho (uno por uno o con "Aplicar todo lo recomendado"), sin excepción.
-      const isRoutine = !needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd });
+      const isRoutine = !needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd }) && !kondorBeaten;
       await upsertDecision(ctx.db, today, { hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, category: best.category, model: entry.model, capacity: entry.capacity }, {
         category: best.category, model: entry.model, capacity: entry.capacity,
         detected_cost_usd: best.cost_usd, previous_cost_usd: previous,
