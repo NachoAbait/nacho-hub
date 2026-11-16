@@ -10,7 +10,9 @@ const LOCAL_CHROME_CANDIDATES = [
   "/usr/bin/chromium",
 ].filter((p): p is string => Boolean(p));
 
-async function launchBrowser(): Promise<Browser> {
+/** Exportado para que generateAllBanners pueda compartir UN browser entre todas las categorías de
+ * una corrida en vez de lanzar Chromium 6 veces seguidas — ver comentario en renderFittedBanner. */
+export async function launchBrowser(): Promise<Browser> {
   const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
   if (serverless) {
@@ -62,53 +64,63 @@ export async function renderHtmlToPng(html: string, size: RenderSize): Promise<B
  * candidato y mide si alguna `.card` recorta su propio contenido (overflow: hidden + flexbox
  * achicando cards cuando no entran todas). Busca binario el máximo de filas que entra sin recortar
  * nada — asume que menos filas nunca generan MÁS recorte que más filas, así que sirve buscar así.
+ *
+ * `sharedBrowser`: si se pasa, se reusa (una `newPage` propia, pero sin cerrar el browser al final —
+ * eso es responsabilidad de quien lo pasó). Sin esto, generateAllBanners lanzaba y cerraba Chromium
+ * una vez por categoría (6 veces seguidas en una corrida de Nico), y en el entorno serverless
+ * (@sparticuz/chromium en Vercel) eso termina agotando memoria: a partir de la 2ª o 3ª categoría
+ * page.screenshot empieza a tirar "Unable to capture screenshot" — visto en producción el
+ * 2026-11-15, antes de cualquier cambio de este archivo, así que no es un bug nuevo, pero lanzar
+ * un solo browser por corrida en vez de uno por categoría es la forma de no seguir pisándolo.
  */
 export async function renderFittedBanner(
   buildHtml: (maxRows: number) => string,
   size: RenderSize,
   maxPossibleRows: number,
+  sharedBrowser?: Browser,
 ): Promise<{ png: Buffer; rowsUsed: number }> {
-  const browser = await launchBrowser();
+  const browser = sharedBrowser ?? (await launchBrowser());
   try {
     const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 });
-
-    async function fits(maxRows: number): Promise<boolean> {
-      await page.setContent(buildHtml(maxRows), { waitUntil: "networkidle", timeout: 30_000 });
-      await page.evaluate(() => document.fonts.ready);
-      return page.evaluate(() => {
-        const cards = document.querySelectorAll(".card");
-        return Array.from(cards).every((c) => c.scrollHeight <= c.clientHeight + 1);
-      });
-    }
-
-    const hi0 = Math.max(1, maxPossibleRows);
-    let best: number;
-    // Caso común (la gran mayoría de las categorías): el catálogo entero ya entra sin recortar nada
-    // — un solo render, el mismo costo que antes de este cambio. Solo las categorías con muchos
-    // modelos (ver bug de iPhone) pagan la búsqueda binaria de abajo; en serverless, repetir
-    // page.setContent de más en TODAS las categorías agota tiempo/memoria y Chromium termina
-    // tirando "Unable to capture screenshot" en las últimas — por eso este atajo no es opcional.
-    if (await fits(hi0)) {
-      best = hi0;
-    } else {
-      let lo = 1;
-      let hi = hi0 - 1;
-      best = 1; // si ni 1 fila entra (no debería pasar), mejor mostrar algo apretado que nada.
-      while (lo <= hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        if (await fits(mid)) {
-          best = mid;
-          lo = mid + 1;
-        } else {
-          hi = mid - 1;
-        }
+    try {
+      async function fits(maxRows: number): Promise<boolean> {
+        await page.setContent(buildHtml(maxRows), { waitUntil: "networkidle", timeout: 30_000 });
+        await page.evaluate(() => document.fonts.ready);
+        return page.evaluate(() => {
+          const cards = document.querySelectorAll(".card");
+          return Array.from(cards).every((c) => c.scrollHeight <= c.clientHeight + 1);
+        });
       }
-      await fits(best); // deja la page cargada con el HTML ganador para la captura final
-    }
 
-    const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, ...size } });
-    return { png: Buffer.from(png), rowsUsed: best };
+      const hi0 = Math.max(1, maxPossibleRows);
+      let best: number;
+      // Caso común (la gran mayoría de las categorías): el catálogo entero ya entra sin recortar
+      // nada — un solo render, el mismo costo que antes de este cambio. Solo las categorías con
+      // muchos modelos (ver bug de iPhone) pagan la búsqueda binaria de abajo.
+      if (await fits(hi0)) {
+        best = hi0;
+      } else {
+        let lo = 1;
+        let hi = hi0 - 1;
+        best = 1; // si ni 1 fila entra (no debería pasar), mejor mostrar algo apretado que nada.
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          if (await fits(mid)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        await fits(best); // deja la page cargada con el HTML ganador para la captura final
+      }
+
+      const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, ...size } });
+      return { png: Buffer.from(png), rowsUsed: best };
+    } finally {
+      await page.close();
+    }
   } finally {
-    await browser.close();
+    if (!sharedBrowser) await browser.close();
   }
 }

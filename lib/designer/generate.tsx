@@ -4,7 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { fetchExchangeRateConfig } from "@/lib/nexios";
 import { computeEffectiveRate, isExchangeRateSource } from "@/lib/exchange-rates";
 import { CATEGORIES, type Banner, type BannerSnapshot, type Category, type Product } from "@/lib/types";
-import { renderFittedBanner } from "@/lib/designer/render";
+import { launchBrowser, renderFittedBanner } from "@/lib/designer/render";
+import type { Browser } from "playwright-core";
 import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner, countVariantRows, MAX_VARIANT_ROWS } from "@/components/banners/category";
 
 type SnapshotProduct = BannerSnapshot["products"][number];
@@ -72,7 +73,7 @@ async function fetchUsdArsRate(): Promise<number | null> {
  * Pipeline completo: productos activos → HTML → PNG → Storage → row en banners.
  * Lo usan el route handler, la server action del dashboard y el agente Designer.
  */
-export async function generateBanner(category: Category): Promise<Banner> {
+export async function generateBanner(category: Category, sharedBrowser?: Browser): Promise<Banner> {
   if (!hasTemplate(category)) throw new DesignerError(`Categoría desconocida "${category}"`, 400);
   const db = supabaseAdmin();
 
@@ -91,7 +92,7 @@ export async function generateBanner(category: Category): Promise<Banner> {
   const buildHtml = (maxRows: number) =>
     "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} usdArs={usdArs} maxRows={maxRows} />);
   const maxPossibleRows = Math.min(MAX_VARIANT_ROWS, countVariantRows(category, products));
-  const { png } = await renderFittedBanner(buildHtml, BANNER_SIZE, maxPossibleRows);
+  const { png } = await renderFittedBanner(buildHtml, BANNER_SIZE, maxPossibleRows, sharedBrowser);
 
   const storagePath = `${category}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
   const { error: uploadError } = await db.storage
@@ -126,21 +127,32 @@ export interface GenerateAllResult {
   products: number;
 }
 
-/** Genera el banner de cada categoría que tenga productos. Una categoría que falla no frena a las demás. */
+/**
+ * Genera el banner de cada categoría que tenga productos. Una categoría que falla no frena a las
+ * demás. Un solo Chromium para TODA la corrida (no uno por categoría): lanzar y cerrar el browser
+ * repetidas veces en el mismo invocation serverless es lo que venía agotando memoria y tirando
+ * "Unable to capture screenshot" a partir de la 2ª o 3ª categoría (visto en prod desde el
+ * 2026-11-15).
+ */
 export async function generateAllBanners(only?: Category[]): Promise<GenerateAllResult[]> {
   const out: GenerateAllResult[] = [];
-  for (const category of only ?? CATEGORIES) {
-    const products = await activeProducts(category);
-    if (products.length === 0) {
-      out.push({ category, ok: false, error: "sin productos activos", products: 0 });
-      continue;
+  const browser = await launchBrowser();
+  try {
+    for (const category of only ?? CATEGORIES) {
+      const products = await activeProducts(category);
+      if (products.length === 0) {
+        out.push({ category, ok: false, error: "sin productos activos", products: 0 });
+        continue;
+      }
+      try {
+        const banner = await generateBanner(category, browser);
+        out.push({ category, ok: true, banner, products: products.length });
+      } catch (err) {
+        out.push({ category, ok: false, error: err instanceof Error ? err.message : String(err), products: products.length });
+      }
     }
-    try {
-      const banner = await generateBanner(category);
-      out.push({ category, ok: true, banner, products: products.length });
-    } catch (err) {
-      out.push({ category, ok: false, error: err instanceof Error ? err.message : String(err), products: products.length });
-    }
+  } finally {
+    await browser.close();
   }
   return out;
 }
