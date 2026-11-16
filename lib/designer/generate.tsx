@@ -73,14 +73,21 @@ async function fetchUsdArsRate(): Promise<number | null> {
  * Pipeline completo: productos activos → HTML → PNG → Storage → row en banners.
  * Lo usan el route handler, la server action del dashboard y el agente Designer.
  */
-export async function generateBanner(category: Category, sharedBrowser?: Browser): Promise<Banner> {
+export async function generateBanner(
+  category: Category,
+  sharedBrowser?: Browser,
+  // generateAllBanners pide la cotización UNA vez para las 6 categorías en vez de 6 veces (cada
+  // fetch pega contra criptoya/dolarhoy/ambito con reintento propio): eso venía sumando tiempo real
+  // y ayudó a que una corrida completa pasara el límite de 120s de la función en Vercel.
+  prefetchedUsdArs?: number | null,
+): Promise<Banner> {
   if (!hasTemplate(category)) throw new DesignerError(`Categoría desconocida "${category}"`, 400);
   const db = supabaseAdmin();
 
   const products = await activeProducts(category);
   if (products.length === 0) throw new DesignerError(`No hay productos activos en "${category}"`, 400);
 
-  const usdArs = await fetchUsdArsRate();
+  const usdArs = prefetchedUsdArs !== undefined ? prefetchedUsdArs : await fetchUsdArsRate();
   if (usdArs == null) {
     throw new DesignerError(`No pude obtener la cotización del dólar: no publico el banner de "${category}" sin el precio en pesos`, 502);
   }
@@ -136,6 +143,7 @@ export interface GenerateAllResult {
  */
 export async function generateAllBanners(only?: Category[]): Promise<GenerateAllResult[]> {
   const out: GenerateAllResult[] = [];
+  const usdArs = await fetchUsdArsRate();
   const browser = await launchBrowser();
   try {
     for (const category of only ?? CATEGORIES) {
@@ -145,7 +153,7 @@ export async function generateAllBanners(only?: Category[]): Promise<GenerateAll
         continue;
       }
       try {
-        const banner = await generateBanner(category, browser);
+        const banner = await generateBanner(category, browser, usdArs);
         out.push({ category, ok: true, banner, products: products.length });
       } catch (err) {
         out.push({ category, ok: false, error: err instanceof Error ? err.message : String(err), products: products.length });
