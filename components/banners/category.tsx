@@ -11,10 +11,12 @@ export const BANNER_SIZE = { width: 1080, height: 1920 } as const;
 /** Cuántos SKU como máximo trae la consulta a `products` antes de agrupar y acotar filas. */
 export const BANNER_FETCH_LIMIT = 60;
 
-/** Filas de variante (tamaño/capacidad) que entran como máximo en la historia, sumando todas las
- * cards — no "productos": una Apple Watch con 3 tamaños ya son 3 filas. Ajustado para que, con el
- * alto de fila actual, nunca se pase del cuadro de 1920px (el body corta lo que sobra). */
-const MAX_VARIANT_ROWS = 12;
+/** Techo de seguridad para la búsqueda de renderFittedBanner (ver lib/designer/render.ts): cuántas
+ * filas-variante probar como máximo, sumando todas las cards — no "productos": una Apple Watch con
+ * 3 tamaños ya son 3 filas. YA NO hace falta calibrarlo al píxel: generate.tsx renderiza y mide si
+ * alguna card recorta su propio contenido, y si pasa, prueba con una fila menos. Esto es solo el
+ * tope de arranque para esa búsqueda (una categoría real nunca necesita tantas). */
+export const MAX_VARIANT_ROWS = 20;
 
 /** Ya no hay foto grande de categoría arriba de todo en ninguna historia: ese espacio se le suma
  * siempre a las cards. Cuantas menos filas entran, más margen libre queda — así que el tamaño de
@@ -34,6 +36,9 @@ export interface CategoryBannerProps {
   products: BannerProduct[];
   /** Cotización pesos de la propia NexiOS (Ajustes → casa + recargo). Null si no se pudo leer: no se inventa un precio en pesos. */
   usdArs: number | null;
+  /** Tope de filas-variante a mostrar. Lo fija renderFittedBanner probando valores hasta encontrar
+   * el máximo que entra sin recortar ninguna card; por defecto (sin este prop) usa MAX_VARIANT_ROWS. */
+  maxRows?: number;
 }
 
 /** Título y acento por categoría. Mismo lenguaje visual (negro + dorado) para toda la marca; Samsung en celeste. */
@@ -269,11 +274,11 @@ function css(accent: string, light: string, dark: string, scale: number) {
 }
 
 /** Banner de precios de una categoría. Base visual compartida (negro + bokeh dorado, chips de variante, precio en USD y pesos). */
-export function CategoryBanner({ category, products, usdArs }: CategoryBannerProps) {
+export function CategoryBanner({ category, products, usdArs, maxRows }: CategoryBannerProps) {
   const style = CATEGORY_STYLE[category];
   const rawGroups = groupProducts(category, products);
   const totalRows = rawGroups.reduce((sum, g) => sum + g.variants.length, 0);
-  const groups = capRows(rawGroups, MAX_VARIANT_ROWS);
+  const groups = capRows(rawGroups, maxRows ?? MAX_VARIANT_ROWS);
   const scale = sizeScale(totalRows);
   const s = (n: number) => Math.round(n * scale);
   // Alto de imagen por CARD, no global: una card de 1 fila (128, igual que siempre) no necesita lo

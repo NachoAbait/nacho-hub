@@ -54,3 +54,50 @@ export async function renderHtmlToPng(html: string, size: RenderSize): Promise<B
     await browser.close();
   }
 }
+
+/**
+ * Para templates como el de CategoryBanner, que recortan contenido a un número fijo de filas para
+ * entrar en el cuadro: en vez de calibrar ese número a mano (y que se desactualice cada vez que
+ * cambia el CSS del banner — así se coló el bug de precios cortados), renderiza de verdad con cada
+ * candidato y mide si alguna `.card` recorta su propio contenido (overflow: hidden + flexbox
+ * achicando cards cuando no entran todas). Busca binario el máximo de filas que entra sin recortar
+ * nada — asume que menos filas nunca generan MÁS recorte que más filas, así que sirve buscar así.
+ */
+export async function renderFittedBanner(
+  buildHtml: (maxRows: number) => string,
+  size: RenderSize,
+  maxPossibleRows: number,
+): Promise<{ png: Buffer; rowsUsed: number }> {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 });
+
+    async function fits(maxRows: number): Promise<boolean> {
+      await page.setContent(buildHtml(maxRows), { waitUntil: "networkidle", timeout: 30_000 });
+      await page.evaluate(() => document.fonts.ready);
+      return page.evaluate(() => {
+        const cards = document.querySelectorAll(".card");
+        return Array.from(cards).every((c) => c.scrollHeight <= c.clientHeight + 1);
+      });
+    }
+
+    let lo = 1;
+    let hi = Math.max(1, maxPossibleRows);
+    let best = 1; // si ni 1 fila entra (no debería pasar), mejor mostrar algo apretado que nada.
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (await fits(mid)) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    await fits(best); // deja la page cargada con el HTML ganador para la captura final
+    const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, ...size } });
+    return { png: Buffer.from(png), rowsUsed: best };
+  } finally {
+    await browser.close();
+  }
+}

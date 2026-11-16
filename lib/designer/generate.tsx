@@ -2,9 +2,10 @@
 import { renderToStaticMarkup } from "react-dom/server.browser";
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchExchangeRateConfig } from "@/lib/nexios";
+import { computeEffectiveRate, isExchangeRateSource } from "@/lib/exchange-rates";
 import { CATEGORIES, type Banner, type BannerSnapshot, type Category, type Product } from "@/lib/types";
-import { renderHtmlToPng } from "@/lib/designer/render";
-import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner } from "@/components/banners/category";
+import { renderFittedBanner } from "@/lib/designer/render";
+import { BANNER_FETCH_LIMIT, BANNER_SIZE, BANNER_TEMPLATE_VERSION, CategoryBanner, MAX_VARIANT_ROWS } from "@/components/banners/category";
 
 type SnapshotProduct = BannerSnapshot["products"][number];
 
@@ -35,23 +36,33 @@ export async function activeProducts(category: Category): Promise<SnapshotProduc
 }
 
 /**
- * Pesos: la MISMA cotización y recargo que ya usa NexiOS para mostrarle el precio en pesos al
- * cliente (Ajustes de la organización → "casa" de dolarapi.com + % de recargo), no un cálculo
- * propio — así el banner nunca dice un número distinto al que ve el cliente en la app. Si no se
- * puede leer la config o la cotización, se devuelve null y el banner simplemente no muestra pesos.
+ * Pesos: la MISMA cotización, proveedor y recargo que ya usa NexiOS para mostrarle el precio en
+ * pesos al cliente (Ajustes de la organización), con la misma lógica de fuentes
+ * (lib/exchange-rates.ts, portada de resellerapp/src/lib/exchange-rates.ts) — así el banner nunca
+ * dice un número distinto al que ve el cliente en el catálogo público.
+ *
+ * Nunca se inventa un precio en pesos: si no se puede resolver, se devuelve null. Reintenta una
+ * vez (las fuentes en vivo tienen blips cortos) antes de rendirse — quien llama a esto
+ * (generateBanner) NO publica el banner si queda en null: antes se publicaba igual sin el precio en
+ * pesos, y eso es justo lo que Nacho pidió que no pase más.
  */
 async function fetchUsdArsRate(): Promise<number | null> {
   try {
     const cfg = await fetchExchangeRateConfig();
     if (!cfg) return null;
     if (cfg.manual != null) return cfg.manual;
-    if (!cfg.source) return null;
-    const res = await fetch("https://dolarapi.com/v1/dolares", { cache: "no-store" });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as { casa: string; venta: number }[];
-    const row = rows.find((r) => r.casa === cfg.source);
-    if (!row) return null;
-    return row.venta * (1 + (cfg.markupPct ?? 0) / 100);
+    if (!cfg.source || !isExchangeRateSource(cfg.source)) return null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+      const r = await computeEffectiveRate({
+        type: cfg.source,
+        provider: cfg.provider,
+        markupPct: cfg.markupPct ?? 0,
+        manual: cfg.manual,
+      });
+      if (r.rate != null) return r.rate;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -69,10 +80,17 @@ export async function generateBanner(category: Category): Promise<Banner> {
   if (products.length === 0) throw new DesignerError(`No hay productos activos en "${category}"`, 400);
 
   const usdArs = await fetchUsdArsRate();
+  if (usdArs == null) {
+    throw new DesignerError(`No pude obtener la cotización del dólar: no publico el banner de "${category}" sin el precio en pesos`, 502);
+  }
   const snapshot: BannerSnapshot = { category, products, template_version: BANNER_TEMPLATE_VERSION };
 
-  const html = "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} usdArs={usdArs} />);
-  const png = await renderHtmlToPng(html, BANNER_SIZE);
+  // No se fija un número de filas a mano: se prueba de verdad hasta encontrar el máximo que entra
+  // sin que ninguna card recorte precios ni fotos (ver renderFittedBanner) — así nunca más vuelve
+  // el bug de precios cortados, aunque cambie el CSS del template o el catálogo tenga muchos modelos.
+  const buildHtml = (maxRows: number) =>
+    "<!doctype html>" + renderToStaticMarkup(<CategoryBanner category={category} products={products} usdArs={usdArs} maxRows={maxRows} />);
+  const { png } = await renderFittedBanner(buildHtml, BANNER_SIZE, MAX_VARIANT_ROWS);
 
   const storagePath = `${category}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
   const { error: uploadError } = await db.storage
