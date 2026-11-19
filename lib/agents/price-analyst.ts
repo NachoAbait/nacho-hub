@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentModule } from "@/lib/agents/runtime";
-import { entryKey, loadCatalogIndex, matchCatalog, needsReview, type CatalogEntry } from "@/lib/agents/catalog-match";
+import { applyCost, entryKey, loadCatalogIndex, matchCatalog, needsReview, type CatalogEntry } from "@/lib/agents/catalog-match";
+import { nexios } from "@/lib/nexios";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 interface DecisionKey {
@@ -222,21 +223,47 @@ export const priceAnalyst: AgentModule = {
         continue;
       }
 
-      // Martín NUNCA aplica solo: decide y queda recomendado. Lo que modifica la app es la
-      // aprobación de Nacho (uno por uno o con "Aplicar todo lo recomendado"), sin excepción.
+      // Martín NUNCA aplica solo salvo esta única excepción puntual: si Cóndor ganó porque empató o
+      // fue más barato (no porque le haya ganado a un competidor cotizando), no hay ninguna decisión
+      // real que pedirle a Nacho — se aplica directo, misma función que usa el botón "Aplicar todo
+      // lo recomendado" (y Bruno), sin dejarlo pidiendo un click que no decide nada. needsReview()
+      // (un salto raro, poca confianza, etc.) y que un competidor le haya ganado a Cóndor siguen
+      // quedando "pending" para que Nacho lo mire — eso no cambió.
       const isRoutine = !needsReview({ pricingBasis: best.pricing_basis, confidence: best.confidence, previousCost: previous, cost: best.cost_usd }) && !kondorBeaten;
-      await upsertDecision(ctx.db, today, { hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, category: best.category, model: entry.model, capacity: entry.capacity }, {
+
+      const baseFields: Record<string, unknown> = {
         category: best.category, model: entry.model, capacity: entry.capacity,
         detected_cost_usd: best.cost_usd, previous_cost_usd: previous,
         original_price_usd: best.original_price_usd, pricing_basis: best.pricing_basis, bulk_qty: best.bulk_qty,
         confidence: best.confidence, raw_line: best.raw_line, message_id: best.message_id, supplier_id: best.supplier_id,
-        hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, status: "detected", review_status: "pending",
-      });
+        hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id,
+      };
+      let newPrice: number | null = null;
+      let fields: Record<string, unknown>;
+
+      if (isRoutine) {
+        let margin: number | null = null;
+        if (entry.nexios_id) {
+          const { data } = (await nexios()?.from("price_catalog").select("margin_usd").eq("id", entry.nexios_id).maybeSingle<{ margin_usd: number | null }>()) ?? { data: null };
+          margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+        }
+        if (margin == null && entry.hub_id) {
+          const { data } = await ctx.db.from("products").select("margin_usd").eq("id", entry.hub_id).maybeSingle<{ margin_usd: number | null }>();
+          margin = data?.margin_usd == null ? null : Number(data.margin_usd);
+        }
+        const r = await applyCost(ctx.db, { nexios_id: entry.nexios_id, hub_id: entry.hub_id, margin_usd: margin }, best.cost_usd);
+        newPrice = r.newPrice;
+        fields = { ...baseFields, status: r.status, review_status: "auto", new_price_usd: r.newPrice, applied_at: new Date().toISOString() };
+      } else {
+        fields = { ...baseFields, status: "detected", review_status: "pending" };
+      }
+
+      await upsertDecision(ctx.db, today, { hub_product_id: entry.hub_id, nexios_catalog_id: entry.nexios_id, category: best.category, model: entry.model, capacity: entry.capacity }, fields);
       decisions.push({
         category: best.category, model: entry.model, capacity: entry.capacity, cost: best.cost_usd, previous,
         winnerSupplier: nameOf(best.supplier_id), competitors: group.length,
         bestRejectedBy: second ? nameOf(second.supplier_id) : null, bestRejectedCost: second?.cost_usd ?? null,
-        result: isRoutine ? "routine" : "pending", newPrice: null, previousPrice: null,
+        result: isRoutine ? "routine" : "pending", newPrice, previousPrice: null,
       });
     }
 
@@ -246,10 +273,10 @@ export const priceAnalyst: AgentModule = {
     const unchanged = decisions.filter((d) => d.result === "unchanged");
 
     const lines: string[] = ["# Comparación de precios", ""];
-    lines.push(`Comparé ${quotes.length} cotizaciones de ${supplierIds.length || 1} ${supplierIds.length === 1 ? "proveedor" : "proveedores"} en ${groups.size} productos. Para cada uno, elegí el precio más barato. Todavía no toqué nada: queda esperando tu aprobación.`);
+    lines.push(`Comparé ${quotes.length} cotizaciones de ${supplierIds.length || 1} ${supplierIds.length === 1 ? "proveedor" : "proveedores"} en ${groups.size} productos. Para cada uno, elegí el precio más barato.${routine.length ? ` Ya apliqué ${routine.length} directo (Cóndor ganó limpio, sin que un competidor le gane).` : ""}${pending.length ? ` ${pending.length} ${pending.length === 1 ? "queda" : "quedan"} esperando tu aprobación.` : ""}`);
 
     if (routine.length) {
-      lines.push("", "## Recomendados, el cambio es chico y confiable");
+      lines.push("", "## Ya aplicados: Cóndor ganó limpio (empató o fue más barato)");
       for (const d of routine) {
         const vs = d.competitors > 1 && d.bestRejectedBy ? ` · le gané a ${d.bestRejectedBy} (US$ ${d.bestRejectedCost})` : "";
         lines.push(`- **${d.model}${d.capacity ? " " + d.capacity : ""}**: US$ ${d.previous ?? "?"} → US$ ${d.cost} de ${d.winnerSupplier}${vs}`);
@@ -268,13 +295,13 @@ export const priceAnalyst: AgentModule = {
     }
     if (unchanged.length) lines.push("", `Sin cambios: ${unchanged.length} productos ya estaban al precio más barato del día.`);
     lines.push("", "## Para hoy");
-    if (routine.length || pending.length) lines.push(`- Tocá a Lucas y aprobá: "Aplicar todo lo recomendado" para los ${routine.length} chicos, o uno por uno si querés mirarlos primero.`);
+    if (pending.length) lines.push(`- Mirá los ${pending.length} que quedaron pendientes y aprobá: "Aplicar todo lo recomendado" o uno por uno.`);
     if (newModels.length) lines.push(`- Decidí si sumás al catálogo los ${newModels.length} modelos nuevos.`);
     if (!routine.length && !pending.length && !newModels.length) lines.push("- Nada: ya está todo al mejor precio del día.");
 
     return {
       markdown: lines.join("\n"),
-      summary: `${routine.length + pending.length} recomendados esperando tu aprobación${newModels.length ? `, ${newModels.length} nuevos` : ""}`,
+      summary: `${routine.length ? `${routine.length} aplicados` : ""}${routine.length && pending.length ? ", " : ""}${pending.length ? `${pending.length} esperando tu aprobación` : ""}${!routine.length && !pending.length ? "nada para hacer" : ""}${newModels.length ? `, ${newModels.length} nuevos` : ""}`,
       data: { quotes: quotes.length, products: groups.size, decisions },
     };
   },
