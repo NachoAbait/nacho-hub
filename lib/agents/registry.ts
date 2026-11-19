@@ -14,6 +14,7 @@ import { copyWriter } from "@/lib/agents/copy-writer";
 import { chiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { globalAnalyst } from "@/lib/agents/global-analyst";
 import { dmHandler } from "@/lib/agents/dm-handler";
+import { videoEditor } from "@/lib/agents/video-editor";
 
 /**
  * Agentes con módulo programado. Los otros 3 de lib/agents.ts (Social Collector, Ads Analyst,
@@ -33,6 +34,7 @@ const MODULES: AgentModule[] = [
   contentCreator,
   copyWriter,
   dmHandler,
+  videoEditor,
   chiefOfStaff,
   globalAnalyst,
 ];
@@ -48,8 +50,9 @@ export function tierOf(id: string): Tier | undefined {
 }
 
 export function modulesOfTier(tier: Tier): AgentModule[] {
-  // Designer corre en su propio horario, antes que el resto de Creators (ver vercel.json: tiene su
-  // propio cron a /api/agents/designer), para que el catálogo de banners salga recién cuando los
-  // precios del día ya están confirmados — no se dispara de nuevo acá.
-  return MODULES.filter((m) => tierOf(m.id) === tier && !(tier === "creators" && m.id === "designer"));
+  // Designer corre en su propio horario (ver vercel.json: /api/agents/designer una vez al día), no
+  // en el cron diario de Creators. Video Editor NO tiene cron en Vercel (el render de Remotion no
+  // corre ahí, ver lib/video-editor/render.ts): lo dispara el puente local bridge/video-editor/,
+  // así que tampoco entra en el cron de Creators.
+  return MODULES.filter((m) => tierOf(m.id) === tier && m.id !== "designer" && m.id !== "video-editor");
 }

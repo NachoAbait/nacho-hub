@@ -69,6 +69,8 @@ export const AGENTS: AgentDef[] = [
     description: "Captions para las historias del día (BNB) o para una funcionalidad real de AgroScan." },
   { id: "dm-handler", task: "Prepara respuestas a clientes", persona: "Micaela", name: "DM Handler", tier: "creators", contexts: ["BNB"], phase: 3, live: true,
     description: "Clasifica y redacta un borrador para cada consulta de cliente por WhatsApp. Nunca manda nada: lo aprobás vos desde el panel de Lucas." },
+  { id: "video-editor", task: "Edita los clips que grabás", persona: "Franco", name: "Video Editor", tier: "creators", contexts: ["BNB"], phase: 3, live: true,
+    description: "Mira la carpeta de Drive donde subís tus clips, le pone fondo difuminado y una caja flotante con el producto, y deja el reel editado listo. Sin subtítulos ni sincronizar el producto a un momento exacto todavía (fase 2)." },
 
   // TIER 4 — CHIEF
   { id: "chief-of-staff", task: "Arma el Daily Brief", persona: "Ernesto", name: "Chief of Staff", tier: "chief", contexts: ["BNB", "AgroScan"], phase: 4, live: true,
@@ -134,4 +136,5 @@ export const REGISTERED_AGENT_IDS = [
   "chief-of-staff",
   "global-analyst",
   "designer",
+  "video-editor",
 ];

@@ -11,6 +11,11 @@ const PLAYWRIGHT_FILES = [
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // @remotion/bundler importa @remotion/studio (su editor visual, con bindings nativos de rspack y
+  // whisper-webgpu) solo para poder usar bundle(): el build de Next rompía al intentar analizar esos
+  // paquetes de forma estática. Estos SÍ corren bien con require() normal en runtime (Node), así que
+  // se los deja afuera del bundling de webpack/turbopack en vez de intentar trackearlos.
+  serverExternalPackages: ["@remotion/bundler", "@remotion/renderer", "@remotion/studio", "remotion"],
   outputFileTracingIncludes: {
     "/api/designer/generate": PLAYWRIGHT_FILES,
     "/dashboard": PLAYWRIGHT_FILES,

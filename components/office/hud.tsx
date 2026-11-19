@@ -18,6 +18,7 @@ import { CopyWriterPanel } from "@/components/office/copy-writer-panel";
 import { GlobalAnalystPanel } from "@/components/office/global-analyst-panel";
 import { CompetitorScraperPanel } from "@/components/office/competitor-scraper-panel";
 import { ReelScoutPanel } from "@/components/office/reel-scout-panel";
+import { VideoEditorPanel } from "@/components/office/video-editor-panel";
 import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
 
@@ -242,6 +243,12 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
+          {agent.id === "video-editor" && (
+            <div className="border-t border-white/10 pt-4">
+              <VideoEditorPanel />
+            </div>
+          )}
+
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
@@ -260,7 +267,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
             </div>
           )}
 
-          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "price-historian" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && agent.id !== "reel-scout" && (
+          {focus && REGISTERED_AGENT_IDS.includes(agent.id) && agent.id !== "price-reader" && agent.id !== "designer" && agent.id !== "price-analyst" && agent.id !== "price-historian" && agent.id !== "stock-analyst" && agent.id !== "catalog-manager" && agent.id !== "market-watcher" && agent.id !== "chief-of-staff" && agent.id !== "content-creator" && agent.id !== "copy-writer" && agent.id !== "global-analyst" && agent.id !== "competitor-scraper" && agent.id !== "reel-scout" && agent.id !== "video-editor" && (
             <AgentReportPanel agentId={agent.id} context={focus.floor} />
           )}
 

@@ -245,6 +245,48 @@ export async function loadBacklogItems(project: string): Promise<BacklogItem[]> 
   return items.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 }
 
+export interface VideoClip {
+  id: string;
+  driveFileName: string;
+  status: "pending" | "processing" | "done" | "error";
+  productHint: string | null;
+  outputUrl: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  processedAt: string | null;
+}
+
+/** Los clips de Franco (Video Editor), más recientes primero — un card por clip, nunca markdown. */
+export async function loadVideoClips(limit = 20): Promise<VideoClip[]> {
+  const { data } = await supabaseAdmin()
+    .from("video_clips")
+    .select("id, drive_file_name, status, product_hint, output_url, error_message, created_at, processed_at")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<
+      {
+        id: string;
+        drive_file_name: string;
+        status: VideoClip["status"];
+        product_hint: string | null;
+        output_url: string | null;
+        error_message: string | null;
+        created_at: string;
+        processed_at: string | null;
+      }[]
+    >();
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    driveFileName: r.drive_file_name,
+    status: r.status,
+    productHint: r.product_hint,
+    outputUrl: r.output_url,
+    errorMessage: r.error_message,
+    createdAt: r.created_at,
+    processedAt: r.processed_at,
+  }));
+}
+
 export type { ReelScoutFindings };
 
 /** Los hallazgos de Renata, ya estructurados (de su última corrida). */
