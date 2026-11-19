@@ -1,6 +1,7 @@
 import type { AgentModule } from "@/lib/agents/runtime";
 import { getSetting } from "@/lib/agents/runtime";
 import { entryKey } from "@/lib/agents/catalog-match";
+import { confirmAllUpdates } from "@/lib/price-review";
 import { CATEGORY_TO_DEVICE, catalogModelText, DEVICE_TO_CATEGORY, fetchCatalog, nexios, nexiosAvailable, type NexiosCatalogRow } from "@/lib/nexios";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
@@ -58,16 +59,23 @@ export function averageMargin(catalog: NexiosCatalogRow[], category: Category): 
 
 /**
  * Catalog Manager (Bruno): lo que NO es comparar precios de lo que ya está en el catálogo (eso es
- * Martín). Dos trabajos, ninguno toca un precio existente:
+ * Martín). Tres trabajos:
+ * 0. Aplicar los cambios de costo que Martín dejó pendientes para productos que YA existen en el
+ *    catálogo (`status: "detected"`) — desde el 19-11-2026, por decisión de Nacho, esto NUNCA pide
+ *    aprobación: sea para arriba o para abajo, chico o grande, con poca confianza o sin costo
+ *    previo para comparar. `needsReview` (catalog-match.ts) sigue calculando esa heurística solo
+ *    para que el informe de Martín rotule "recomendado" vs "mirá con cuidado" — ya no bloquea nada.
  * 1. Ve qué modelos nuevos detectó Martín (cotizados por un proveedor, sin match en NexiOS) y deja
- *    listo un margen sugerido para crearlos — el alta la confirma Nacho desde el panel.
+ *    listo un margen sugerido para crearlos — el alta la confirma Nacho desde el panel, siempre:
+ *    esto no cambió, dar de alta un producto sigue siendo 100% manual.
  * 2. Ocultar del catálogo público lo que lleva DIAS_SIN_COTIZAR días sin que ningún proveedor lo
  *    cotice (sin stock), y volver a mostrarlo apenas alguien lo cotiza de nuevo. Tres frenos para
  *    que una lista parcial no vacíe la tienda: la categoría tiene que estar cotizada hoy, la
  *    entrada tiene que llevar la ventana entera sin cotizaciones, y ninguna corrida oculta más de
- *    TOPE_OCULTAR del catálogo visible sin confirmación. Según hub_settings.catalog_manager_auto
- *    (switch en el propio panel, arranca en false): si está en automático lo aplica directo; si
- *    no, lo deja en el panel para que Nacho confirme cada cambio uno por uno.
+ *    TOPE_OCULTAR del catálogo visible sin confirmación (ese freno queda igual, es aparte del punto
+ *    0: ocultar/mostrar por stock es una decisión distinta a ajustar un costo). Según
+ *    hub_settings.catalog_manager_auto (switch en el propio panel): si está en automático lo aplica
+ *    directo; si no, lo deja en el panel para que Nacho confirme cada cambio uno por uno.
  */
 export const catalogManager: AgentModule = {
   id: "catalog-manager",
@@ -77,6 +85,12 @@ export const catalogManager: AgentModule = {
     if (!nexiosAvailable()) {
       return { markdown: "# Catálogo\n\nFalta NEXIOS_SUPABASE_SERVICE_ROLE_KEY: no puedo leer ni tocar NexiOS.", summary: "sin acceso a NexiOS", data: {} };
     }
+
+    // Punto 0: precios de productos existentes, directo, sin aprobación — independiente del switch
+    // de arriba (ese es solo para mostrar/ocultar por stock). Reusa la misma función que el botón
+    // "Aplicar todo lo recomendado" del panel de Martín, para no duplicar la lógica de aplicar costo.
+    const priceAutoApply = await confirmAllUpdates(ctx.db, ctx.today);
+
     const auto = await getSetting<boolean>(ctx.db, "catalog_manager_auto", false);
     const catalog = (await fetchCatalog()) ?? [];
 
@@ -212,6 +226,9 @@ export const catalogManager: AgentModule = {
     };
 
     const lines: string[] = ["# Catálogo"];
+    if (priceAutoApply.applied) {
+      lines.push("", `Apliqué ${priceAutoApply.applied} cambio${priceAutoApply.applied === 1 ? "" : "s"} de costo directo, sin esperar tu aprobación (${priceAutoApply.categories.join(", ")}).`);
+    }
     lines.push("", `Modo: ${auto ? "automático" : "manual, esperando tu confirmación"}.`);
     if (auto) {
       if (applied.shown) {
@@ -258,6 +275,7 @@ export const catalogManager: AgentModule = {
     if (!auto && !pendingVisibility.length && !newModels.length) lines.push("- Nada para hacer: el catálogo ya refleja lo que cotizaron hoy.");
 
     const summaryParts: string[] = [];
+    if (priceAutoApply.applied) summaryParts.push(`${priceAutoApply.applied} costos aplicados solo`);
     if (auto) {
       if (applied.hidden) summaryParts.push(`${applied.hidden} ocultados`);
       if (applied.shown) summaryParts.push(`${applied.shown} mostrados`);
@@ -269,7 +287,7 @@ export const catalogManager: AgentModule = {
     return {
       markdown: lines.join("\n"),
       summary: summaryParts.length ? summaryParts.join(" · ") : "sin cambios",
-      data: { auto, hidden: applied.hidden, shown: applied.shown, frenado, tope, visibles, pendingVisibility, newModels },
+      data: { auto, hidden: applied.hidden, shown: applied.shown, frenado, tope, visibles, pendingVisibility, newModels, priceAutoApplied: priceAutoApply.applied, priceAutoAppliedCategories: priceAutoApply.categories },
     };
   },
 };

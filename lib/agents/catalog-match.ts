@@ -177,9 +177,16 @@ export function matchCatalog(
 }
 
 /**
- * ¿Hace falta que Nacho mire este cambio, o el sistema confía solo?
- * Para confiar: precio unitario explícito (no un escalón de cantidad inferido), confianza alta del
- * modelo, ya había un costo previo para comparar, y el salto no es descabellado (±20%).
+ * Heurística de "qué tan confiable se ve este cambio de precio": precio unitario explícito (no un
+ * escalón de cantidad inferido), confianza alta del modelo, ya había un costo previo para comparar,
+ * y el salto no es descabellado (±20%).
+ *
+ * Desde el 19-11-2026 esto YA NO decide si un cambio de costo se aplica o queda esperando
+ * aprobación — Nacho pidió que los precios de productos que ya existen en el catálogo se apliquen
+ * siempre, sin excepción (ver catalog-manager.ts, punto 0: Bruno aplica todo lo que Martín detecta
+ * con `confirmAllUpdates`, sin mirar esta función). Lo único que sigue usando este resultado es el
+ * informe diario de Martín (price-analyst.ts), para rotular cada cambio como "recomendado" o "mirá
+ * con más cuidado" — pura visibilidad para Nacho, nunca un freno.
  */
 export const AUTO_CONFIRM_MIN_CONFIDENCE = 0.85;
 export const AUTO_CONFIRM_MAX_SWING_PCT = 0.2;
