@@ -58,10 +58,18 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
   for (const a of analysis) {
     const seg = transcript.segments[a.index];
     if (!seg) continue;
-    if (a.productModel) {
-      const match = catalog.find((c) => c.model === a.productModel);
-      if (match) overlaySegments.push({ startSec: seg.start, endSec: seg.end, imageUrl: match.hero_image_url, label: match.model });
+
+    // Una misma frase puede nombrar varios modelos seguidos ("te recomiendo el 16, el 17 Pro y el
+    // 14 Pro") — se reparte la ventana de esa frase en partes iguales, una por modelo, en el orden
+    // que los nombró, en vez de mostrar uno solo y perder los demás.
+    const matched = a.productModels.map((m) => catalog.find((c) => c.model === m)).filter((m): m is NonNullable<typeof m> => Boolean(m));
+    if (matched.length > 0) {
+      const span = (seg.end - seg.start) / matched.length;
+      matched.forEach((match, i) => {
+        overlaySegments.push({ startSec: seg.start + i * span, endSec: seg.start + (i + 1) * span, imageUrl: match.hero_image_url, label: match.model });
+      });
     }
+
     if (a.sentiment !== "neutral") moodSegments.push({ startSec: seg.start, endSec: seg.end, mood: a.sentiment });
   }
 

@@ -6,7 +6,10 @@ const AnalysisSchema = z.object({
   segments: z.array(
     z.object({
       index: z.number(),
-      product_model: z.string().nullable(),
+      // Array, no un solo string: una frase real puede nombrar varios modelos seguidos ("te
+      // recomiendo el 16, el 17 Pro y el 14 Pro") — con un solo campo, Claude tenía que elegir uno
+      // y los demás se perdían en silencio. Visto en vivo con un clip real de Nacho.
+      product_models: z.array(z.string()),
       sentiment: z.enum(["positive", "negative", "neutral"]),
     }),
   ),
@@ -14,7 +17,7 @@ const AnalysisSchema = z.object({
 
 export interface ContentSegmentResult {
   index: number;
-  productModel: string | null;
+  productModels: string[];
   sentiment: "positive" | "negative" | "neutral";
 }
 
@@ -40,11 +43,12 @@ export async function analyzeContent(
   const numbered = segments.map((s, i) => `${i}: "${s.text.trim()}"`).join("\n");
   const prompt =
     `Transcripción de un reel de BNB Store (reventa de celulares), oración por oración:\n\n${numbered}\n\n` +
-    `Catálogo de modelos activos (usá EXACTAMENTE uno de estos strings si una oración lo menciona; si no menciona ninguno, ` +
-    `o menciona un modelo que no está acá, poné null):\n${catalogModels.join(", ")}\n\n` +
-    `Para CADA oración (por su índice, en el mismo orden, sin saltarte ninguna), decime qué modelo del catálogo menciona ` +
-    `(o null) y con qué tono se dice eso — positive/negative/neutral — sobre lo que se está diciendo en esa oración puntual, ` +
-    `no una opinión general sobre el modelo.`;
+    `Catálogo de modelos activos (usá EXACTAMENTE estos strings para los modelos que una oración mencione; si menciona uno ` +
+    `que no está en esta lista, ignoralo; si no menciona ninguno, dejá la lista vacía):\n${catalogModels.join(", ")}\n\n` +
+    `Para CADA oración (por su índice, en el mismo orden, sin saltarte ninguna), decime TODOS los modelos del catálogo que ` +
+    `menciona esa oración puntual (puede ser más de uno, ej. "te recomiendo el 16, el 17 Pro y el 14 Pro" menciona tres), ` +
+    `y con qué tono se dice eso — positive/negative/neutral — sobre lo que se está diciendo en esa oración, no una opinión ` +
+    `general sobre el modelo.`;
 
   const result = await askJson({
     agent: "video-editor",
@@ -58,5 +62,5 @@ export async function analyzeContent(
     maxTokens: 2000,
   });
 
-  return result.segments.map((s) => ({ index: s.index, productModel: s.product_model, sentiment: s.sentiment }));
+  return result.segments.map((s) => ({ index: s.index, productModels: s.product_models, sentiment: s.sentiment }));
 }
