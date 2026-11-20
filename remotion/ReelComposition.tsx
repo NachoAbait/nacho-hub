@@ -1,4 +1,4 @@
-import { AbsoluteFill, Audio, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { loadFont as loadCaptionFont } from "@remotion/google-fonts/ArchivoBlack";
 import { loadFont as loadKeywordFont } from "@remotion/google-fonts/Anton";
 
@@ -278,19 +278,6 @@ export function ReelComposition({
             ))}
           </div>
         </AbsoluteFill>
-      )}
-
-      {/* Un "pop" sonoro por cada palabra (pedido explícito: "que haga un mínimo efecto de sonido
-          al aparecer cada palabra") — se dispara UNA vez por palabra, en el frame exacto en que
-          arranca, por eso va envuelta en su propio <Sequence> (no atada a `activePhrase`, que solo
-          existe cuando no hay caja de producto: el sonido tiene que sonar siempre que la palabra se
-          diga, muestre subtítulo o no en pantalla en ese instante). */}
-      {phrases.flatMap((p, pi) =>
-        p.words.map((w, wi) => (
-          <Sequence key={`${pi}-${wi}`} from={w.startFrame} durationInFrames={6} layout="none">
-            <Audio src={staticFile("caption-pop.mp3")} volume={1.4} />
-          </Sequence>
-        )),
       )}
     </AbsoluteFill>
   );

@@ -31,6 +31,24 @@ export interface WhisperSegment {
  * cambio de idea aunque la transcripción no haya puesto el punto. */
 const PAUSE_THRESHOLD_SECONDS = 0.45;
 
+/** Tope duro además de puntuación/pausa — pedido explícito: "andá de una oración en una oración...
+ * no un texto que se va cargando de a poco". Alguien hablando corrido sin comas ni pausas reales
+ * podía armar un solo segmento gigante (varias ideas, varios productos) que en pantalla se sentía
+ * como un párrafo completándose en vez de una oración a la vez. Con esto se corta igual aunque no
+ * haya pausa ni puntuación — no es perfecto (puede cortar en medio de una idea), pero mantiene cada
+ * frase en pantalla corta y legible, que es lo que se pidió. */
+const MAX_SEGMENT_WORDS = 11;
+const MAX_SEGMENT_SECONDS = 4.5;
+
+/** Si el tope de arriba cae justo antes de uno de estos, se espera una palabra más — sin esto, "el
+ * 14 Pro" se cortaba en "el 14" y "Pro" quedaba solo, como su propia frase de una sola palabra en
+ * pantalla (visto en vivo con un clip real: "PRO" solo, 1.4s). */
+const DEFERRABLE_MODIFIERS = new Set(["pro", "max", "plus", "mini"]);
+
+function normalizeWord(word: string): string {
+  return word.trim().toLowerCase().replace(/[^a-záéíóúñ]/g, "");
+}
+
 /** Corta en tramos de oración/frase usando los timestamps reales de cada palabra — a diferencia del
  * `segments` nativo de Whisper (cortado por ventanas de decodificación de ~30s, no por idea), esto da
  * un tramo por cada pausa o punto real, así Claude puede clasificar producto/tono por cada uno en vez
@@ -51,7 +69,11 @@ function sentenceSegmentsFromWords(words: WhisperWord[]): WhisperSegment[] {
     const endsSentence = /[.!?]\s*$/.test(word.word);
     const nextWord = words[i + 1];
     const longPauseAfter = nextWord ? nextWord.start - word.end > PAUSE_THRESHOLD_SECONDS : false;
-    if (endsSentence || longPauseAfter) flush();
+    const tooLong = buffer.length >= MAX_SEGMENT_WORDS || word.end - buffer[0].start > MAX_SEGMENT_SECONDS;
+    // Se aplica a CUALQUIER motivo de corte, no solo al tope de palabras: la pausa real que alguien
+    // hace entre "14" y "Pro" al hablar también disparaba el corte y separaba igual (visto en vivo).
+    const nextIsDeferrableModifier = nextWord ? DEFERRABLE_MODIFIERS.has(normalizeWord(nextWord.word)) : false;
+    if ((endsSentence || longPauseAfter || tooLong) && !nextIsDeferrableModifier) flush();
   }
   flush();
 
@@ -182,7 +204,16 @@ export async function buildPhrases(
     const phrases: ReelPhrase[] = [];
     for (const seg of segments) {
       const segWords: ReelPhrase["words"] = [];
-      while (nextWordIdx < words.length && words[nextWordIdx].start < seg.end + EPS) {
+      // `.end`, no `.start`: cuando dos oraciones quedan pegadas sin pausa real entre sí (el tope de
+      // palabras/segundos de sentenceSegmentsFromWords puede cortar ahí aunque no haya silencio), el
+      // `start` de la primera palabra de la oración SIGUIENTE puede caer dentro del margen EPS del
+      // `end` de la oración ANTERIOR — esa palabra se la "robaba" la oración anterior, dejando a la
+      // oración siguiente con una palabra menos (visto en vivo: "Pro" quedó solo, sin su "14").
+      // Comparar contra `.end` de la palabra evita esto: la última palabra real de un segmento
+      // siempre termina justo en `seg.end` (así se construyó en sentenceSegmentsFromWords), así que
+      // el margen EPS solo cubre redondeo, no le alcanza para robarse la primera palabra de la
+      // oración de al lado.
+      while (nextWordIdx < words.length && words[nextWordIdx].end <= seg.end + EPS) {
         const w = words[nextWordIdx];
         if (w.start >= seg.start - EPS) {
           segWords.push({

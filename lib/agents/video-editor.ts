@@ -10,6 +10,8 @@ import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { classifyWordEmphasis } from "@/lib/video-editor/caption-style";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
 import { enhanceClip } from "@/lib/video-editor/enhance";
+import { cutSilences } from "@/lib/video-editor/silence-cut";
+import { runQc } from "@/lib/video-editor/qc";
 
 /** Tope por corrida: el cron pasa cada pocos minutos, no hace falta (ni conviene, por tiempo de
  * función) tragarse toda la carpeta de una. Lo que quede pendiente lo agarra la corrida siguiente. */
@@ -21,20 +23,23 @@ interface ProcessedClip {
   outputUrl: string | null;
   error: string | null;
   warnings: string[];
+  qcIssues: string[];
 }
 
 interface ContentTimeline {
   phrases: ReelPhrase[];
   overlaySegments: OverlaySegmentInput[];
   moodSegments: MoodSegmentInput[];
-  /** Control de calidad básico antes de dar el render por bueno (pedido directo de Nacho: prefiere
-   * que esto se detecte acá a enterarse mirando el video). Hoy solo cubre el caso real que ya pasó
-   * — un modelo mencionado que no tiene foto en el catálogo, así que nunca pudo aparecer — pero es
-   * el lugar para sumar más chequeos a medida que aparezcan casos nuevos. */
+  /** Avisos legibles para el reporte (hoy: modelos mencionados sin foto) — ver `missingPhotos` abajo
+   * para la versión en datos crudos que usa el QC. */
   warnings: string[];
+  /** Modelos que se nombraron pero no tienen foto en ningún lado (catálogo activo ni biblioteca
+   * extra) — separado de `warnings` (texto ya armado para el reporte) porque qc.ts necesita la
+   * lista cruda para su propio chequeo, no el string ya formateado. */
+  missingPhotos: string[];
 }
 
-const EMPTY_TIMELINE: ContentTimeline = { phrases: [], overlaySegments: [], moodSegments: [], warnings: [] };
+const EMPTY_TIMELINE: ContentTimeline = { phrases: [], overlaySegments: [], moodSegments: [], warnings: [], missingPhotos: [] };
 
 /**
  * Transcribe el clip y le pide a Claude que identifique, oración por oración, de qué modelo del
@@ -56,7 +61,7 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
   // vale la pena perder el render por esto.
   let levels: ("normal" | "keyword" | "critical")[] = [];
   try {
-    levels = (await classifyWordEmphasis(transcript.words, ctx.usage)).map((e) => e.level);
+    levels = (await classifyWordEmphasis(transcript.words, transcript.segments, ctx.usage)).map((e) => e.level);
   } catch (err) {
     ctx.log(`clasificación de énfasis de subtítulos falló, sigo con subtítulos planos — ${err instanceof Error ? err.message : err}`);
   }
@@ -112,7 +117,7 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
     (model) => `Se menciona "${model}" pero no tiene foto en el catálogo activo — no pudo aparecer en el video.`,
   );
 
-  return { phrases, overlaySegments, moodSegments, warnings };
+  return { phrases, overlaySegments, moodSegments, warnings, missingPhotos: [...missingPhotos] };
 }
 
 /**
@@ -165,6 +170,7 @@ export const videoEditor: AgentModule = {
       if (!row) continue;
 
       let tmpPath: string | null = null;
+      let cutPath: string | null = null;
       let enhancedPath: string | null = null;
       try {
         const overlay = await matchOverlay(ctx.db, file.name);
@@ -173,13 +179,28 @@ export const videoEditor: AgentModule = {
         tmpPath = await downloadClipToTmp(file.id, file.name);
         let renderPath = tmpPath;
 
-        // Auto-mejora tipo "Enhance" de CapCut (contraste/brillo/saturación + nitidez) antes de
-        // transcribir o renderizar — si falla, se sigue con el clip original sin mejorar.
+        // Primer paso de todos, antes de cualquier otra edición (pedido explícito: "antes de editar
+        // cualquier cosa... que corte los silencios") — recorta los tramos de silencio ≥1s, dejando
+        // las pausas naturales cortas como están. Corre ANTES de transcribir: todo lo que viene
+        // después ya trabaja sobre la línea de tiempo del clip recortado.
         try {
-          enhancedPath = await enhanceClip(tmpPath);
+          const cut = await cutSilences(tmpPath);
+          if (cut.path !== tmpPath) {
+            cutPath = cut.path;
+            renderPath = cutPath;
+            ctx.log(`${file.name}: corté ${cut.secondsRemoved}s de silencio (${cut.cutsApplied} corte${cut.cutsApplied === 1 ? "" : "s"})`);
+          }
+        } catch (err) {
+          ctx.log(`${file.name}: corte de silencios falló, sigo con el clip completo — ${err instanceof Error ? err.message : err}`);
+        }
+
+        // Auto-mejora tipo "Enhance" de CapCut (contraste/brillo/saturación + nitidez) antes de
+        // transcribir o renderizar — si falla, se sigue con el clip anterior sin mejorar.
+        try {
+          enhancedPath = await enhanceClip(renderPath);
           renderPath = enhancedPath;
         } catch (err) {
-          ctx.log(`${file.name}: mejora de imagen falló, sigo con el clip original — ${err instanceof Error ? err.message : err}`);
+          ctx.log(`${file.name}: mejora de imagen falló, sigo con el clip anterior sin mejorar — ${err instanceof Error ? err.message : err}`);
         }
 
         if (!canRenderHere()) {
@@ -187,7 +208,7 @@ export const videoEditor: AgentModule = {
             .from("video_clips")
             .update({ status: "error", error_message: VERCEL_BLOCKER_MESSAGE, processed_at: new Date().toISOString() })
             .eq("id", row.id);
-          processed.push({ fileName: file.name, status: "error", outputUrl: null, error: VERCEL_BLOCKER_MESSAGE, warnings: [] });
+          processed.push({ fileName: file.name, status: "error", outputUrl: null, error: VERCEL_BLOCKER_MESSAGE, warnings: [], qcIssues: [] });
           ctx.log(`${file.name}: descargado, bloqueado en el render (no corre en este entorno)`);
           continue;
         }
@@ -203,6 +224,24 @@ export const videoEditor: AgentModule = {
           await ctx.db.from("video_clips").update({ product_hint: models.join(", ") }).eq("id", row.id);
         }
         for (const warning of timeline.warnings) ctx.log(`${file.name}: ⚠️ ${warning}`);
+
+        // QC automático antes de dar el render por bueno (pedido explícito: "que un agente verifique
+        // cosas básicas... para ahorrarnos hacer 34 versiones") — ver docs/VIDEO-EDITOR-WHITEPAPER.md
+        // para la lista completa de reglas que esto vigila. Nunca bloquea el render (un chequeo que
+        // tira no tiene por qué perder el clip entero), solo queda bien visible en el log y el reporte.
+        let qcIssues: string[] = [];
+        try {
+          const qcChecks = await runQc({
+            videoPath: renderPath,
+            phrases: timeline.phrases,
+            overlaySegments: timeline.overlaySegments,
+            missingPhotoModels: timeline.missingPhotos,
+          });
+          qcIssues = qcChecks.filter((c) => !c.passed).map((c) => `${c.name} — ${c.detail}`);
+          for (const issue of qcIssues) ctx.log(`${file.name}: 🔍 QC falló: ${issue}`);
+        } catch (err) {
+          ctx.log(`${file.name}: QC automático no pudo correr — ${err instanceof Error ? err.message : err}`);
+        }
 
         const rendered = await renderReel({
           videoPath: renderPath,
@@ -222,15 +261,16 @@ export const videoEditor: AgentModule = {
         void uploadRenderedClipToDrive(rendered, file.name);
 
         await ctx.db.from("video_clips").update({ status: "done", output_url: outputUrl, processed_at: new Date().toISOString() }).eq("id", row.id);
-        processed.push({ fileName: file.name, status: "done", outputUrl, error: null, warnings: timeline.warnings });
+        processed.push({ fileName: file.name, status: "done", outputUrl, error: null, warnings: timeline.warnings, qcIssues });
         ctx.log(`${file.name}: render listo → ${outputUrl}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await ctx.db.from("video_clips").update({ status: "error", error_message: message, processed_at: new Date().toISOString() }).eq("id", row.id);
-        processed.push({ fileName: file.name, status: "error", outputUrl: null, error: message, warnings: [] });
+        processed.push({ fileName: file.name, status: "error", outputUrl: null, error: message, warnings: [], qcIssues: [] });
         ctx.log(`ERROR en ${file.name}: ${message}`);
       } finally {
         if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
+        if (cutPath) await fs.unlink(cutPath).catch(() => {});
         if (enhancedPath) await fs.unlink(enhancedPath).catch(() => {});
       }
     }
@@ -242,6 +282,7 @@ export const videoEditor: AgentModule = {
     for (const p of processed) {
       lines.push(`- **${p.fileName}**: ${p.status}${p.error ? ` — ${p.error}` : ""}`);
       for (const w of p.warnings) lines.push(`  - ⚠️ ${w}`);
+      for (const q of p.qcIssues) lines.push(`  - 🔍 QC: ${q}`);
     }
     if (fresh.length === 0) lines.push("", "Nada nuevo para editar.");
 
