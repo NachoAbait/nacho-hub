@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeModel } from "@/lib/nexios";
 import { wordsMatch } from "@/lib/agents/catalog-match";
+import type { WhisperSegment, WhisperWord } from "@/lib/video-editor/captions";
+import type { OverlaySegmentInput } from "@/lib/video-editor/render";
 
 export interface OverlayMatch {
   /** Lo que se guarda en video_clips.product_hint. */
@@ -71,4 +73,56 @@ export async function matchOverlay(db: SupabaseClient, fileName: string): Promis
   }
 
   return null;
+}
+
+/** El número (o, si no tiene, la última palabra distintiva) que separa a este modelo de los demás
+ * del mismo rubro — "iPhone 16" vs "iPhone 17 Pro" se distinguen por "16" vs "17", no por "iPhone".
+ * Es lo que se busca palabra por palabra en la transcripción para ANCLAR el momento real en que se
+ * nombra cada uno, en vez de repartir el tiempo de la frase en partes iguales (eso hacía que la caja
+ * cambiara de producto antes o después de que Nacho lo dijera de verdad). */
+function anchorToken(model: string): string {
+  const digits = model.match(/\d+/);
+  if (digits) return digits[0];
+  const tokens = normalizeModel(model).split(/\s+/).filter(Boolean);
+  return tokens[tokens.length - 1] ?? normalizeModel(model);
+}
+
+/**
+ * A partir de una frase y los modelos que Claude detectó que menciona (content-analysis.ts), busca
+ * en qué palabra EXACTA de esa frase se nombra cada uno (por su `anchorToken`) y arma una ventana de
+ * tiempo por modelo que arranca ahí — no un reparto parejo del tiempo total de la frase. Si un modelo
+ * no se puede anclar (la transcripción no trajo ese número, por ejemplo), arranca al comienzo de la
+ * frase antes que no aparecer. Los modelos se ordenan por el momento real en que se dijeron.
+ */
+export function anchorOverlaySegments(
+  segment: WhisperSegment,
+  segmentWords: WhisperWord[],
+  models: { label: string; imageUrl: string }[],
+): OverlaySegmentInput[] {
+  if (models.length === 0) return [];
+
+  const usedWordIdx = new Set<number>();
+  const anchored = models.map((model) => {
+    const token = anchorToken(model.label);
+    let foundIdx = -1;
+    for (let i = 0; i < segmentWords.length; i++) {
+      if (usedWordIdx.has(i)) continue;
+      const norm = normalizeModel(segmentWords[i].word);
+      if (norm === token || wordsMatch(norm, token)) {
+        foundIdx = i;
+        break;
+      }
+    }
+    if (foundIdx !== -1) usedWordIdx.add(foundIdx);
+    return { model, start: foundIdx !== -1 ? segmentWords[foundIdx].start : segment.start };
+  });
+
+  anchored.sort((a, b) => a.start - b.start);
+
+  return anchored.map((a, i) => {
+    const nextStart = i + 1 < anchored.length ? anchored[i + 1].start : segment.end;
+    // Mínimo 0.3s por producto — si dos anclas quedaron pegadas (dos números seguidos sin pausa) la
+    // caja igual tiene que alcanzar a mostrarse un rato, no un parpadeo de un frame.
+    return { startSec: a.start, endSec: Math.max(nextStart, a.start + 0.3), imageUrl: a.model.imageUrl, label: a.model.label };
+  });
 }

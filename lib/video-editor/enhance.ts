@@ -23,6 +23,10 @@ export async function enhanceClip(videoPath: string): Promise<string> {
       "-y",
       "-i", videoPath,
       "-vf", "eq=contrast=1.08:brightness=0.03:saturation=1.12,unsharp=5:5:0.6:5:5:0.0",
+      // crf 16 + preset slow: casi sin pérdida. Por defecto ffmpeg usa crf 23 (visible), y este es
+      // el PRIMERO de dos pasos de compresión (el segundo es el render final de Remotion) — si este
+      // paso ya pierde calidad, el segundo la pierde de nuevo sobre lo ya degradado.
+      "-c:v", "libx264", "-crf", "16", "-preset", "slow",
       "-c:a", "copy",
       "-f", "mp4",
       outPath,

@@ -15,6 +15,7 @@
     "@react-three/fiber": "^9.8.2",
     "@react-three/postprocessing": "^3.2.2",
     "@remotion/bundler": "^4.0.545",
+    "@remotion/google-fonts": "^4.0.545",
     "@remotion/renderer": "^4.0.545",
     "@sparticuz/chromium": "^153.0.0",
     "@supabase/supabase-js": "^2.118.0",

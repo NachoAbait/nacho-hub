@@ -153,7 +153,10 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   const composition = await selectComposition({ serveUrl, id: REEL_COMPOSITION_ID, inputProps: serializableProps });
 
   const outputLocation = path.join(os.tmpdir(), `reel-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
-  await renderMedia({ composition, serveUrl, codec: "h264", outputLocation, inputProps: serializableProps });
+  // crf 16 (no el default ~23 de Remotion): este es el SEGUNDO de dos pasos de compresión (el
+  // primero es enhanceClip) — sin esto se pierde calidad dos veces seguidas y el resultado final se
+  // ve notoriamente peor que el clip original.
+  await renderMedia({ composition, serveUrl, codec: "h264", crf: 16, outputLocation, inputProps: serializableProps });
 
   const buffer = await fs.readFile(outputLocation);
   await fs.unlink(outputLocation).catch(() => {});

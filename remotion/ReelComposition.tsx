@@ -1,4 +1,10 @@
 import { AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { loadFont as loadCaptionFont } from "@remotion/google-fonts/Anton";
+
+// Tipografía "pro" para subtítulos (condensada, ya viene en negrita por diseño — el look típico de
+// CapCut/Opus/Submagic) en vez de la Arial del sistema. loadFont() se llama una sola vez al cargar
+// el módulo; Remotion espera esta promesa sola antes de renderizar el primer frame.
+const { fontFamily: CAPTION_FONT } = loadCaptionFont("normal", { weights: ["400"], subsets: ["latin"] });
 
 /** Un tramo de subtítulo (1-2 palabras, estilo karaoke) con su ventana de frames, armado por
  * lib/video-editor/captions.ts a partir de la transcripción de Whisper. */
@@ -82,10 +88,13 @@ export function ReelComposition({
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  // Zoom lento tipo "Ken Burns" sobre todo el clip de fondo — sin esto la cámara se siente estática
-  // durante 15-30 segundos seguidos. 1.22 (no 1.08): a ese nivel se nota de verdad, antes era casi
-  // imperceptible en un clip corto.
-  const videoScale = interpolate(frame, [0, durationInFrames], [1, 1.22], { extrapolateRight: "clamp" });
+  // Dos efectos combinados sobre el fondo: un "zoom de entrada" rápido en el primer medio segundo
+  // (entra grande y se asienta, como pidió Nacho) + el drift lento tipo "Ken Burns" durante todo el
+  // resto del clip, para que nunca se sienta una cámara fija.
+  const entranceProgress = spring({ frame, fps, config: { damping: 20, mass: 0.7 }, durationInFrames: Math.round(fps * 0.6) });
+  const entranceScale = interpolate(entranceProgress, [0, 1], [1.32, 1]);
+  const driftScale = interpolate(frame, [0, durationInFrames], [1, 1.16], { extrapolateRight: "clamp" });
+  const videoScale = entranceScale * driftScale;
 
   const activeOverlay = overlaySegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
   const activeMood = moodSegments.find((s) => frame >= s.startFrame && frame < s.endFrame)?.mood ?? "neutral";
@@ -100,7 +109,10 @@ export function ReelComposition({
   const scale = interpolate(flipProgress, [0, 1], [0.7, 1]);
   const boxOpacity = interpolate(localFrame, [0, 6], [0, 1], { extrapolateRight: "clamp" });
 
-  const activeCaption = captions.find((c) => frame >= c.startFrame && frame < c.endFrame);
+  // Nunca al mismo tiempo que la caja de producto: mostrar las dos cosas juntas "sería mucha cosa"
+  // (feedback directo de Nacho) — el subtítulo solo aparece en los tramos donde se está presentando
+  // a cámara, no mientras se ve el render del celular.
+  const activeCaption = activeOverlay ? undefined : captions.find((c) => frame >= c.startFrame && frame < c.endFrame);
   const captionPop = activeCaption
     ? spring({ frame: frame - activeCaption.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 })
     : 0;
@@ -126,8 +138,11 @@ export function ReelComposition({
           transform: `scale(${videoScale})`,
         }}
       />
+      {/* Viñeta: oscurece los bordes (no el centro, donde está la cara) — dar sensación de foco sin
+          tocar la nitidez real del video (eso lo arruinaría; la calidad del archivo se cuida en
+          enhance.ts/render.ts con crf 16, no acá). */}
       <AbsoluteFill
-        style={{ background: "radial-gradient(ellipse 90% 70% at 50% 30%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.4) 100%)" }}
+        style={{ background: "radial-gradient(ellipse 85% 65% at 50% 32%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.5) 100%)" }}
       />
 
       {/* Caja de producto: antes arriba y chica (300px), ahora grande (440px) y centrada en la
@@ -209,24 +224,25 @@ export function ReelComposition({
       )}
 
       {/* Subtítulo activo: una palabra por vez (estilo karaoke real, no de a 2 — de a 2 cortaba
-          frases en pedazos sin sentido, ej. "16 EL"), con un "pop" de entrada, una placa oscura
-          detrás para que se lea bien sobre cualquier fondo, y un tamaño que varía según el volumen
-          de esa palabra en el audio original (ver captionScale arriba y lib/video-editor/captions.ts)
-          — el "énfasis dinámico" pedido. Toma el mismo color de ánimo que la caja. */}
+          frases en pedazos sin sentido, ej. "16 EL"), con tipografía Anton (condensada, bien
+          "pro", no la Arial del sistema), arriba y casi centrado — no pegado abajo, para no competir
+          con la caja de producto (que igual nunca comparten pantalla, ver activeCaption arriba). Un
+          "pop" de entrada y un tamaño que varía según el volumen de esa palabra en el audio original
+          (ver captionScale arriba y lib/video-editor/captions.ts) — el "énfasis dinámico" pedido. */}
       {activeCaption && (
-        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 100 }}>
+        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 300 }}>
           <div
             style={{
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontWeight: 900,
-              fontSize: 56,
+              fontFamily: CAPTION_FONT,
+              letterSpacing: "0.01em",
+              fontSize: 64,
               color: activeMood === "neutral" ? "white" : light,
               textAlign: "center",
               textShadow: "0 2px 4px rgba(0,0,0,0.95), 0 0 24px rgba(0,0,0,0.6)",
               maxWidth: "85%",
-              padding: "10px 28px",
+              padding: "8px 32px",
               borderRadius: 16,
-              background: "rgba(0,0,0,0.45)",
+              background: "rgba(0,0,0,0.4)",
               transform: `scale(${captionScale})`,
             }}
           >

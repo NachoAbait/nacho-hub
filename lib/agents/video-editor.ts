@@ -3,7 +3,7 @@ import type { AgentContext, AgentModule } from "@/lib/agents/runtime";
 import type { ReelCaption } from "@/remotion/ReelComposition";
 import { REEL_FPS } from "@/remotion/Root";
 import { downloadClipToTmp, driveAvailable, listVideoClips, uploadRenderedClipToDrive } from "@/lib/video-editor/drive";
-import { getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match";
+import { anchorOverlaySegments, getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match";
 import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
@@ -18,15 +18,21 @@ interface ProcessedClip {
   status: "done" | "error";
   outputUrl: string | null;
   error: string | null;
+  warnings: string[];
 }
 
 interface ContentTimeline {
   captions: ReelCaption[];
   overlaySegments: OverlaySegmentInput[];
   moodSegments: MoodSegmentInput[];
+  /** Control de calidad básico antes de dar el render por bueno (pedido directo de Nacho: prefiere
+   * que esto se detecte acá a enterarse mirando el video). Hoy solo cubre el caso real que ya pasó
+   * — un modelo mencionado que no tiene foto en el catálogo, así que nunca pudo aparecer — pero es
+   * el lugar para sumar más chequeos a medida que aparezcan casos nuevos. */
+  warnings: string[];
 }
 
-const EMPTY_TIMELINE: ContentTimeline = { captions: [], overlaySegments: [], moodSegments: [] };
+const EMPTY_TIMELINE: ContentTimeline = { captions: [], overlaySegments: [], moodSegments: [], warnings: [] };
 
 /**
  * Transcribe el clip y le pide a Claude que identifique, oración por oración, de qué modelo del
@@ -56,25 +62,37 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
 
   const overlaySegments: OverlaySegmentInput[] = [];
   const moodSegments: MoodSegmentInput[] = [];
+  const missingPhotos = new Set<string>();
   for (const a of analysis) {
     const seg = transcript.segments[a.index];
     if (!seg) continue;
 
     // Una misma frase puede nombrar varios modelos seguidos ("te recomiendo el 16, el 17 Pro y el
-    // 14 Pro") — se reparte la ventana de esa frase en partes iguales, una por modelo, en el orden
-    // que los nombró, en vez de mostrar uno solo y perder los demás.
-    const matched = a.productModels.map((m) => catalog.find((c) => c.model === m)).filter((m): m is NonNullable<typeof m> => Boolean(m));
+    // 14 Pro") — en vez de repartir el tiempo de la frase en partes iguales (hacía que la caja
+    // cambiara de producto antes o después de que se lo nombrara de verdad), se busca palabra por
+    // palabra en qué momento se dice cada uno (ver anchorOverlaySegments).
+    const matched: { label: string; imageUrl: string }[] = [];
+    for (const modelName of a.productModels) {
+      const product = catalog.find((c) => c.model === modelName);
+      if (product) matched.push({ label: product.model, imageUrl: product.hero_image_url });
+      else missingPhotos.add(modelName);
+    }
     if (matched.length > 0) {
-      const span = (seg.end - seg.start) / matched.length;
-      matched.forEach((match, i) => {
-        overlaySegments.push({ startSec: seg.start + i * span, endSec: seg.start + (i + 1) * span, imageUrl: match.hero_image_url, label: match.model });
-      });
+      const segWords = transcript.words.filter((w) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);
+      overlaySegments.push(...anchorOverlaySegments(seg, segWords, matched));
     }
 
     if (a.sentiment !== "neutral") moodSegments.push({ startSec: seg.start, endSec: seg.end, mood: a.sentiment });
   }
 
-  return { captions, overlaySegments, moodSegments };
+  // QC básico pedido por Nacho: si Claude detectó que se nombra un modelo que SÍ está en el catálogo
+  // pero sin foto (o directamente no está en el catálogo de modelos con foto), avisar explícito en
+  // vez de que el video simplemente "no muestre ese modelo" sin que nadie se entere por qué.
+  const warnings = [...missingPhotos].map(
+    (model) => `Se menciona "${model}" pero no tiene foto en el catálogo activo — no pudo aparecer en el video.`,
+  );
+
+  return { captions, overlaySegments, moodSegments, warnings };
 }
 
 /**
@@ -149,7 +167,7 @@ export const videoEditor: AgentModule = {
             .from("video_clips")
             .update({ status: "error", error_message: VERCEL_BLOCKER_MESSAGE, processed_at: new Date().toISOString() })
             .eq("id", row.id);
-          processed.push({ fileName: file.name, status: "error", outputUrl: null, error: VERCEL_BLOCKER_MESSAGE });
+          processed.push({ fileName: file.name, status: "error", outputUrl: null, error: VERCEL_BLOCKER_MESSAGE, warnings: [] });
           ctx.log(`${file.name}: descargado, bloqueado en el render (no corre en este entorno)`);
           continue;
         }
@@ -164,6 +182,7 @@ export const videoEditor: AgentModule = {
           const models = [...new Set(timeline.overlaySegments.map((s) => s.label))];
           await ctx.db.from("video_clips").update({ product_hint: models.join(", ") }).eq("id", row.id);
         }
+        for (const warning of timeline.warnings) ctx.log(`${file.name}: ⚠️ ${warning}`);
 
         const rendered = await renderReel({
           videoPath: renderPath,
@@ -183,12 +202,12 @@ export const videoEditor: AgentModule = {
         void uploadRenderedClipToDrive(rendered, file.name);
 
         await ctx.db.from("video_clips").update({ status: "done", output_url: outputUrl, processed_at: new Date().toISOString() }).eq("id", row.id);
-        processed.push({ fileName: file.name, status: "done", outputUrl, error: null });
+        processed.push({ fileName: file.name, status: "done", outputUrl, error: null, warnings: timeline.warnings });
         ctx.log(`${file.name}: render listo → ${outputUrl}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await ctx.db.from("video_clips").update({ status: "error", error_message: message, processed_at: new Date().toISOString() }).eq("id", row.id);
-        processed.push({ fileName: file.name, status: "error", outputUrl: null, error: message });
+        processed.push({ fileName: file.name, status: "error", outputUrl: null, error: message, warnings: [] });
         ctx.log(`ERROR en ${file.name}: ${message}`);
       } finally {
         if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
@@ -200,7 +219,10 @@ export const videoEditor: AgentModule = {
     const errored = processed.filter((p) => p.status === "error").length;
 
     const lines = [`# Video Editor`, "", `${files.length} clips en la carpeta de Drive, ${fresh.length} nuevos esta corrida.`];
-    for (const p of processed) lines.push(`- **${p.fileName}**: ${p.status}${p.error ? ` — ${p.error}` : ""}`);
+    for (const p of processed) {
+      lines.push(`- **${p.fileName}**: ${p.status}${p.error ? ` — ${p.error}` : ""}`);
+      for (const w of p.warnings) lines.push(`  - ⚠️ ${w}`);
+    }
     if (fresh.length === 0) lines.push("", "Nada nuevo para editar.");
 
     return {
