@@ -5,7 +5,7 @@ import path from "node:path";
 import { bundle } from "@remotion/bundler";
 import { getVideoMetadata, renderMedia, selectComposition } from "@remotion/renderer";
 import { REEL_COMPOSITION_ID, REEL_FPS } from "@/remotion/Root";
-import type { ReelCaption, ReelCompositionProps } from "@/remotion/ReelComposition";
+import type { ReelCompositionProps, ReelPhrase } from "@/remotion/ReelComposition";
 
 const ENTRY_POINT = path.join(process.cwd(), "remotion", "index.ts");
 
@@ -100,9 +100,9 @@ export interface RenderReelInput {
   overlaySegments?: OverlaySegmentInput[];
   /** Ventanas de tono positivo/negativo detectadas en el audio. [] = toda la caja en dorado neutro. */
   moodSegments?: MoodSegmentInput[];
-  /** Subtítulos ya armados (ver lib/video-editor/captions.ts) — render.ts no llama a Whisper, solo
-   * ensambla lo que ya le pasaron. */
-  captions?: ReelCaption[];
+  /** Subtítulos ya armados (ver lib/video-editor/captions.ts, buildPhrases) — render.ts no llama a
+   * Whisper, solo ensambla lo que ya le pasaron. */
+  phrases?: ReelPhrase[];
 }
 
 const DEFAULT_OVERLAY_SECONDS = 6;
@@ -155,7 +155,7 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     videoDurationInSeconds,
     overlaySegments,
     moodSegments,
-    captions: input.captions ?? [],
+    phrases: input.phrases ?? [],
   };
   const serializableProps = inputProps as unknown as Record<string, unknown>;
 

@@ -2,13 +2,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ReelCaption } from "@/remotion/ReelComposition";
+import type { ReelPhrase } from "@/remotion/ReelComposition";
 
 const WHISPER_MODEL = "whisper-1";
-/** Una palabra por tramo — probado en vivo con 2: cortaba la frase en pedazos sin sentido ("16 EL"
- * cuando la frase real era "...el iPhone 16, el 17 Pro..."). Una por vez es el estilo karaoke real
- * (CapCut/Opus/Submagic lo hacen así), y nunca se parte una palabra a la mitad. */
-const WORDS_PER_CHUNK = 1;
 
 export interface WhisperWord {
   word: string;
@@ -147,37 +143,62 @@ export async function transcribeClip(videoPath: string): Promise<Transcript | nu
 }
 
 /**
- * Arma los tramos de `ReelCaption` que `ReelComposition.tsx` ya sabe animar a partir de las
- * palabras de la transcripción — cada tramo trae un `size` relativo (0.9x a 1.4x) según el volumen
- * medio de esas palabras en el audio ORIGINAL (necesita `videoPath` de nuevo porque el tamaño se
- * calcula sobre el audio, no sobre el texto), que es el "énfasis" dinámico que pidió Nacho sin tener
- * que etiquetar nada a mano.
+ * Arma las frases (`ReelPhrase`) que `ReelComposition.tsx` ya sabe animar — una por `WhisperSegment`
+ * (oración/frase real, ver sentenceSegmentsFromWords), cada una con sus palabras en orden. En
+ * pantalla la frase se va completando palabra por palabra en vez de reemplazarse una a la otra
+ * (pedido explícito: "que la oración se va completando a medida que hablo").
+ *
+ * Cada palabra trae un `size` relativo (0.9x a 1.4x) según el volumen medio de esa palabra en el
+ * audio ORIGINAL (necesita `videoPath` de nuevo porque se mide sobre el audio, no sobre el texto) —
+ * variación chica y "orgánica", aparte del salto grande de `level` (ver `levels` abajo).
+ *
+ * `levels`, si se pasa, trae la clasificación semántica de lib/video-editor/caption-style.ts, UN
+ * valor por cada entrada de `words` (mismo orden/largo) — "normal" para todas si no se pasa nada.
  */
-export async function buildCaptions(videoPath: string, words: WhisperWord[], fps: number): Promise<ReelCaption[]> {
-  if (words.length === 0) return [];
+export async function buildPhrases(
+  videoPath: string,
+  words: WhisperWord[],
+  segments: WhisperSegment[],
+  fps: number,
+  levels?: ("normal" | "keyword" | "critical")[],
+): Promise<ReelPhrase[]> {
+  if (words.length === 0 || segments.length === 0) return [];
 
   const audioPath = await extractAudio(videoPath);
   try {
-    const chunks: WhisperWord[][] = [];
-    for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) chunks.push(words.slice(i, i + WORDS_PER_CHUNK));
-
-    const volumes = await Promise.all(chunks.map((chunk) => meanVolumeDb(audioPath, chunk[0].start, chunk[chunk.length - 1].end)));
+    const volumes = await Promise.all(words.map((w) => meanVolumeDb(audioPath, w.start, w.end)));
     const finite = volumes.filter((v) => Number.isFinite(v));
     const min = finite.length ? Math.min(...finite) : -40;
     const max = finite.length ? Math.max(...finite) : -10;
     const range = Math.max(max - min, 1);
-
-    return chunks.map((chunk, i) => {
-      const vol = Number.isFinite(volumes[i]) ? volumes[i] : min;
-      const loudness = (vol - min) / range; // 0 (más flojo del clip) .. 1 (más fuerte)
-      const size = Number((0.9 + loudness * 0.5).toFixed(2)); // 0.9x..1.4x
-      return {
-        text: chunk.map((w) => w.word.trim()).join(" "),
-        startFrame: Math.round(chunk[0].start * fps),
-        endFrame: Math.round(chunk[chunk.length - 1].end * fps),
-        size,
-      };
+    const sizes = volumes.map((vol) => {
+      const v = Number.isFinite(vol) ? vol : min;
+      const loudness = (v - min) / range; // 0 (más flojo del clip) .. 1 (más fuerte)
+      return Number((0.9 + loudness * 0.5).toFixed(2)); // 0.9x..1.4x
     });
+
+    const EPS = 0.05;
+    let nextWordIdx = 0;
+    const phrases: ReelPhrase[] = [];
+    for (const seg of segments) {
+      const segWords: ReelPhrase["words"] = [];
+      while (nextWordIdx < words.length && words[nextWordIdx].start < seg.end + EPS) {
+        const w = words[nextWordIdx];
+        if (w.start >= seg.start - EPS) {
+          segWords.push({
+            text: w.word.trim(),
+            startFrame: Math.round(w.start * fps),
+            size: sizes[nextWordIdx],
+            level: levels?.[nextWordIdx] ?? "normal",
+          });
+        }
+        nextWordIdx++;
+      }
+      if (segWords.length > 0) {
+        phrases.push({ startFrame: Math.round(seg.start * fps), endFrame: Math.round(seg.end * fps), words: segWords });
+      }
+    }
+    return phrases;
   } finally {
     await fs.unlink(audioPath).catch(() => {});
   }

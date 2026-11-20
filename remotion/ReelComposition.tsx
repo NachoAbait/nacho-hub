@@ -15,25 +15,33 @@ const CAPTION_OUTLINE =
   "-3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000, " +
   "-3px 0 0 #000, 3px 0 0 #000, 0 -3px 0 #000, 0 3px 0 #000, 0 6px 10px rgba(0,0,0,0.55)";
 
-/** Un tramo de subtítulo (1-2 palabras, estilo karaoke) con su ventana de frames, armado por
- * lib/video-editor/captions.ts a partir de la transcripción de Whisper. */
-export type ReelCaption = {
+/** Una palabra dentro de una frase (ver ReelPhrase abajo), armada por lib/video-editor/captions.ts
+ * a partir de la transcripción de Whisper. */
+export type ReelWord = {
   text: string;
+  /** Frame en el que esta palabra se agrega a la frase que se está completando — no desaparece
+   * hasta que termine toda la frase (ver ReelPhrase), solo se SUMAN palabras nuevas. */
   startFrame: number;
-  endFrame: number;
   /** Tamaño relativo (0.9x–1.4x) según el volumen medio del audio en ese tramo — variación chica,
    * "orgánica" (se combina con `level`, que es el salto grande de énfasis). 1 si no se pudo calcular. */
   size?: number;
   /** Qué tan importante es ESTA palabra para lo que se está diciendo (clasificado por Claude en
-   * lib/video-editor/caption-style.ts, análisis semántico — no volumen): "normal" (texto base),
-   * "keyword" (un dato concreto: modelo, número, precio — tipografía distinta), "critical" (la
-   * palabra que carga el peso emocional de la frase — la más grande, coloreada según `wordSentiment`).
-   * "normal" si no se pudo clasificar (Claude caído, etc.) — el subtítulo sigue viéndose bien, solo
-   * sin la variación semántica. */
+   * lib/video-editor/caption-style.ts, análisis semántico — no volumen): "normal" (tipografía y
+   * tamaño base) o "keyword"/"critical" (tipografía distinta + más grande — ver LEVEL_STYLE). Dos
+   * niveles de tamaño, una sola tipografía de énfasis: alcanza con eso, sin sumarle variedad de
+   * colores (pedido explícito de Nacho). "normal" si no se pudo clasificar. */
   level?: "normal" | "keyword" | "critical";
-  /** Tono de ESTA palabra puntual (no de toda la frase, eso es `MoodSegment`) — solo cambia el color
-   * cuando `level` es "critical". */
-  wordSentiment?: "positive" | "negative" | "neutral";
+};
+
+/** Una frase/oración completa, con sus palabras — en pantalla se van SUMANDO (ReelWord.startFrame)
+ * a medida que se hablan, sin que las anteriores desaparezcan, hasta `endFrame`: ahí se limpia todo
+ * de una y arranca la frase siguiente. Reemplaza al viejo esquema de una palabra a la vez
+ * reemplazando a la anterior — pedido explícito: "que no aparezcan y desaparezcan, como que la
+ * oración se va completando a medida que hablo". */
+export type ReelPhrase = {
+  startFrame: number;
+  endFrame: number;
+  words: ReelWord[];
 };
 
 /** Qué producto mostrar en la caja flotante durante esta ventana de frames — arma la lista
@@ -72,10 +80,10 @@ export type ReelCompositionProps = {
   /** Ventanas de tono positivo/negativo (ver MoodSegment arriba). Fuera de esas ventanas, o si
    * viene vacío, la caja usa el dorado neutro de siempre. */
   moodSegments: MoodSegment[];
-  /** Subtítulos animados a partir de la transcripción de Whisper (ver lib/video-editor/captions.ts).
-   * [] si no hay `OPENAI_API_KEY` o si Whisper falló para este clip — el render sigue sin subtítulos
-   * en vez de romperse. */
-  captions?: ReelCaption[];
+  /** Subtítulos animados a partir de la transcripción de Whisper (ver lib/video-editor/captions.ts),
+   * agrupados por frase (ver ReelPhrase). [] si no hay `OPENAI_API_KEY` o si Whisper falló para este
+   * clip — el render sigue sin subtítulos en vez de romperse. */
+  phrases?: ReelPhrase[];
 };
 
 const GOLD = "#d4a640";
@@ -91,13 +99,15 @@ const MOOD_COLORS: Record<"neutral" | "positive" | "negative", { accent: string;
   negative: { accent: RED, light: RED_LIGHT },
 };
 
-/** Cómo se ve cada palabra según `ReelCaption.level` (clasificación semántica de Claude, ver
- * lib/video-editor/caption-style.ts) — tamaño Y tipografía cambian juntos, no solo el color, para que
- * el énfasis se note de verdad en medio de la oración. */
+/** Cómo se ve cada palabra según `ReelWord.level` (clasificación semántica de Claude, ver
+ * lib/video-editor/caption-style.ts) — tamaño Y tipografía cambian juntos; sin variedad de colores
+ * (Nacho pidió explícitamente bajarle a los colores: "tipografía y tamaño alcanza"). Todo el texto es
+ * blanco (ver CAPTION_OUTLINE más abajo) — lo que marca el énfasis es la forma de la letra y cuánto
+ * ocupa, no de qué color es. */
 const LEVEL_STYLE: Record<"normal" | "keyword" | "critical", { scale: number; font: string }> = {
   normal: { scale: 1, font: CAPTION_FONT },
-  keyword: { scale: 1.22, font: KEYWORD_FONT },
-  critical: { scale: 1.48, font: KEYWORD_FONT },
+  keyword: { scale: 1.18, font: KEYWORD_FONT },
+  critical: { scale: 1.4, font: KEYWORD_FONT },
 };
 
 /**
@@ -111,7 +121,7 @@ export function ReelComposition({
   videoSrc,
   overlaySegments,
   moodSegments,
-  captions = [],
+  phrases = [],
 }: ReelCompositionProps) {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -126,7 +136,7 @@ export function ReelComposition({
 
   const activeOverlay = overlaySegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
   const activeMood = moodSegments.find((s) => frame >= s.startFrame && frame < s.endFrame)?.mood ?? "neutral";
-  const { accent, light } = MOOD_COLORS[activeMood];
+  const { accent } = MOOD_COLORS[activeMood];
 
   // Flip-in relativo al arranque de ESTE segmento (no del video entero): cada vez que cambia de
   // producto, la caja vuelve a hacer el flip desde "de canto" — la "transición" entre productos que
@@ -143,26 +153,10 @@ export function ReelComposition({
   // Nunca al mismo tiempo que la caja de producto: mostrar las dos cosas juntas "sería mucha cosa"
   // (feedback directo de Nacho) — el subtítulo solo aparece en los tramos donde se está presentando
   // a cámara, no mientras se ve el render del celular.
-  const activeCaption = activeOverlay ? undefined : captions.find((c) => frame >= c.startFrame && frame < c.endFrame);
-  const captionPop = activeCaption
-    ? spring({ frame: frame - activeCaption.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 })
-    : 0;
-  const captionLevel = LEVEL_STYLE[activeCaption?.level ?? "normal"];
-  // El tamaño final combina tres cosas: el salto grande por nivel semántico (normal/keyword/critical
-  // — lo que pidió Nacho), la variación chica por volumen de audio (0.9x-1.4x, "orgánica") y el pop
-  // de entrada — así ninguna palabra se ve clavada en el mismo tamaño que la anterior.
-  const captionScale = captionLevel.scale * (activeCaption?.size ?? 1) * interpolate(captionPop, [0, 1], [0.8, 1]);
-  // "critical" se colorea según el sentimiento de ESA palabra puntual (más preciso que el tono de
-  // toda la frase); "keyword" siempre dorado (marca "esto es un dato", no depende del ánimo);
-  // "normal" sigue el tono de la frase como antes.
-  const captionColor =
-    activeCaption?.level === "critical"
-      ? MOOD_COLORS[activeCaption.wordSentiment ?? "neutral"].light
-      : activeCaption?.level === "keyword"
-        ? GOLD_LIGHT
-        : activeMood === "neutral"
-          ? "white"
-          : light;
+  const activePhrase = activeOverlay ? undefined : phrases.find((p) => frame >= p.startFrame && frame < p.endFrame);
+  // La frase se va completando: todas las palabras cuyo `startFrame` ya pasó quedan en pantalla
+  // juntas (no se reemplazan entre sí) hasta que termina la frase entera.
+  const visibleWords = activePhrase?.words.filter((w) => frame >= w.startFrame) ?? [];
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -269,44 +263,70 @@ export function ReelComposition({
         </AbsoluteFill>
       )}
 
-      {/* Subtítulo activo: una palabra por vez (estilo karaoke real, no de a 2 — de a 2 cortaba
-          frases en pedazos sin sentido, ej. "16 EL"). Sin placa de fondo, blanco con contorno negro
-          sólido (ver CAPTION_OUTLINE) — el look de la referencia que mandó Nacho, no la placa oscura
-          semitransparente de antes. Reposicionado a la mitad del cuadro (ni pegado arriba de la
-          cabeza ni abajo del todo) y nunca al mismo tiempo que la caja de producto (ver
-          activeCaption arriba). Un "pop" de entrada y un tamaño que varía según el volumen de esa
-          palabra en el audio original (ver captionScale arriba y lib/video-editor/captions.ts) — el
-          "énfasis dinámico" pedido. */}
-      {activeCaption && (
-        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 900 }}>
-          <div
-            style={{
-              fontFamily: captionLevel.font,
-              letterSpacing: "0.01em",
-              fontSize: 68,
-              color: captionColor,
-              textAlign: "center",
-              textShadow: CAPTION_OUTLINE,
-              maxWidth: "85%",
-              transform: `scale(${captionScale})`,
-            }}
-          >
-            {activeCaption.text.toUpperCase()}
+      {/* Subtítulo activo: la frase se va completando palabra por palabra (no una a la vez
+          reemplazando a la anterior — pedido explícito: "que no aparezcan y desaparezcan, como que
+          la oración se va completando a medida que hablo"). Sin placa de fondo, blanco con contorno
+          negro sólido (ver CAPTION_OUTLINE), sin variedad de colores — el énfasis lo marcan la
+          tipografía y el tamaño de cada palabra (ver LEVEL_STYLE), no el color. Reposicionado a la
+          mitad del cuadro y nunca al mismo tiempo que la caja de producto (ver activePhrase arriba).
+          Cada palabra nueva entra con su propio "pop" (ver WordSpan). */}
+      {visibleWords.length > 0 && (
+        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 780 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "baseline", gap: "6px 18px", maxWidth: "88%" }}>
+            {visibleWords.map((w, i) => (
+              <WordSpan key={i} word={w} frame={frame} fps={fps} />
+            ))}
           </div>
         </AbsoluteFill>
       )}
 
       {/* Un "pop" sonoro por cada palabra (pedido explícito: "que haga un mínimo efecto de sonido
           al aparecer cada palabra") — se dispara UNA vez por palabra, en el frame exacto en que
-          arranca, por eso va envuelta en su propio <Sequence> (no atada a `activeCaption`, que solo
+          arranca, por eso va envuelta en su propio <Sequence> (no atada a `activePhrase`, que solo
           existe cuando no hay caja de producto: el sonido tiene que sonar siempre que la palabra se
-          diga, muestre caption o no en pantalla en ese instante). */}
-      {captions.map((c, i) => (
-        <Sequence key={i} from={c.startFrame} durationInFrames={Math.max(1, c.endFrame - c.startFrame)} layout="none">
-          <Audio src={staticFile("caption-pop.mp3")} volume={1.4} />
-        </Sequence>
-      ))}
+          diga, muestre subtítulo o no en pantalla en ese instante). */}
+      {phrases.flatMap((p, pi) =>
+        p.words.map((w, wi) => (
+          <Sequence key={`${pi}-${wi}`} from={w.startFrame} durationInFrames={6} layout="none">
+            <Audio src={staticFile("caption-pop.mp3")} volume={1.4} />
+          </Sequence>
+        )),
+      )}
     </AbsoluteFill>
+  );
+}
+
+/** Una palabra dentro de la frase que se va completando — su propio spring de entrada (pop chico,
+ * no gira ni nada: la frase entera no tiene que sentirse como un carrusel, solo que cada palabra se
+ * sume con un empujón breve) separado en su propio componente porque cada una necesita su propio
+ * `spring()` con un frame relativo distinto (`frame - word.startFrame`), y eso solo es válido dentro
+ * de un componente propio, no de un callback suelto dentro de .map(). */
+const CAPTION_BASE_SIZE = 54;
+
+function WordSpan({ word, frame, fps }: { word: ReelWord; frame: number; fps: number }) {
+  const pop = spring({ frame: frame - word.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 });
+  const level = LEVEL_STYLE[word.level ?? "normal"];
+  // `fontSize` real, no `transform: scale()` — un scale visual no mueve el layout, así que una
+  // palabra "critical" más grande se superponía con la de al lado en vez de empujarla (visto en
+  // vivo: "NO" tapando "RECOMIENDO"). Con fontSize el navegador sí reserva el espacio real.
+  const sizeFactor = level.scale * (word.size ?? 1) * interpolate(pop, [0, 1], [0.7, 1]);
+  const opacity = interpolate(pop, [0, 1], [0, 1]);
+
+  return (
+    <span
+      style={{
+        fontFamily: level.font,
+        letterSpacing: "0.01em",
+        fontSize: CAPTION_BASE_SIZE * sizeFactor,
+        lineHeight: 1.15,
+        color: "white",
+        textShadow: CAPTION_OUTLINE,
+        display: "inline-block",
+        opacity,
+      }}
+    >
+      {word.text.toUpperCase()}
+    </span>
   );
 }
 

@@ -11,7 +11,7 @@ const DEFAULT_PROPS: ReelCompositionProps = {
   videoDurationInSeconds: 15,
   overlaySegments: [],
   moodSegments: [],
-  captions: [],
+  phrases: [],
 };
 
 /**

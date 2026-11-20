@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import type { AgentContext, AgentModule } from "@/lib/agents/runtime";
-import type { ReelCaption } from "@/remotion/ReelComposition";
+import type { ReelPhrase } from "@/remotion/ReelComposition";
 import { REEL_FPS } from "@/remotion/Root";
 import { downloadClipToTmp, driveAvailable, listVideoClips, uploadRenderedClipToDrive } from "@/lib/video-editor/drive";
 import { anchorOverlaySegments, getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match";
 import { withExtraModels } from "@/lib/video-editor/model-image-library";
-import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
+import { buildPhrases, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { classifyWordEmphasis } from "@/lib/video-editor/caption-style";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
@@ -24,7 +24,7 @@ interface ProcessedClip {
 }
 
 interface ContentTimeline {
-  captions: ReelCaption[];
+  phrases: ReelPhrase[];
   overlaySegments: OverlaySegmentInput[];
   moodSegments: MoodSegmentInput[];
   /** Control de calidad básico antes de dar el render por bueno (pedido directo de Nacho: prefiere
@@ -34,7 +34,7 @@ interface ContentTimeline {
   warnings: string[];
 }
 
-const EMPTY_TIMELINE: ContentTimeline = { captions: [], overlaySegments: [], moodSegments: [], warnings: [] };
+const EMPTY_TIMELINE: ContentTimeline = { phrases: [], overlaySegments: [], moodSegments: [], warnings: [] };
 
 /**
  * Transcribe el clip y le pide a Claude que identifique, oración por oración, de qué modelo del
@@ -50,27 +50,24 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
   const transcript = await transcribeClip(videoPath);
   if (!transcript) return EMPTY_TIMELINE;
 
-  const captions = await buildCaptions(videoPath, transcript.words, REEL_FPS);
-
-  // Énfasis semántico por palabra (qué tipografía/tamaño/color usa cada una — ver caption-style.ts)
-  // — pedido explícito: "que interprete la oración... no que sea todo texto plano". `words` y
-  // `captions` están en el mismo orden (buildCaptions arma un ReelCaption por palabra, 1:1), así que
-  // se puede pegar por índice directo. Si Claude falla acá, los subtítulos siguen viéndose bien, solo
-  // sin la variación semántica (todas "normal") — no vale la pena perder el render por esto.
+  // Énfasis semántico por palabra (qué tipografía/tamaño usa cada una — ver caption-style.ts) —
+  // pedido explícito: "que interprete la oración... no que sea todo texto plano". Si Claude falla
+  // acá, los subtítulos siguen viéndose bien, solo sin la variación semántica (todas "normal") — no
+  // vale la pena perder el render por esto.
+  let levels: ("normal" | "keyword" | "critical")[] = [];
   try {
-    const emphasis = await classifyWordEmphasis(transcript.words, ctx.usage);
-    captions.forEach((c, i) => {
-      c.level = emphasis[i]?.level ?? "normal";
-      c.wordSentiment = emphasis[i]?.sentiment ?? "neutral";
-    });
+    levels = (await classifyWordEmphasis(transcript.words, ctx.usage)).map((e) => e.level);
   } catch (err) {
     ctx.log(`clasificación de énfasis de subtítulos falló, sigo con subtítulos planos — ${err instanceof Error ? err.message : err}`);
   }
 
-  if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, captions };
+  // Las frases se arman a partir de `transcript.segments` (oración por oración) — en pantalla se van
+  // completando palabra por palabra en vez de reemplazarse (ver ReelPhrase en ReelComposition.tsx).
+  const phrases = await buildPhrases(videoPath, transcript.words, transcript.segments, REEL_FPS, levels);
+  if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, phrases };
 
   const catalog = withExtraModels(await getActiveCatalog(ctx.db));
-  if (catalog.length === 0) return { ...EMPTY_TIMELINE, captions };
+  if (catalog.length === 0) return { ...EMPTY_TIMELINE, phrases };
 
   const analysis = await analyzeContent(
     transcript.segments,
@@ -115,7 +112,7 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
     (model) => `Se menciona "${model}" pero no tiene foto en el catálogo activo — no pudo aparecer en el video.`,
   );
 
-  return { captions, overlaySegments, moodSegments, warnings };
+  return { phrases, overlaySegments, moodSegments, warnings };
 }
 
 /**
@@ -213,7 +210,7 @@ export const videoEditor: AgentModule = {
           overlayLabel: overlay?.label ?? null,
           overlaySegments: timeline.overlaySegments,
           moodSegments: timeline.moodSegments,
-          captions: timeline.captions,
+          phrases: timeline.phrases,
         });
 
         const storagePath = `edited/${file.id}.mp4`;
