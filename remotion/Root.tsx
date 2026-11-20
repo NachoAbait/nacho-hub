@@ -9,9 +9,8 @@ export const REEL_COMPOSITION_ID = "Reel";
 const DEFAULT_PROPS: ReelCompositionProps = {
   videoSrc: "",
   videoDurationInSeconds: 15,
-  overlayImageUrl: null,
-  overlayLabel: null,
-  overlayDurationInSeconds: 6,
+  overlaySegments: [],
+  moodSegments: [],
   captions: [],
 };
 

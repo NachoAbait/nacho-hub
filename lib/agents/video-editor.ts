@@ -1,8 +1,12 @@
 import fs from "node:fs/promises";
-import type { AgentModule } from "@/lib/agents/runtime";
+import type { AgentContext, AgentModule } from "@/lib/agents/runtime";
+import type { ReelCaption } from "@/remotion/ReelComposition";
+import { REEL_FPS } from "@/remotion/Root";
 import { downloadClipToTmp, driveAvailable, listVideoClips, uploadRenderedClipToDrive } from "@/lib/video-editor/drive";
-import { matchOverlay } from "@/lib/video-editor/product-match";
-import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE } from "@/lib/video-editor/render";
+import { getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match";
+import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
+import { analyzeContent } from "@/lib/video-editor/content-analysis";
+import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
 
 /** Tope por corrida: el cron pasa cada pocos minutos, no hace falta (ni conviene, por tiempo de
  * función) tragarse toda la carpeta de una. Lo que quede pendiente lo agarra la corrida siguiente. */
@@ -15,12 +19,63 @@ interface ProcessedClip {
   error: string | null;
 }
 
+interface ContentTimeline {
+  captions: ReelCaption[];
+  overlaySegments: OverlaySegmentInput[];
+  moodSegments: MoodSegmentInput[];
+}
+
+const EMPTY_TIMELINE: ContentTimeline = { captions: [], overlaySegments: [], moodSegments: [] };
+
+/**
+ * Transcribe el clip y le pide a Claude que identifique, oración por oración, de qué modelo del
+ * catálogo habla Nacho y en qué tono — así la caja de producto y el color siguen lo que se va
+ * diciendo, en vez de un solo producto fijo para todo el video (eso era `matchOverlay`, que ahora
+ * queda solo como fallback cuando esto no encuentra nada o falla).
+ *
+ * Nunca tira: cualquier error acá (Whisper sin crédito, Claude caído, lo que sea) hace que el caller
+ * siga con `EMPTY_TIMELINE` — el clip se renderiza igual, solo que con el fallback por nombre de
+ * archivo y sin colores de tono.
+ */
+async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promise<ContentTimeline> {
+  const transcript = await transcribeClip(videoPath);
+  if (!transcript) return EMPTY_TIMELINE;
+
+  const captions = await buildCaptions(videoPath, transcript.words, REEL_FPS);
+  if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, captions };
+
+  const catalog = await getActiveCatalog(ctx.db);
+  if (catalog.length === 0) return { ...EMPTY_TIMELINE, captions };
+
+  const analysis = await analyzeContent(
+    transcript.segments,
+    catalog.map((c) => c.model),
+    ctx.usage,
+  );
+
+  const overlaySegments: OverlaySegmentInput[] = [];
+  const moodSegments: MoodSegmentInput[] = [];
+  for (const a of analysis) {
+    const seg = transcript.segments[a.index];
+    if (!seg) continue;
+    if (a.productModel) {
+      const match = catalog.find((c) => c.model === a.productModel);
+      if (match) overlaySegments.push({ startSec: seg.start, endSec: seg.end, imageUrl: match.hero_image_url, label: match.model });
+    }
+    if (a.sentiment !== "neutral") moodSegments.push({ startSec: seg.start, endSec: seg.end, mood: a.sentiment });
+  }
+
+  return { captions, overlaySegments, moodSegments };
+}
+
 /**
  * Video Editor: mira la carpeta de Drive "VIDEOS BNB STORE", y por cada clip nuevo (no visto en
- * video_clips todavía) lo descarga, le matchea un producto por el nombre del archivo y lo renderiza
- * con el overlay "spotlight" (ver remotion/ReelComposition.tsx) + subtítulos animados vía Whisper
- * (ver lib/video-editor/captions.ts, requiere OPENAI_API_KEY). Sigue sin detectar el momento real en
- * que el producto aparece en pantalla — la caja se muestra desde el arranque, ver render.ts.
+ * video_clips todavía) lo descarga, transcribe el audio con Whisper y le pide a Claude que identifique
+ * de qué modelo del catálogo habla cada oración y con qué tono (ver buildContentTimeline arriba) —
+ * eso arma la ventana de producto y el color (dorado/verde/rojo) de la caja flotante, siguiendo lo
+ * que realmente se dice en el video en vez de un solo producto fijo. Si no hay transcripción (sin
+ * `OPENAI_API_KEY`) o no se detectó ningún modelo, cae al match viejo por nombre de archivo
+ * (`matchOverlay`) para todo el clip.
  *
  * Nunca tira: cada clip que falla queda con status 'error' y su propio mensaje, el resto sigue.
  */
@@ -79,7 +134,25 @@ export const videoEditor: AgentModule = {
           continue;
         }
 
-        const rendered = await renderReel({ videoPath: tmpPath, overlayImageUrl: overlay?.imageUrl ?? null, overlayLabel: overlay?.label ?? null });
+        let timeline = EMPTY_TIMELINE;
+        try {
+          timeline = await buildContentTimeline(ctx, tmpPath);
+        } catch (err) {
+          ctx.log(`${file.name}: análisis de voz/contenido falló, sigo con el fallback por nombre de archivo — ${err instanceof Error ? err.message : err}`);
+        }
+        if (timeline.overlaySegments.length > 0) {
+          const models = [...new Set(timeline.overlaySegments.map((s) => s.label))];
+          await ctx.db.from("video_clips").update({ product_hint: models.join(", ") }).eq("id", row.id);
+        }
+
+        const rendered = await renderReel({
+          videoPath: tmpPath,
+          overlayImageUrl: overlay?.imageUrl ?? null,
+          overlayLabel: overlay?.label ?? null,
+          overlaySegments: timeline.overlaySegments,
+          moodSegments: timeline.moodSegments,
+          captions: timeline.captions,
+        });
 
         const storagePath = `edited/${file.id}.mp4`;
         const { error: uploadErr } = await ctx.db.storage.from("clips").upload(storagePath, rendered, { contentType: "video/mp4", upsert: true });

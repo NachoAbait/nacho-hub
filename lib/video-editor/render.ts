@@ -5,8 +5,7 @@ import path from "node:path";
 import { bundle } from "@remotion/bundler";
 import { getVideoMetadata, renderMedia, selectComposition } from "@remotion/renderer";
 import { REEL_COMPOSITION_ID, REEL_FPS } from "@/remotion/Root";
-import type { ReelCompositionProps } from "@/remotion/ReelComposition";
-import { transcribeToCaptions } from "@/lib/video-editor/captions";
+import type { ReelCaption, ReelCompositionProps } from "@/remotion/ReelComposition";
 
 const ENTRY_POINT = path.join(process.cwd(), "remotion", "index.ts");
 
@@ -59,14 +58,42 @@ function getServeUrl(): Promise<string> {
   return bundledServeUrlPromise;
 }
 
+/** Ventana de producto en SEGUNDOS (no frames: quien arma esto —lib/agents/video-editor.ts— trabaja
+ * con los timestamps de Whisper, que vienen en segundos; convertir a frames es trabajo de este
+ * archivo, que es el único que sabe el FPS real de la composición). */
+export interface OverlaySegmentInput {
+  startSec: number;
+  endSec: number;
+  imageUrl: string;
+  label: string;
+}
+
+/** Ídem para el tono positivo/negativo detectado en esa ventana. */
+export interface MoodSegmentInput {
+  startSec: number;
+  endSec: number;
+  mood: "positive" | "negative";
+}
+
 export interface RenderReelInput {
   /** Ruta local del clip crudo ya descargado (ver downloadClipToTmp). */
   videoPath: string;
+  /** Fallback cuando no hay (o falló) la detección por voz: un solo producto para todo el clip,
+   * matcheado por el nombre del archivo (ver product-match.ts). Se ignora si `overlaySegments` trae
+   * algo. */
   overlayImageUrl: string | null;
   overlayLabel: string | null;
-  /** V1: no hay forma de saber cuándo aparece el producto en pantalla de verdad (ver tarea), así
-   * que la caja se muestra desde el arranque hasta este tope o el final del clip, lo que sea menor. */
+  /** Solo aplica al fallback de arriba — cuánto dura esa caja fija. V1 sin detección por voz: no hay
+   * forma de saber cuándo aparece el producto en pantalla de verdad, así que se usa un default fijo. */
   overlayDurationInSeconds?: number;
+  /** Ventanas de producto detectadas por lo que se dice en el audio (ver content-analysis.ts). Si
+   * viene con algo, reemplaza por completo al fallback de arriba — es la fuente más precisa. */
+  overlaySegments?: OverlaySegmentInput[];
+  /** Ventanas de tono positivo/negativo detectadas en el audio. [] = toda la caja en dorado neutro. */
+  moodSegments?: MoodSegmentInput[];
+  /** Subtítulos ya armados (ver lib/video-editor/captions.ts) — render.ts no llama a Whisper, solo
+   * ensambla lo que ya le pasaron. */
+  captions?: ReelCaption[];
 }
 
 const DEFAULT_OVERLAY_SECONDS = 6;
@@ -85,13 +112,29 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   // getVideoMetadata puede devolver null si no pudo leer la duración (contenedor raro, archivo
   // corrupto): mejor un default conservador que tirar y perder todo el render.
   const videoDurationInSeconds = metadata.durationInSeconds ?? 15;
+  const durationInFrames = Math.max(1, Math.round(videoDurationInSeconds * REEL_FPS));
 
-  // Si Whisper falla (sin crédito, red caída, lo que sea) no tiene que perderse el render entero —
-  // sigue sin subtítulos, igual que cuando no hay OPENAI_API_KEY configurada.
-  const captions = await transcribeToCaptions(input.videoPath, REEL_FPS).catch((err) => {
-    console.error(`[video-editor] Whisper falló, sigo sin subtítulos: ${err instanceof Error ? err.message : err}`);
-    return [];
+  const toFrameWindow = (startSec: number, endSec: number) => ({
+    startFrame: Math.max(0, Math.min(durationInFrames, Math.round(startSec * REEL_FPS))),
+    endFrame: Math.max(0, Math.min(durationInFrames, Math.round(endSec * REEL_FPS))),
   });
+
+  const overlaySegments = (
+    input.overlaySegments?.length
+      ? input.overlaySegments
+      : input.overlayImageUrl
+        ? [
+            {
+              startSec: 0,
+              endSec: Math.min(input.overlayDurationInSeconds ?? DEFAULT_OVERLAY_SECONDS, videoDurationInSeconds),
+              imageUrl: input.overlayImageUrl,
+              label: input.overlayLabel ?? "",
+            },
+          ]
+        : []
+  ).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), imageUrl: s.imageUrl, label: s.label }));
+
+  const moodSegments = (input.moodSegments ?? []).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), mood: s.mood }));
 
   const serveUrl = await getServeUrl();
   const inputProps: ReelCompositionProps = {
@@ -101,10 +144,9 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     // Remotion tira 404. El staticFile() real pasa dentro de ReelComposition.tsx.
     videoSrc: path.basename(input.videoPath),
     videoDurationInSeconds,
-    overlayImageUrl: input.overlayImageUrl,
-    overlayLabel: input.overlayLabel,
-    overlayDurationInSeconds: Math.min(input.overlayDurationInSeconds ?? DEFAULT_OVERLAY_SECONDS, videoDurationInSeconds),
-    captions,
+    overlaySegments,
+    moodSegments,
+    captions: input.captions ?? [],
   };
   const serializableProps = inputProps as unknown as Record<string, unknown>;
 

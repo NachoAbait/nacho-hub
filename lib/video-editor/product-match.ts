@@ -11,6 +11,24 @@ export interface OverlayMatch {
   imageUrl: string;
 }
 
+export interface CatalogProduct {
+  model: string;
+  hero_image_url: string;
+}
+
+/** Modelos activos con foto hero — lo usan tanto el match por nombre de archivo de acá abajo como
+ * content-analysis.ts (match por lo que se dice en el audio). Centralizado para no repetir la
+ * misma query de Supabase en dos lugares. */
+export async function getActiveCatalog(db: SupabaseClient): Promise<CatalogProduct[]> {
+  const { data } = await db
+    .from("products")
+    .select("model, hero_image_url")
+    .eq("is_active", true)
+    .not("hero_image_url", "is", null)
+    .returns<CatalogProduct[]>();
+  return data ?? [];
+}
+
 /**
  * Accesorios con placeholder ya generado y subido a Supabase Storage (bucket "heroes", carpeta
  * accesorios/ — ver tarea: son renders de IA low-res 200x200, provisorios hasta tener fotos reales).
@@ -43,14 +61,9 @@ export async function matchOverlay(db: SupabaseClient, fileName: string): Promis
   const fileTokens = normalizeModel(base).split(/\s+/).filter(Boolean);
   if (fileTokens.length === 0) return null;
 
-  const { data: products } = await db
-    .from("products")
-    .select("model, hero_image_url")
-    .eq("is_active", true)
-    .not("hero_image_url", "is", null)
-    .returns<{ model: string; hero_image_url: string }[]>();
+  const products = await getActiveCatalog(db);
 
-  for (const p of products ?? []) {
+  for (const p of products) {
     const modelTokens = normalizeModel(p.model).split(/\s+/).filter(Boolean);
     if (modelTokens.length === 0) continue;
     const allTokensFound = modelTokens.every((mt) => fileTokens.some((ft) => ft === mt || wordsMatch(ft, mt)));

@@ -9,10 +9,62 @@ const WHISPER_MODEL = "whisper-1";
  * palabras grandes a la vez), no la frase completa como un subtítulo de película. */
 const WORDS_PER_CHUNK = 2;
 
-interface WhisperWord {
+export interface WhisperWord {
   word: string;
   start: number;
   end: number;
+}
+
+/** Tramo a nivel oración — es lo que le pasamos a Claude en content-analysis.ts: analizar oración
+ * por oración es mucho más preciso que analizar palabra por palabra, y mucho más barato que mandarle
+ * el audio entero. Lo armamos nosotros a partir de las palabras (ver sentenceSegmentsFromWords),
+ * NO con el array `segments` nativo de Whisper: ese viene cortado por ventanas de decodificación
+ * internas de ~30s, no por oración — en un clip corto puede devolver un solo segmento gigante que
+ * mezcla varias oraciones (y varios productos/tonos) en uno solo. */
+export interface WhisperSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** Whisper no siempre pone punto donde de verdad termina una idea (sobre todo en audio hablado
+ * casual, sin la prosodia clara de una lectura) — probado en vivo: una frase entera con comas
+ * seguidas y un solo punto al final. Por eso, además de la puntuación, se corta también cuando hay
+ * un silencio real entre una palabra y la siguiente (>0.45s) — eso sí marca de forma confiable un
+ * cambio de idea aunque la transcripción no haya puesto el punto. */
+const PAUSE_THRESHOLD_SECONDS = 0.45;
+
+/** Corta en tramos de oración/frase usando los timestamps reales de cada palabra — a diferencia del
+ * `segments` nativo de Whisper (cortado por ventanas de decodificación de ~30s, no por idea), esto da
+ * un tramo por cada pausa o punto real, así Claude puede clasificar producto/tono por cada uno en vez
+ * de por un bloque gigante que mezcla varios productos y tonos distintos. */
+function sentenceSegmentsFromWords(words: WhisperWord[]): WhisperSegment[] {
+  const segments: WhisperSegment[] = [];
+  let buffer: WhisperWord[] = [];
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    segments.push({ start: buffer[0].start, end: buffer[buffer.length - 1].end, text: buffer.map((w) => w.word.trim()).join(" ") });
+    buffer = [];
+  };
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    buffer.push(word);
+    const endsSentence = /[.!?]\s*$/.test(word.word);
+    const nextWord = words[i + 1];
+    const longPauseAfter = nextWord ? nextWord.start - word.end > PAUSE_THRESHOLD_SECONDS : false;
+    if (endsSentence || longPauseAfter) flush();
+  }
+  flush();
+
+  return segments;
+}
+
+export interface Transcript {
+  words: WhisperWord[];
+  segments: WhisperSegment[];
+  text: string;
 }
 
 function runFfmpeg(args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -30,7 +82,7 @@ function runFfmpeg(args: string[]): Promise<{ stdout: string; stderr: string }> 
   });
 }
 
-async function extractAudio(videoPath: string): Promise<string> {
+export async function extractAudio(videoPath: string): Promise<string> {
   const audioPath = path.join(os.tmpdir(), `video-editor-audio-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
   await runFfmpeg(["-y", "-i", videoPath, "-ac", "1", "-ar", "16000", "-vn", audioPath]);
   return audioPath;
@@ -54,7 +106,10 @@ async function meanVolumeDb(audioPath: string, start: number, end: number): Prom
   return match ? parseFloat(match[1]) : Number.NEGATIVE_INFINITY;
 }
 
-async function fetchWhisperWords(audioPath: string, apiKey: string): Promise<WhisperWord[]> {
+/** Un solo llamado a Whisper nos da palabras (para los subtítulos) Y oraciones (para que Claude
+ * analice de qué producto habla cada una y con qué tono) — pedir las dos cosas por separado sería
+ * pagar la transcripción dos veces por el mismo clip. */
+async function fetchWhisperTranscript(audioPath: string, apiKey: string): Promise<Transcript> {
   const buf = await fs.readFile(audioPath);
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(buf)], { type: "audio/wav" }), "audio.wav");
@@ -68,29 +123,40 @@ async function fetchWhisperWords(audioPath: string, apiKey: string): Promise<Whi
     body: form,
   });
   if (!res.ok) throw new Error(`Whisper falló (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const json = (await res.json()) as { words?: WhisperWord[] };
-  return json.words ?? [];
+  const json = (await res.json()) as { words?: WhisperWord[]; text?: string };
+  const words = json.words ?? [];
+  return { words, segments: sentenceSegmentsFromWords(words), text: json.text ?? "" };
 }
 
 /**
- * Transcribe el audio del clip con Whisper y arma los tramos de `ReelCaption` que
- * `ReelComposition.tsx` ya sabe animar — cada tramo trae un `size` relativo (0.9x a 1.4x) según el
- * volumen medio de esas palabras, que es el "énfasis" dinámico que pidió Nacho sin tener que
- * etiquetar nada a mano.
- *
- * Nunca tira: sin `OPENAI_API_KEY` devuelve `[]` (el render sigue sin subtítulos, como hasta ahora),
- * y cualquier error de Whisper/ffmpeg se propaga para que el caller decida (hoy: renderReel lo
- * atrapa y sigue sin captions en vez de perder el render entero).
+ * Transcribe el audio del clip entero una sola vez. Nunca tira por falta de credencial: sin
+ * `OPENAI_API_KEY` devuelve `null` (el caller sigue sin subtítulos ni detección de producto/tono,
+ * como antes de esta fase). Un error real de Whisper/ffmpeg SÍ se propaga para que el caller decida.
  */
-export async function transcribeToCaptions(videoPath: string, fps: number): Promise<ReelCaption[]> {
+export async function transcribeClip(videoPath: string): Promise<Transcript | null> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) return null;
 
   const audioPath = await extractAudio(videoPath);
   try {
-    const words = await fetchWhisperWords(audioPath, apiKey);
-    if (words.length === 0) return [];
+    return await fetchWhisperTranscript(audioPath, apiKey);
+  } finally {
+    await fs.unlink(audioPath).catch(() => {});
+  }
+}
 
+/**
+ * Arma los tramos de `ReelCaption` que `ReelComposition.tsx` ya sabe animar a partir de las
+ * palabras de la transcripción — cada tramo trae un `size` relativo (0.9x a 1.4x) según el volumen
+ * medio de esas palabras en el audio ORIGINAL (necesita `videoPath` de nuevo porque el tamaño se
+ * calcula sobre el audio, no sobre el texto), que es el "énfasis" dinámico que pidió Nacho sin tener
+ * que etiquetar nada a mano.
+ */
+export async function buildCaptions(videoPath: string, words: WhisperWord[], fps: number): Promise<ReelCaption[]> {
+  if (words.length === 0) return [];
+
+  const audioPath = await extractAudio(videoPath);
+  try {
     const chunks: WhisperWord[][] = [];
     for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) chunks.push(words.slice(i, i + WORDS_PER_CHUNK));
 
