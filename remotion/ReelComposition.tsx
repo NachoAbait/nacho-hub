@@ -1,10 +1,14 @@
 import { AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
-/** Caption futura (fase 2, con Whisper): un tramo de texto animado con su ventana de frames. */
+/** Un tramo de subtítulo (1-2 palabras, estilo karaoke) con su ventana de frames, armado por
+ * lib/video-editor/captions.ts a partir de la transcripción de Whisper. */
 export type ReelCaption = {
   text: string;
   startFrame: number;
   endFrame: number;
+  /** Tamaño relativo (0.9x–1.4x) según el volumen medio del audio en ese tramo — la aproximación de
+   * "énfasis" pedida: las partes dichas más fuerte salen más grandes. 1 si no se pudo calcular. */
+  size?: number;
 };
 
 /** `type`, no `interface`: Remotion's <Composition> necesita que Props satisfaga
@@ -27,10 +31,9 @@ export type ReelCompositionProps = {
    * forma de saber cuándo aparece el producto en pantalla de verdad, así que se usa un default
    * fijo (ver render.ts) en vez de sincronizarlo a ningún momento real del video. */
   overlayDurationInSeconds: number;
-  /** TODO(whisper): fase 2 — subtítulos animados a partir de una transcripción real (OpenAI
-   * Whisper, pendiente de que Nacho resuelva el billing). Hoy siempre [] — este campo es el punto
-   * de extensión: cuando haya transcripción, se le pasan los tramos acá y listo, sin tocar el resto
-   * de la composición. */
+  /** Subtítulos animados a partir de la transcripción de Whisper (ver lib/video-editor/captions.ts).
+   * [] si no hay `OPENAI_API_KEY` o si Whisper falló para este clip — el render sigue sin subtítulos
+   * en vez de romperse. */
   captions?: ReelCaption[];
 };
 
@@ -66,6 +69,10 @@ export function ReelComposition({
   const boxOpacity = interpolate(frame, [0, 6], [0, 1], { extrapolateRight: "clamp" });
 
   const activeCaption = captions.find((c) => frame >= c.startFrame && frame < c.endFrame);
+  const captionPop = activeCaption
+    ? spring({ frame: frame - activeCaption.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 })
+    : 0;
+  const captionScale = (activeCaption?.size ?? 1) * interpolate(captionPop, [0, 1], [0.8, 1]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -139,9 +146,9 @@ export function ReelComposition({
         </AbsoluteFill>
       )}
 
-      {/* TODO(whisper): fase 2 — render del caption activo (bold, blanco, animado) acá abajo.
-          `activeCaption` ya está calculado arriba; hoy siempre es undefined porque `captions` llega
-          vacío desde render.ts (sin transcripción no hay texto que mostrar). */}
+      {/* Subtítulo activo: 1-2 palabras grandes (estilo karaoke), con un "pop" de entrada y un
+          tamaño que varía según el volumen de esas palabras en el audio original (ver captionScale
+          arriba y lib/video-editor/captions.ts) — el "énfasis dinámico" pedido. */}
       {activeCaption && (
         <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 220 }}>
           <div
@@ -153,9 +160,10 @@ export function ReelComposition({
               textAlign: "center",
               textShadow: "0 2px 14px rgba(0,0,0,0.9)",
               maxWidth: "85%",
+              transform: `scale(${captionScale})`,
             }}
           >
-            {activeCaption.text}
+            {activeCaption.text.toUpperCase()}
           </div>
         </AbsoluteFill>
       )}

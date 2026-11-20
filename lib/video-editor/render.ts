@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { bundle } from "@remotion/bundler";
 import { getVideoMetadata, renderMedia, selectComposition } from "@remotion/renderer";
-import { REEL_COMPOSITION_ID } from "@/remotion/Root";
+import { REEL_COMPOSITION_ID, REEL_FPS } from "@/remotion/Root";
 import type { ReelCompositionProps } from "@/remotion/ReelComposition";
+import { transcribeToCaptions } from "@/lib/video-editor/captions";
 
 const ENTRY_POINT = path.join(process.cwd(), "remotion", "index.ts");
 
@@ -85,6 +86,13 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   // corrupto): mejor un default conservador que tirar y perder todo el render.
   const videoDurationInSeconds = metadata.durationInSeconds ?? 15;
 
+  // Si Whisper falla (sin crédito, red caída, lo que sea) no tiene que perderse el render entero —
+  // sigue sin subtítulos, igual que cuando no hay OPENAI_API_KEY configurada.
+  const captions = await transcribeToCaptions(input.videoPath, REEL_FPS).catch((err) => {
+    console.error(`[video-editor] Whisper falló, sigo sin subtítulos: ${err instanceof Error ? err.message : err}`);
+    return [];
+  });
+
   const serveUrl = await getServeUrl();
   const inputProps: ReelCompositionProps = {
     // Nombre de archivo nomás (ej. "video-editor-abc123-clip.mp4"), NO el resultado de staticFile():
@@ -96,7 +104,7 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     overlayImageUrl: input.overlayImageUrl,
     overlayLabel: input.overlayLabel,
     overlayDurationInSeconds: Math.min(input.overlayDurationInSeconds ?? DEFAULT_OVERLAY_SECONDS, videoDurationInSeconds),
-    captions: [], // TODO(whisper): fase 2
+    captions,
   };
   const serializableProps = inputProps as unknown as Record<string, unknown>;
 

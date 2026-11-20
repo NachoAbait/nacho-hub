@@ -12,7 +12,7 @@ const DEFAULT_PROPS: ReelCompositionProps = {
   overlayImageUrl: null,
   overlayLabel: null,
   overlayDurationInSeconds: 6,
-  captions: [], // TODO(whisper): fase 2
+  captions: [],
 };
 
 /**

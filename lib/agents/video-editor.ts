@@ -18,9 +18,9 @@ interface ProcessedClip {
 /**
  * Video Editor: mira la carpeta de Drive "VIDEOS BNB STORE", y por cada clip nuevo (no visto en
  * video_clips todavía) lo descarga, le matchea un producto por el nombre del archivo y lo renderiza
- * con el overlay "spotlight" (ver remotion/ReelComposition.tsx). Sin transcripción todavía (fase 2,
- * falta billing de OpenAI) y sin detectar el momento real en que el producto aparece en pantalla
- * (fase 2 también) — la caja se muestra desde el arranque, ver render.ts.
+ * con el overlay "spotlight" (ver remotion/ReelComposition.tsx) + subtítulos animados vía Whisper
+ * (ver lib/video-editor/captions.ts, requiere OPENAI_API_KEY). Sigue sin detectar el momento real en
+ * que el producto aparece en pantalla — la caja se muestra desde el arranque, ver render.ts.
  *
  * Nunca tira: cada clip que falla queda con status 'error' y su propio mensaje, el resto sigue.
  */
