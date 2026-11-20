@@ -1,10 +1,18 @@
-import { AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { loadFont as loadCaptionFont } from "@remotion/google-fonts/Anton";
+import { AbsoluteFill, Audio, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { loadFont as loadCaptionFont } from "@remotion/google-fonts/ArchivoBlack";
 
-// Tipografía "pro" para subtítulos (condensada, ya viene en negrita por diseño — el look típico de
-// CapCut/Opus/Submagic) en vez de la Arial del sistema. loadFont() se llama una sola vez al cargar
-// el módulo; Remotion espera esta promesa sola antes de renderizar el primer frame.
+// Tipografía "pro" para subtítulos — ArchivoBlack (negrita ancha, sin serifa) en vez de la Arial del
+// sistema. Se probó primero con Anton (condensada) pero Nacho mandó una captura de la competencia
+// (@lmimport.dolores) con un look más parecido a este: ancho normal, bien grueso, blanco con
+// contorno — no condensado. loadFont() se llama una sola vez al cargar el módulo; Remotion espera
+// esta promesa sola antes de renderizar el primer frame.
 const { fontFamily: CAPTION_FONT } = loadCaptionFont("normal", { weights: ["400"], subsets: ["latin"] });
+
+/** Contorno negro sólido (no un blur) + una sombra suave debajo — el look "impact text" de los
+ * subtítulos de la competencia, legible sobre cualquier fondo sin necesitar una placa detrás. */
+const CAPTION_OUTLINE =
+  "-3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000, " +
+  "-3px 0 0 #000, 3px 0 0 #000, 0 -3px 0 #000, 0 3px 0 #000, 0 6px 10px rgba(0,0,0,0.55)";
 
 /** Un tramo de subtítulo (1-2 palabras, estilo karaoke) con su ventana de frames, armado por
  * lib/video-editor/captions.ts a partir de la transcripción de Whisper. */
@@ -227,25 +235,24 @@ export function ReelComposition({
       )}
 
       {/* Subtítulo activo: una palabra por vez (estilo karaoke real, no de a 2 — de a 2 cortaba
-          frases en pedazos sin sentido, ej. "16 EL"), con tipografía Anton (condensada, bien
-          "pro", no la Arial del sistema), arriba y casi centrado — no pegado abajo, para no competir
-          con la caja de producto (que igual nunca comparten pantalla, ver activeCaption arriba). Un
-          "pop" de entrada y un tamaño que varía según el volumen de esa palabra en el audio original
-          (ver captionScale arriba y lib/video-editor/captions.ts) — el "énfasis dinámico" pedido. */}
+          frases en pedazos sin sentido, ej. "16 EL"). Sin placa de fondo, blanco con contorno negro
+          sólido (ver CAPTION_OUTLINE) — el look de la referencia que mandó Nacho, no la placa oscura
+          semitransparente de antes. Reposicionado a la mitad del cuadro (ni pegado arriba de la
+          cabeza ni abajo del todo) y nunca al mismo tiempo que la caja de producto (ver
+          activeCaption arriba). Un "pop" de entrada y un tamaño que varía según el volumen de esa
+          palabra en el audio original (ver captionScale arriba y lib/video-editor/captions.ts) — el
+          "énfasis dinámico" pedido. */}
       {activeCaption && (
-        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 300 }}>
+        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 900 }}>
           <div
             style={{
               fontFamily: CAPTION_FONT,
               letterSpacing: "0.01em",
-              fontSize: 64,
+              fontSize: 68,
               color: activeMood === "neutral" ? "white" : light,
               textAlign: "center",
-              textShadow: "0 2px 4px rgba(0,0,0,0.95), 0 0 24px rgba(0,0,0,0.6)",
+              textShadow: CAPTION_OUTLINE,
               maxWidth: "85%",
-              padding: "8px 32px",
-              borderRadius: 16,
-              background: "rgba(0,0,0,0.4)",
               transform: `scale(${captionScale})`,
             }}
           >
@@ -253,6 +260,17 @@ export function ReelComposition({
           </div>
         </AbsoluteFill>
       )}
+
+      {/* Un "pop" sonoro por cada palabra (pedido explícito: "que haga un mínimo efecto de sonido
+          al aparecer cada palabra") — se dispara UNA vez por palabra, en el frame exacto en que
+          arranca, por eso va envuelta en su propio <Sequence> (no atada a `activeCaption`, que solo
+          existe cuando no hay caja de producto: el sonido tiene que sonar siempre que la palabra se
+          diga, muestre caption o no en pantalla en ese instante). */}
+      {captions.map((c, i) => (
+        <Sequence key={i} from={c.startFrame} durationInFrames={Math.max(1, c.endFrame - c.startFrame)} layout="none">
+          <Audio src={staticFile("caption-pop.mp3")} volume={0.35} />
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 }

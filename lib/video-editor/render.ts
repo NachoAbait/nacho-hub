@@ -25,6 +25,15 @@ const ENTRY_POINT = path.join(process.cwd(), "remotion", "index.ts");
 export const VIDEO_EDITOR_TMP_DIR = path.join(os.tmpdir(), "nacho-hub-video-editor");
 fsSync.mkdirSync(VIDEO_EDITOR_TMP_DIR, { recursive: true });
 
+/** El sonido de "pop" de cada palabra del subtítulo (ver ReelComposition.tsx) vive en el repo, no en
+ * VIDEO_EDITOR_TMP_DIR (que es un directorio temporal del sistema, se vacía solo) — se copia acá UNA
+ * vez por proceso para que `staticFile()` lo encuentre, igual que downloadClipToTmp hace con cada
+ * clip descargado. */
+fsSync.copyFileSync(
+  path.join(process.cwd(), "remotion", "assets", "caption-pop.mp3"),
+  path.join(VIDEO_EDITOR_TMP_DIR, "caption-pop.mp3"),
+);
+
 /**
  * BLOQUEO CONOCIDO (ver informe de la tarea): Remotion necesita un Chromium completo (no el
  * headless-shell recortado de @sparticuz/chromium que ya usa Playwright para los banners de Nico) y
