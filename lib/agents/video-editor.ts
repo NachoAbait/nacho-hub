@@ -7,6 +7,7 @@ import { getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match
 import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
+import { enhanceClip } from "@/lib/video-editor/enhance";
 
 /** Tope por corrida: el cron pasa cada pocos minutos, no hace falta (ni conviene, por tiempo de
  * función) tragarse toda la carpeta de una. Lo que quede pendiente lo agarra la corrida siguiente. */
@@ -126,11 +127,22 @@ export const videoEditor: AgentModule = {
       if (!row) continue;
 
       let tmpPath: string | null = null;
+      let enhancedPath: string | null = null;
       try {
         const overlay = await matchOverlay(ctx.db, file.name);
         if (overlay) await ctx.db.from("video_clips").update({ product_hint: overlay.hint }).eq("id", row.id);
 
         tmpPath = await downloadClipToTmp(file.id, file.name);
+        let renderPath = tmpPath;
+
+        // Auto-mejora tipo "Enhance" de CapCut (contraste/brillo/saturación + nitidez) antes de
+        // transcribir o renderizar — si falla, se sigue con el clip original sin mejorar.
+        try {
+          enhancedPath = await enhanceClip(tmpPath);
+          renderPath = enhancedPath;
+        } catch (err) {
+          ctx.log(`${file.name}: mejora de imagen falló, sigo con el clip original — ${err instanceof Error ? err.message : err}`);
+        }
 
         if (!canRenderHere()) {
           await ctx.db
@@ -144,7 +156,7 @@ export const videoEditor: AgentModule = {
 
         let timeline = EMPTY_TIMELINE;
         try {
-          timeline = await buildContentTimeline(ctx, tmpPath);
+          timeline = await buildContentTimeline(ctx, renderPath);
         } catch (err) {
           ctx.log(`${file.name}: análisis de voz/contenido falló, sigo con el fallback por nombre de archivo — ${err instanceof Error ? err.message : err}`);
         }
@@ -154,7 +166,7 @@ export const videoEditor: AgentModule = {
         }
 
         const rendered = await renderReel({
-          videoPath: tmpPath,
+          videoPath: renderPath,
           overlayImageUrl: overlay?.imageUrl ?? null,
           overlayLabel: overlay?.label ?? null,
           overlaySegments: timeline.overlaySegments,
@@ -180,6 +192,7 @@ export const videoEditor: AgentModule = {
         ctx.log(`ERROR en ${file.name}: ${message}`);
       } finally {
         if (tmpPath) await fs.unlink(tmpPath).catch(() => {});
+        if (enhancedPath) await fs.unlink(enhancedPath).catch(() => {});
       }
     }
 

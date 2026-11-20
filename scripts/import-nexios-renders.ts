@@ -27,6 +27,7 @@ interface Entry {
 const ENTRIES: Entry[] = [
   { category: "samsung", model: "Galaxy S25 FE", file: "galaxy-s25-fe__navy.webp" },
   { category: "samsung", model: "Galaxy S25 Ultra", file: "galaxy-s25-ultra__titaniumsilverblue.webp" },
+  { category: "samsung", model: "Galaxy S26 FE", file: "galaxy-s26-fe__graphite.webp" },
   { category: "samsung", model: "Galaxy S26", file: "galaxy-s26__skyblue.webp" },
   { category: "samsung", model: "Galaxy S26 Ultra", file: "galaxy-s26-ultra__pinkgold.webp" },
   { category: "watch", model: "Apple Watch SE 3", file: "apple-watch-se-3__default.webp" },

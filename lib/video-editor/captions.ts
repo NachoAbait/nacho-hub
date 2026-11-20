@@ -5,9 +5,10 @@ import path from "node:path";
 import type { ReelCaption } from "@/remotion/ReelComposition";
 
 const WHISPER_MODEL = "whisper-1";
-/** Cuántas palabras entran juntas en pantalla por tramo — estilo "karaoke" de CapCut/Opus (pocas
- * palabras grandes a la vez), no la frase completa como un subtítulo de película. */
-const WORDS_PER_CHUNK = 2;
+/** Una palabra por tramo — probado en vivo con 2: cortaba la frase en pedazos sin sentido ("16 EL"
+ * cuando la frase real era "...el iPhone 16, el 17 Pro..."). Una por vez es el estilo karaoke real
+ * (CapCut/Opus/Submagic lo hacen así), y nunca se parte una palabra a la mitad. */
+const WORDS_PER_CHUNK = 1;
 
 export interface WhisperWord {
   word: string;

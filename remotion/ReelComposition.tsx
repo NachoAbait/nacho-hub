@@ -83,8 +83,9 @@ export function ReelComposition({
   const { fps, durationInFrames } = useVideoConfig();
 
   // Zoom lento tipo "Ken Burns" sobre todo el clip de fondo — sin esto la cámara se siente estática
-  // durante 15-30 segundos seguidos.
-  const videoScale = interpolate(frame, [0, durationInFrames], [1, 1.08], { extrapolateRight: "clamp" });
+  // durante 15-30 segundos seguidos. 1.22 (no 1.08): a ese nivel se nota de verdad, antes era casi
+  // imperceptible en un clip corto.
+  const videoScale = interpolate(frame, [0, durationInFrames], [1, 1.22], { extrapolateRight: "clamp" });
 
   const activeOverlay = overlaySegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
   const activeMood = moodSegments.find((s) => frame >= s.startFrame && frame < s.endFrame)?.mood ?? "neutral";
@@ -119,25 +120,30 @@ export function ReelComposition({
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          filter: "blur(2px) brightness(0.55) saturate(0.9)",
+          // Menos oscuro que antes (brightness 0.55 → 0.78, el degradé de abajo 0.7 → 0.4 de opacidad
+          // máxima): se había puesto demasiado opaco, apenas se distinguía al presentador.
+          filter: "blur(2px) brightness(0.78) saturate(0.95)",
           transform: `scale(${videoScale})`,
         }}
       />
       <AbsoluteFill
-        style={{ background: "radial-gradient(ellipse 90% 70% at 50% 30%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.7) 100%)" }}
+        style={{ background: "radial-gradient(ellipse 90% 70% at 50% 30%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.4) 100%)" }}
       />
 
+      {/* Caja de producto: antes arriba y chica (300px), ahora grande (440px) y centrada en la
+          mitad inferior — deja a los subtítulos su propio espacio pegado al borde de abajo, sin
+          pisarse. */}
       {activeOverlay && (
-        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 170 }}>
+        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 340 }}>
           <div style={{ perspective: 1000, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div
               style={{
-                width: 300,
-                height: 300,
-                borderRadius: 28,
+                width: 440,
+                height: 440,
+                borderRadius: 36,
                 background: "linear-gradient(160deg, #1a1308 0%, #000 70%)",
-                border: `3px solid ${accent}`,
-                boxShadow: `0 0 18px 6px ${accent}99, 0 0 46px 14px ${accent}55, inset 0 0 20px ${accent}33`,
+                border: `4px solid ${accent}`,
+                boxShadow: `0 0 22px 8px ${accent}99, 0 0 56px 18px ${accent}55, inset 0 0 26px ${accent}33`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -171,10 +177,10 @@ export function ReelComposition({
             {/* Reflejo tenue debajo, como piso de vidrio — refuerza la sensación de objeto 3D flotando. */}
             <div
               style={{
-                marginTop: 2,
-                width: 300,
-                height: 50,
-                borderRadius: 28,
+                marginTop: 3,
+                width: 440,
+                height: 70,
+                borderRadius: 36,
                 background: `linear-gradient(180deg, ${accent}26 0%, transparent 100%)`,
                 transform: `scaleY(-1) rotateY(${rotateY}deg) scale(${scale})`,
                 opacity: boxOpacity * 0.35,
@@ -185,10 +191,10 @@ export function ReelComposition({
             {activeOverlay.label && (
               <div
                 style={{
-                  marginTop: 18,
+                  marginTop: 22,
                   fontFamily: "Arial, Helvetica, sans-serif",
                   fontWeight: 900,
-                  fontSize: 32,
+                  fontSize: 40,
                   color: "white",
                   textAlign: "center",
                   textShadow: "0 2px 12px rgba(0,0,0,0.85)",
@@ -202,21 +208,25 @@ export function ReelComposition({
         </AbsoluteFill>
       )}
 
-      {/* Subtítulo activo: 1-2 palabras grandes (estilo karaoke), con un "pop" de entrada y un
-          tamaño que varía según el volumen de esas palabras en el audio original (ver captionScale
-          arriba y lib/video-editor/captions.ts) — el "énfasis dinámico" pedido. Toma el mismo color
-          de ánimo que la caja para que todo el reel reaccione junto a lo que se está diciendo. */}
+      {/* Subtítulo activo: una palabra por vez (estilo karaoke real, no de a 2 — de a 2 cortaba
+          frases en pedazos sin sentido, ej. "16 EL"), con un "pop" de entrada, una placa oscura
+          detrás para que se lea bien sobre cualquier fondo, y un tamaño que varía según el volumen
+          de esa palabra en el audio original (ver captionScale arriba y lib/video-editor/captions.ts)
+          — el "énfasis dinámico" pedido. Toma el mismo color de ánimo que la caja. */}
       {activeCaption && (
-        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 220 }}>
+        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 100 }}>
           <div
             style={{
               fontFamily: "Arial, Helvetica, sans-serif",
               fontWeight: 900,
-              fontSize: 44,
+              fontSize: 56,
               color: activeMood === "neutral" ? "white" : light,
               textAlign: "center",
-              textShadow: "0 2px 14px rgba(0,0,0,0.9)",
+              textShadow: "0 2px 4px rgba(0,0,0,0.95), 0 0 24px rgba(0,0,0,0.6)",
               maxWidth: "85%",
+              padding: "10px 28px",
+              borderRadius: 16,
+              background: "rgba(0,0,0,0.45)",
               transform: `scale(${captionScale})`,
             }}
           >
