@@ -60,6 +60,10 @@ con el precio en "u$s", "USD", "$" o sin símbolo, con separadores de miles con 
 10. Si el mismo modelo, chip, celular, pulgadas y capacidad aparece dos veces con precios distintos, quedate con el
     más bajo y anotalo en note.
 11. Condición: si dice "usado", "open box", "reacondicionado", "seminuevo", condition "used"; si no, "new".
+11b. Los usados que aparecen en una lista (típico: "sin caja", "batería cambiada", "100% batería", "refurb") se
+    devuelven igual como ítems con condition "used" y su precio: son una referencia aparte, nunca los mezcles ni los
+    descartes por parecerse a un equipo nuevo del mismo modelo. Si el mismo modelo viene nuevo Y usado, son dos
+    ítems distintos (la regla 10 de "quedate con el más bajo" aplica solo entre ítems de la misma condición).
 12. Color: si lo nombra, ponelo en color; no afecta el precio salvo que la lista diga lo contrario.
 13. No inventes nada (salvo la excepción del iPad A16 de la regla 6). Si una línea no se entiende, va a skipped con el texto original.
 14. confidence entre 0 y 1: 1 si modelo, capacidad y precio son inequívocos; 0.6 si tuviste que inferir el modelo

@@ -1,5 +1,6 @@
 "use server";
 
+import { computeUsedReference, type UsedReferenceData } from "@/lib/used-quotes";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -164,6 +165,13 @@ export type { PriceHistoryResult } from "@/lib/price-history";
 /** El gráfico de Delfina: todo el historial de cotizaciones, siempre en vivo. */
 export async function loadPriceHistory(): Promise<PriceHistoryResult> {
   return computePriceHistory(supabaseAdmin());
+}
+
+export type { UsedReferenceData, UsedReferenceRow } from "@/lib/used-quotes";
+
+/** Lista de referencia de usados para cotizar canjes (fase 1, uso interno): mínimo mayorista y precio de compra sugerido. */
+export async function loadUsedReference(): Promise<UsedReferenceData> {
+  return computeUsedReference(supabaseAdmin(), todayArt());
 }
 
 export type { MarketReport } from "@/lib/market-report";

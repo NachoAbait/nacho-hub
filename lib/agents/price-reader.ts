@@ -199,7 +199,25 @@ export const priceReader: AgentModule = {
         const discount = Number(supplier?.rules?.unit_discount_usd ?? 0) || 0;
 
         const rows: Record<string, unknown>[] = [];
+        const usedRows: Record<string, unknown>[] = [];
         for (const item of parsed.items) {
+          // Usados: van a su propia tabla (referencia para canjes). No tocan price_quotes, así que el
+          // flujo de precios nuevos (Martín, Bruno, Delfina) sigue exactamente igual.
+          if (item.condition === "used" && item.category !== "other" && item.currency === "USD" && item.confidence >= 0.6) {
+            usedRows.push({
+              message_id: msg.id,
+              supplier_id: msg.supplier_id,
+              category: item.category,
+              model: item.model,
+              capacity: item.capacity,
+              price_usd: Math.round(item.price),
+              confidence: item.confidence,
+              raw_line: item.raw_line,
+              note: item.note,
+              quote_date: today,
+            });
+            continue;
+          }
           if (item.category === "other" || item.currency !== "USD" || item.condition !== "new" || item.confidence < 0.6) continue;
           const listed = Math.round(item.price);
           const cost = Math.max(0, listed - discount);
@@ -231,6 +249,11 @@ export const priceReader: AgentModule = {
             ctx.log(`no pude guardar ${rows.length} cotizaciones de ${supplierLabel}: ${error.message}`);
             inserted = 0;
           }
+        }
+        // Un error acá (p. ej. la tabla todavía no migrada) nunca debe frenar el guardado de los precios nuevos.
+        if (usedRows.length) {
+          const { error: usedErr } = await ctx.db.from("used_quotes").insert(usedRows);
+          if (usedErr) ctx.log(`no pude guardar ${usedRows.length} cotizaciones de usados de ${supplierLabel}: ${usedErr.message}`);
         }
         return { supplierLabel, items: parsed.items.length, skipped: parsed.skipped.length, quotes: inserted };
       }),

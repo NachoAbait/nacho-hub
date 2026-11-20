@@ -1,0 +1,105 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/** Lo que Nacho resta del mínimo mayorista de usado: lo que le sale cambiar la batería (regla suya, 20-11-2026). */
+export const USED_BATTERY_DISCOUNT_USD = 50;
+/** Una cotización más vieja que esto no cuenta como "precio de hoy": se muestra marcada como vieja. */
+export const USED_STALE_AFTER_DAYS = 7;
+/** Ventana máxima que miramos hacia atrás (más viejo que esto = "sin dato"). */
+const LOOKBACK_DAYS = 30;
+
+/** Los únicos 15 modelos que Nacho compra de usado (nada anterior al iPhone 13). Orden de pantalla. */
+export const USED_TARGET_MODELS: string[] = [13, 14, 15, 16, 17].flatMap((n) => [`iPhone ${n}`, `iPhone ${n} Pro`, `iPhone ${n} Pro Max`]);
+
+/**
+ * Normaliza lo que escribió el parser ("iPhone 15 pro max", "IPHONE 15PM"…) a uno de los 15 modelos
+ * objetivo, o null si no es uno (Plus, mini, e, Air, anteriores al 13, otras categorías).
+ */
+export function matchUsedModel(model: string): string | null {
+  const m = model.toLowerCase().replace(/\s+/g, " ").trim().match(/^iphone ?(\d{2})\s*(pro max|promax|pro|pm)?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (n < 13 || n > 17) return null;
+  const v = m[2];
+  const name = !v ? `iPhone ${n}` : v === "pro" ? `iPhone ${n} Pro` : `iPhone ${n} Pro Max`;
+  return USED_TARGET_MODELS.includes(name) ? name : null;
+}
+
+export interface UsedReferenceRow {
+  model: string;
+  /** Precio mayorista de usado más barato visto (null = sin dato). */
+  minUsd: number | null;
+  capacity: string | null;
+  supplier: string | null;
+  date: string | null;
+  stale: boolean;
+  /** Mínimo − 50. Nunca negativo. */
+  suggestedUsd: number | null;
+}
+
+export interface UsedReferenceData {
+  rows: UsedReferenceRow[];
+  discountUsd: number;
+  staleAfterDays: number;
+}
+
+interface UsedQuoteDbRow {
+  supplier_id: string | null;
+  category: string;
+  model: string;
+  capacity: string | null;
+  price_usd: number | string;
+  quote_date: string;
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(b) - Date.parse(a)) / 86400_000);
+}
+
+/** Función pura (testeable): de las filas crudas a la tabla de 15 modelos. */
+export function buildUsedReference(
+  quotes: UsedQuoteDbRow[],
+  supplierNames: Map<string, string>,
+  today: string,
+): UsedReferenceData {
+  // Por modelo y proveedor, solo vale su cotización MÁS RECIENTE (si un proveedor subió el precio, el
+  // viejo ya no existe); dentro de ese día, la más barata. Después, el mínimo entre proveedores.
+  const latest = new Map<string, { model: string; supplier: string; price: number; date: string; capacity: string | null }>();
+  for (const q of quotes) {
+    if (q.category !== "iphone") continue;
+    const model = matchUsedModel(q.model);
+    const price = Number(q.price_usd);
+    if (!model || !(price > 0)) continue;
+    const key = `${model}|${q.supplier_id ?? "?"}`;
+    const cur = latest.get(key);
+    if (!cur || q.quote_date > cur.date || (q.quote_date === cur.date && price < cur.price)) {
+      latest.set(key, { model, supplier: q.supplier_id ? supplierNames.get(q.supplier_id) ?? "proveedor" : "proveedor sin identificar", price, date: q.quote_date, capacity: q.capacity });
+    }
+  }
+
+  const rows = USED_TARGET_MODELS.map((model): UsedReferenceRow => {
+    const cands = [...latest.values()].filter((c) => c.model === model);
+    if (!cands.length) return { model, minUsd: null, capacity: null, supplier: null, date: null, stale: false, suggestedUsd: null };
+    const best = cands.reduce((a, b) => (b.price < a.price || (b.price === a.price && b.date > a.date) ? b : a));
+    return {
+      model,
+      minUsd: best.price,
+      capacity: best.capacity,
+      supplier: best.supplier,
+      date: best.date,
+      stale: daysBetween(best.date, today) > USED_STALE_AFTER_DAYS,
+      suggestedUsd: Math.max(0, best.price - USED_BATTERY_DISCOUNT_USD),
+    };
+  });
+  return { rows, discountUsd: USED_BATTERY_DISCOUNT_USD, staleAfterDays: USED_STALE_AFTER_DAYS };
+}
+
+export async function computeUsedReference(db: SupabaseClient, today: string): Promise<UsedReferenceData> {
+  const since = new Date(Date.parse(today) - LOOKBACK_DAYS * 86400_000).toISOString().slice(0, 10);
+  const [{ data: quotes, error }, { data: sups }] = await Promise.all([
+    db.from("used_quotes").select("supplier_id, category, model, capacity, price_usd, quote_date").gte("quote_date", since).eq("category", "iphone").limit(5000).returns<UsedQuoteDbRow[]>(),
+    db.from("suppliers").select("id, name, phone").returns<{ id: string; name: string | null; phone: string }[]>(),
+  ]);
+  if (error) throw new Error(`used_quotes: ${error.message}`);
+  const names = new Map((sups ?? []).map((s) => [s.id, s.name ?? s.phone]));
+  return buildUsedReference(quotes ?? [], names, today);
+}

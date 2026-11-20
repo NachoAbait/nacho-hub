@@ -17,6 +17,7 @@ import {
   type PriceReaderPanelData,
 } from "@/app/actions";
 import { PanelSkeleton } from "@/components/office/skeleton";
+import { UsedReferencePanel } from "@/components/office/used-reference-panel";
 import type { PendingSender, SupplierToday } from "@/lib/suppliers";
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
@@ -439,6 +440,7 @@ export function PriceReaderPanel() {
       <SupplierTodayBox data={data} readingSupplierId={readingSupplierId} />
       <SuppliersBox data={data} onDone={reload} />
       <PasteBox data={data} onDone={reload} onReading={setReadingSupplierId} />
+      <UsedReferencePanel />
       <ModelHintsBox hints={data.modelHints} onDone={reload} />
       {/* Las recomendaciones de Martín (lo que espera tu aprobación) viven en su propio panel: Lucas
           solo lee, no decide nada sobre precios. */}
