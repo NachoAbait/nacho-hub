@@ -1,12 +1,13 @@
 import { AbsoluteFill, Audio, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { loadFont as loadCaptionFont } from "@remotion/google-fonts/ArchivoBlack";
+import { loadFont as loadKeywordFont } from "@remotion/google-fonts/Anton";
 
-// Tipografía "pro" para subtítulos — ArchivoBlack (negrita ancha, sin serifa) en vez de la Arial del
-// sistema. Se probó primero con Anton (condensada) pero Nacho mandó una captura de la competencia
-// (@lmimport.dolores) con un look más parecido a este: ancho normal, bien grueso, blanco con
-// contorno — no condensado. loadFont() se llama una sola vez al cargar el módulo; Remotion espera
-// esta promesa sola antes de renderizar el primer frame.
+// Dos tipografías, no una — pedido explícito: "que cambie tipografía en el medio de las oraciones,
+// no que sea todo texto plano". ArchivoBlack (ancha) para palabras normales, Anton (condensada) para
+// las que lib/video-editor/caption-style.ts marca como "keyword" o "critical" — el cambio de forma
+// de la letra es parte del énfasis, no solo el tamaño o el color.
 const { fontFamily: CAPTION_FONT } = loadCaptionFont("normal", { weights: ["400"], subsets: ["latin"] });
+const { fontFamily: KEYWORD_FONT } = loadKeywordFont("normal", { weights: ["400"], subsets: ["latin"] });
 
 /** Contorno negro sólido (no un blur) + una sombra suave debajo — el look "impact text" de los
  * subtítulos de la competencia, legible sobre cualquier fondo sin necesitar una placa detrás. */
@@ -20,9 +21,19 @@ export type ReelCaption = {
   text: string;
   startFrame: number;
   endFrame: number;
-  /** Tamaño relativo (0.9x–1.4x) según el volumen medio del audio en ese tramo — la aproximación de
-   * "énfasis" pedida: las partes dichas más fuerte salen más grandes. 1 si no se pudo calcular. */
+  /** Tamaño relativo (0.9x–1.4x) según el volumen medio del audio en ese tramo — variación chica,
+   * "orgánica" (se combina con `level`, que es el salto grande de énfasis). 1 si no se pudo calcular. */
   size?: number;
+  /** Qué tan importante es ESTA palabra para lo que se está diciendo (clasificado por Claude en
+   * lib/video-editor/caption-style.ts, análisis semántico — no volumen): "normal" (texto base),
+   * "keyword" (un dato concreto: modelo, número, precio — tipografía distinta), "critical" (la
+   * palabra que carga el peso emocional de la frase — la más grande, coloreada según `wordSentiment`).
+   * "normal" si no se pudo clasificar (Claude caído, etc.) — el subtítulo sigue viéndose bien, solo
+   * sin la variación semántica. */
+  level?: "normal" | "keyword" | "critical";
+  /** Tono de ESTA palabra puntual (no de toda la frase, eso es `MoodSegment`) — solo cambia el color
+   * cuando `level` es "critical". */
+  wordSentiment?: "positive" | "negative" | "neutral";
 };
 
 /** Qué producto mostrar en la caja flotante durante esta ventana de frames — arma la lista
@@ -80,6 +91,15 @@ const MOOD_COLORS: Record<"neutral" | "positive" | "negative", { accent: string;
   negative: { accent: RED, light: RED_LIGHT },
 };
 
+/** Cómo se ve cada palabra según `ReelCaption.level` (clasificación semántica de Claude, ver
+ * lib/video-editor/caption-style.ts) — tamaño Y tipografía cambian juntos, no solo el color, para que
+ * el énfasis se note de verdad en medio de la oración. */
+const LEVEL_STYLE: Record<"normal" | "keyword" | "critical", { scale: number; font: string }> = {
+  normal: { scale: 1, font: CAPTION_FONT },
+  keyword: { scale: 1.22, font: KEYWORD_FONT },
+  critical: { scale: 1.48, font: KEYWORD_FONT },
+};
+
 /**
  * Estilo "spotlight de producto" copiado de la competencia que Nacho mostró: fondo con el
  * presentador difuminado y oscurecido, una caja redondeada con borde que brilla (dorado neutro,
@@ -127,7 +147,22 @@ export function ReelComposition({
   const captionPop = activeCaption
     ? spring({ frame: frame - activeCaption.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 })
     : 0;
-  const captionScale = (activeCaption?.size ?? 1) * interpolate(captionPop, [0, 1], [0.8, 1]);
+  const captionLevel = LEVEL_STYLE[activeCaption?.level ?? "normal"];
+  // El tamaño final combina tres cosas: el salto grande por nivel semántico (normal/keyword/critical
+  // — lo que pidió Nacho), la variación chica por volumen de audio (0.9x-1.4x, "orgánica") y el pop
+  // de entrada — así ninguna palabra se ve clavada en el mismo tamaño que la anterior.
+  const captionScale = captionLevel.scale * (activeCaption?.size ?? 1) * interpolate(captionPop, [0, 1], [0.8, 1]);
+  // "critical" se colorea según el sentimiento de ESA palabra puntual (más preciso que el tono de
+  // toda la frase); "keyword" siempre dorado (marca "esto es un dato", no depende del ánimo);
+  // "normal" sigue el tono de la frase como antes.
+  const captionColor =
+    activeCaption?.level === "critical"
+      ? MOOD_COLORS[activeCaption.wordSentiment ?? "neutral"].light
+      : activeCaption?.level === "keyword"
+        ? GOLD_LIGHT
+        : activeMood === "neutral"
+          ? "white"
+          : light;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -246,10 +281,10 @@ export function ReelComposition({
         <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 900 }}>
           <div
             style={{
-              fontFamily: CAPTION_FONT,
+              fontFamily: captionLevel.font,
               letterSpacing: "0.01em",
               fontSize: 68,
-              color: activeMood === "neutral" ? "white" : light,
+              color: captionColor,
               textAlign: "center",
               textShadow: CAPTION_OUTLINE,
               maxWidth: "85%",

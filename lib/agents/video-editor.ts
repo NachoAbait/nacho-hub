@@ -7,6 +7,7 @@ import { anchorOverlaySegments, getActiveCatalog, matchOverlay } from "@/lib/vid
 import { withExtraModels } from "@/lib/video-editor/model-image-library";
 import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
+import { classifyWordEmphasis } from "@/lib/video-editor/caption-style";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
 import { enhanceClip } from "@/lib/video-editor/enhance";
 
@@ -50,6 +51,22 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
   if (!transcript) return EMPTY_TIMELINE;
 
   const captions = await buildCaptions(videoPath, transcript.words, REEL_FPS);
+
+  // Énfasis semántico por palabra (qué tipografía/tamaño/color usa cada una — ver caption-style.ts)
+  // — pedido explícito: "que interprete la oración... no que sea todo texto plano". `words` y
+  // `captions` están en el mismo orden (buildCaptions arma un ReelCaption por palabra, 1:1), así que
+  // se puede pegar por índice directo. Si Claude falla acá, los subtítulos siguen viéndose bien, solo
+  // sin la variación semántica (todas "normal") — no vale la pena perder el render por esto.
+  try {
+    const emphasis = await classifyWordEmphasis(transcript.words, ctx.usage);
+    captions.forEach((c, i) => {
+      c.level = emphasis[i]?.level ?? "normal";
+      c.wordSentiment = emphasis[i]?.sentiment ?? "neutral";
+    });
+  } catch (err) {
+    ctx.log(`clasificación de énfasis de subtítulos falló, sigo con subtítulos planos — ${err instanceof Error ? err.message : err}`);
+  }
+
   if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, captions };
 
   const catalog = withExtraModels(await getActiveCatalog(ctx.db));
