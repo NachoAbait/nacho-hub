@@ -268,7 +268,7 @@ export function ReelComposition({
           diga, muestre caption o no en pantalla en ese instante). */}
       {captions.map((c, i) => (
         <Sequence key={i} from={c.startFrame} durationInFrames={Math.max(1, c.endFrame - c.startFrame)} layout="none">
-          <Audio src={staticFile("caption-pop.mp3")} volume={0.35} />
+          <Audio src={staticFile("caption-pop.mp3")} volume={1.4} />
         </Sequence>
       ))}
     </AbsoluteFill>
