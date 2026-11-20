@@ -4,6 +4,7 @@ import type { ReelCaption } from "@/remotion/ReelComposition";
 import { REEL_FPS } from "@/remotion/Root";
 import { downloadClipToTmp, driveAvailable, listVideoClips, uploadRenderedClipToDrive } from "@/lib/video-editor/drive";
 import { anchorOverlaySegments, getActiveCatalog, matchOverlay } from "@/lib/video-editor/product-match";
+import { withExtraModels } from "@/lib/video-editor/model-image-library";
 import { buildCaptions, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
@@ -51,7 +52,7 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
   const captions = await buildCaptions(videoPath, transcript.words, REEL_FPS);
   if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, captions };
 
-  const catalog = await getActiveCatalog(ctx.db);
+  const catalog = withExtraModels(await getActiveCatalog(ctx.db));
   if (catalog.length === 0) return { ...EMPTY_TIMELINE, captions };
 
   const analysis = await analyzeContent(
@@ -75,7 +76,12 @@ async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promi
     for (const modelName of a.productModels) {
       const product = catalog.find((c) => c.model === modelName);
       if (product) matched.push({ label: product.model, imageUrl: product.hero_image_url });
-      else missingPhotos.add(modelName);
+    }
+    // `allMentionedModels` es superset de `productModels` — acá quedan justo los que se nombraron
+    // pero no tienen foto en ningún lado (ni catálogo activo ni la biblioteca extra de
+    // model-image-library.ts), que es lo que de verdad hay que avisar.
+    for (const modelName of a.allMentionedModels) {
+      if (!catalog.some((c) => c.model === modelName)) missingPhotos.add(modelName);
     }
     if (matched.length > 0) {
       const segWords = transcript.words.filter((w) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);

@@ -121,8 +121,9 @@ export function anchorOverlaySegments(
 
   return anchored.map((a, i) => {
     const nextStart = i + 1 < anchored.length ? anchored[i + 1].start : segment.end;
-    // Mínimo 0.3s por producto — si dos anclas quedaron pegadas (dos números seguidos sin pausa) la
-    // caja igual tiene que alcanzar a mostrarse un rato, no un parpadeo de un frame.
-    return { startSec: a.start, endSec: Math.max(nextStart, a.start + 0.3), imageUrl: a.model.imageUrl, label: a.model.label };
+    // Mínimo 0.6s por producto (antes 0.3s, muy poco sumado al flip-in de 0.35s — casi no quedaba
+    // tiempo "quieto" mostrando el producto) — si dos anclas quedaron pegadas (dos números seguidos
+    // sin pausa) la caja igual tiene que alcanzar a asentarse y leerse, no un parpadeo.
+    return { startSec: a.start, endSec: Math.max(nextStart, a.start + 0.6), imageUrl: a.model.imageUrl, label: a.model.label };
   });
 }

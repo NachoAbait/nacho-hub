@@ -102,9 +102,12 @@ export function ReelComposition({
 
   // Flip-in relativo al arranque de ESTE segmento (no del video entero): cada vez que cambia de
   // producto, la caja vuelve a hacer el flip desde "de canto" — la "transición" entre productos que
-  // pidió Nacho, en vez de un solo flip al principio del clip y quieto el resto del tiempo.
+  // pidió Nacho. Antes tardaba 0.9s en asentarse: con ventanas cortas (un modelo nombrado y
+  // enseguida el siguiente) la caja nunca llegaba a verse quieta antes de cambiar — se SENTÍA
+  // desincronizada aunque el ancla (anchorOverlaySegments) fuera exacta. 0.35s con menos masa: entra
+  // rápido y se asienta, deja tiempo real mostrando el producto incluso en ventanas de ~1 segundo.
   const localFrame = activeOverlay ? frame - activeOverlay.startFrame : 0;
-  const flipProgress = spring({ frame: localFrame, fps, config: { damping: 14, mass: 0.6 }, durationInFrames: Math.round(fps * 0.9) });
+  const flipProgress = spring({ frame: localFrame, fps, config: { damping: 16, mass: 0.35 }, durationInFrames: Math.round(fps * 0.35) });
   const rotateY = interpolate(flipProgress, [0, 1], [90, 0]);
   const scale = interpolate(flipProgress, [0, 1], [0.7, 1]);
   const boxOpacity = interpolate(localFrame, [0, 6], [0, 1], { extrapolateRight: "clamp" });

@@ -10,6 +10,11 @@ const AnalysisSchema = z.object({
       // recomiendo el 16, el 17 Pro y el 14 Pro") — con un solo campo, Claude tenía que elegir uno
       // y los demás se perdían en silencio. Visto en vivo con un clip real de Nacho.
       product_models: z.array(z.string()),
+      // TODOS los modelos de celular que se nombran en la oración, estén o no en el catálogo (a
+      // diferencia de `product_models`, que solo trae los del catálogo) — es lo único que permite
+      // detectar "mencionó un modelo que no tengo" en vez de que se pierda en silencio porque Claude
+      // nunca lo tuvo como opción para reportar.
+      all_mentioned_models: z.array(z.string()),
       sentiment: z.enum(["positive", "negative", "neutral"]),
     }),
   ),
@@ -18,6 +23,7 @@ const AnalysisSchema = z.object({
 export interface ContentSegmentResult {
   index: number;
   productModels: string[];
+  allMentionedModels: string[];
   sentiment: "positive" | "negative" | "neutral";
 }
 
@@ -43,12 +49,16 @@ export async function analyzeContent(
   const numbered = segments.map((s, i) => `${i}: "${s.text.trim()}"`).join("\n");
   const prompt =
     `Transcripción de un reel de BNB Store (reventa de celulares), oración por oración:\n\n${numbered}\n\n` +
-    `Catálogo de modelos activos (usá EXACTAMENTE estos strings para los modelos que una oración mencione; si menciona uno ` +
-    `que no está en esta lista, ignoralo; si no menciona ninguno, dejá la lista vacía):\n${catalogModels.join(", ")}\n\n` +
-    `Para CADA oración (por su índice, en el mismo orden, sin saltarte ninguna), decime TODOS los modelos del catálogo que ` +
-    `menciona esa oración puntual (puede ser más de uno, ej. "te recomiendo el 16, el 17 Pro y el 14 Pro" menciona tres), ` +
-    `y con qué tono se dice eso — positive/negative/neutral — sobre lo que se está diciendo en esa oración, no una opinión ` +
-    `general sobre el modelo.`;
+    `Catálogo de modelos con foto disponible (usá EXACTAMENTE estos strings en "product_models" para los que una oración ` +
+    `mencione; si menciona un modelo que no está en esta lista, NO lo pongas en "product_models", pero sí anotalo en ` +
+    `"all_mentioned_models" con el nombre completo tal como se entiende del habla, ej. "iPhone 13"):\n${catalogModels.join(", ")}\n\n` +
+    `Para CADA oración (por su índice, en el mismo orden, sin saltarte ninguna):\n` +
+    `1. "product_models": TODOS los modelos DEL CATÁLOGO que menciona esa oración (puede ser más de uno, ej. "te recomiendo ` +
+    `el 16, el 17 Pro y el 14 Pro" menciona tres).\n` +
+    `2. "all_mentioned_models": TODOS los modelos de celular que se nombran en esa oración, estén o no en el catálogo — ` +
+    `siempre un superset de "product_models".\n` +
+    `3. "sentiment": positive/negative/neutral, sobre lo que se está diciendo en esa oración puntual, no una opinión general ` +
+    `sobre el modelo.`;
 
   const result = await askJson({
     agent: "video-editor",
@@ -62,5 +72,10 @@ export async function analyzeContent(
     maxTokens: 2000,
   });
 
-  return result.segments.map((s) => ({ index: s.index, productModels: s.product_models, sentiment: s.sentiment }));
+  return result.segments.map((s) => ({
+    index: s.index,
+    productModels: s.product_models,
+    allMentionedModels: s.all_mentioned_models,
+    sentiment: s.sentiment,
+  }));
 }
