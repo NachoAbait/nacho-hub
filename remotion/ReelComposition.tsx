@@ -105,11 +105,30 @@ export function ReelComposition({
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
+                position: "relative",
                 transform: `rotateY(${rotateY}deg) scale(${scale})`,
                 opacity: boxOpacity,
               }}
             >
-              <Img src={overlayImageUrl!} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
+              {/* Fondo: la misma imagen del producto, agrandada y difuminada hasta llenar la caja
+                  entera — el efecto "spotlight" de la competencia (foto de fondo + versión nítida
+                  encima), en vez del degradé liso que había antes. */}
+              <Img
+                src={overlayImageUrl!}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  filter: "blur(18px) brightness(0.55) saturate(1.3)",
+                  transform: "scale(1.3)",
+                }}
+              />
+              <Img
+                src={overlayImageUrl!}
+                style={{ position: "relative", width: "72%", height: "72%", objectFit: "contain" }}
+              />
             </div>
 
             {/* Reflejo tenue debajo, como piso de vidrio — refuerza la sensación de objeto 3D flotando. */}
