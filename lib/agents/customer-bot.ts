@@ -33,6 +33,26 @@ const CUOTAS: { n: number; coef: number }[] = [
   { n: 12, coef: 1.663 },
 ];
 
+const WEEKDAY_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const WEEKDAY_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** Nacho viaja a buscar sellados por encargo los martes, jueves y viernes. */
+const TRAVEL_WEEKDAYS = new Set([2, 4, 5]);
+
+/** En qué día cae hoy (Buenos Aires) y cuándo es el próximo viaje a buscar sellados por encargo. */
+function travelScheduleNote(): string {
+  const weekdayName = new Intl.DateTimeFormat("en-US", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long" }).format(new Date());
+  const today = WEEKDAY_EN.indexOf(weekdayName);
+  if (today < 0) return "";
+  const todayEs = WEEKDAY_ES[today];
+  if (TRAVEL_WEEKDAYS.has(today)) {
+    return `Hoy es ${todayEs}: es día de viaje a buscar equipos.`;
+  }
+  let next = today;
+  do next = (next + 1) % 7; while (!TRAVEL_WEEKDAYS.has(next));
+  const isTomorrow = next === (today + 1) % 7;
+  return `Hoy es ${todayEs}: no es día de viaje. El próximo viaje a buscar equipos es el ${WEEKDAY_ES[next]}${isTomorrow ? " (mañana)" : ""}.`;
+}
+
 const ReplySchema = z.object({
   reply: z.string(),
   /** true cuando el bot ya resolvió la consulta y corresponde cerrar derivando a un vendedor. */
@@ -81,19 +101,27 @@ async function saveMessage(conversationId: string, role: "customer" | "bot", bod
 async function catalogContext(): Promise<string> {
   if (!nexiosAvailable()) return "(Sin acceso al catálogo de NexiOS ahora mismo: no inventes precios ni stock, decile al cliente que un vendedor le confirma.)";
   const [catalog, stock, fx, preOwned] = await Promise.all([fetchCatalog(), fetchStock(), fetchExchangeRateConfig(), fetchPreOwnedUnits()]);
-  const stockByKey = new Map((stock ?? []).map((s) => [`${s.device_type}|${s.model}|${s.capacity ?? ""}`, s.units]));
+  // OJO: la clave INCLUYE condition — un mismo modelo/capacidad puede tener unidades sealed y pre_owned
+  // a la vez (son stocks distintos), y antes se pisaban (el stock de un usado podía mostrarse como si
+  // fuera el stock del sellado del mismo modelo).
+  const stockByKey = new Map((stock ?? []).map((s) => [`${s.device_type}|${s.model}|${s.capacity ?? ""}|${s.condition ?? ""}`, s.units]));
   const dollar = await effectiveDollar(fx); // Dólar en vivo (fuente + margen) o manual, lo que haya configurado NexiOS.
   const cuotas = (priceUsd: number) => {
     if (!dollar) return "";
     const priceArs = priceUsd * dollar;
     return " | " + CUOTAS.map((c) => `${c.n}c $${Math.round((priceArs * c.coef) / c.n).toLocaleString("es-AR")}`).join(", ");
   };
+  // Para sellados NO se muestra stock acá (ver prompt: eso se reserva para cuando el cliente ya
+  // decidió el modelo puntual). El número real se pasa aparte, marcado como uso interno.
   const sealedLines = (catalog ?? []).map((r) => {
     const name = catalogModelText(r);
-    const key = `${r.device_type}|${r.model}|${r.capacity ?? ""}`;
-    const units = stockByKey.get(key) ?? 0;
     const priceUsd = r.price_usd;
-    return `- ${name}${r.capacity ? " " + r.capacity : ""}: US$${priceUsd ?? "?"}${priceUsd != null ? cuotas(priceUsd) : ""} · stock: ${units > 0 ? units + " unidad(es)" : "sin stock ahora"}`;
+    return `- ${name}${r.capacity ? " " + r.capacity : ""}: US$${priceUsd ?? "?"}${priceUsd != null ? cuotas(priceUsd) : ""}`;
+  });
+  const sealedStockLines = (catalog ?? []).map((r) => {
+    const name = catalogModelText(r);
+    const units = stockByKey.get(`${r.device_type}|${r.model}|${r.capacity ?? ""}|new_sealed`) ?? 0;
+    return `- ${name}${r.capacity ? " " + r.capacity : ""}: ${units > 0 ? units + " unidad(es) en stock" : "sin stock ahora"}`;
   });
   // Usados: viven unidad por unidad en products (cada una con su propio color/batería/precio), no en
   // price_catalog. Se lista cada unidad real, no un agregado: no hay dos usados iguales.
@@ -107,7 +135,10 @@ async function catalogContext(): Promise<string> {
   const dollarLine = dollar ? `Dólar de la casa hoy: $${dollar.toLocaleString("es-AR")}.` : "No hay cotización manual cargada: si preguntan el precio en pesos, avisá que lo confirma un vendedor.";
   return (
     `${dollarLine}\n\n` +
-    `Catálogo sellado (nuevo):\n${sealedLines.length ? sealedLines.join("\n") : "(sin sellados activos cargados)"}\n\n` +
+    `Catálogo sellado (nuevo) — precios, SIN mencionar stock (ver instrucción sobre esto):\n${sealedLines.length ? sealedLines.join("\n") : "(sin sellados activos cargados)"}\n\n` +
+    `USO INTERNO, stock real de sellados (NO es para mostrar en el pantallazo general, ver instrucción):\n` +
+    `${sealedStockLines.length ? sealedStockLines.join("\n") : "(sin datos)"}\n\n` +
+    `${travelScheduleNote()}\n\n` +
     `Usados disponibles ahora mismo, unidad por unidad (no hay dos iguales, por eso van una por una):\n` +
     `${usedLines.length ? usedLines.join("\n") : "(sin unidades usadas disponibles ahora)"}`
   );
@@ -145,6 +176,18 @@ datos reales que te paso, nunca lo inventes.
 
 Y esto sobre CUALQUIER sellado: son equipos nuevos, en su caja original sellada de fábrica, con 1 año de
 garantía oficial de Apple — por eso cuestan más que un usado equivalente.
+
+IMPORTANTE sobre stock de sellados: te paso el catálogo de sellados (modelo y precio) SEPARADO del stock
+real de cada uno (va marcado como "USO INTERNO"). NUNCA mezcles ni muestres ese stock mientras el cliente
+todavía está mirando opciones o comparando — ahí solo hablás de modelo y precio, nada de si hay o no
+unidades. Recién cuando el cliente ya se decidió por un modelo de sellado puntual y quiere avanzar con
+ESE, ahí consultás el stock real y:
+- Si hay stock: confirmáselo normal, seguís avanzando.
+- Si NO hay stock: nunca digas simplemente "no hay" y cortes ahí. Explicale que lo conseguimos por
+  encargo: viajamos a buscar equipos los martes, jueves y viernes (te paso abajo qué día es hoy y cuál es
+  el próximo viaje), y que se puede traer por encargo SIN seña previa ni pago anticipado. Si hoy es día
+  de viaje, avisá que se puede conseguir para hoy mismo y ahí correspondería derivar a un vendedor para
+  confirmarlo en el momento.
 
 La PRIMERA vez que en esta charla se toque el tema de usados (preguntan por uno puntual o en general),
 antes de pasar modelo/precio aclará esa política fija, en líneas separadas, con tus palabras (no siempre
