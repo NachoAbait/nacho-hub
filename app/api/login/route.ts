@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 90, // 90 días
+    maxAge: 60 * 60 * 24 * 400, // 400 días: el máximo que Chrome permite para una cookie, se vence solo igual
   });
   return res;
 }
