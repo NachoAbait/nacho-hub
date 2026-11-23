@@ -7,18 +7,26 @@ export const USED_STALE_AFTER_DAYS = 7;
 /** Ventana máxima que miramos hacia atrás (más viejo que esto = "sin dato"). */
 const LOOKBACK_DAYS = 30;
 
-/** Los únicos 15 modelos que Nacho compra de usado (nada anterior al iPhone 13). Orden de pantalla. */
-export const USED_TARGET_MODELS: string[] = [13, 14, 15, 16, 17].flatMap((n) => [`iPhone ${n}`, `iPhone ${n} Pro`, `iPhone ${n} Pro Max`]);
+/** Modelos que Nacho compra de usado (nada anterior al iPhone 13). Tope de arriba (hoy 18): Apple va a
+ * seguir sacando generaciones nuevas — cuando aparezca una cotización real de un modelo más nuevo en
+ * la lista de un proveedor (ver used_quotes) y el panel la siga sin mostrar, el arreglo es subir este
+ * número, no reconstruir la lista. Orden de pantalla. */
+const USED_MAX_GEN = 18;
+export const USED_TARGET_MODELS: string[] = Array.from({ length: USED_MAX_GEN - 13 + 1 }, (_, i) => 13 + i).flatMap((n) => [
+  `iPhone ${n}`,
+  `iPhone ${n} Pro`,
+  `iPhone ${n} Pro Max`,
+]);
 
 /**
- * Normaliza lo que escribió el parser ("iPhone 15 pro max", "IPHONE 15PM"…) a uno de los 15 modelos
- * objetivo, o null si no es uno (Plus, mini, e, Air, anteriores al 13, otras categorías).
+ * Normaliza lo que escribió el parser ("iPhone 15 pro max", "IPHONE 15PM"…) a uno de los modelos
+ * objetivo, o null si no es uno (Plus, mini, e, Air, anteriores al 13 o más nuevos que USED_MAX_GEN, otras categorías).
  */
 export function matchUsedModel(model: string): string | null {
   const m = model.toLowerCase().replace(/\s+/g, " ").trim().match(/^iphone ?(\d{2})\s*(pro max|promax|pro|pm)?$/);
   if (!m) return null;
   const n = Number(m[1]);
-  if (n < 13 || n > 17) return null;
+  if (n < 13 || n > USED_MAX_GEN) return null;
   const v = m[2];
   const name = !v ? `iPhone ${n}` : v === "pro" ? `iPhone ${n} Pro` : `iPhone ${n} Pro Max`;
   return USED_TARGET_MODELS.includes(name) ? name : null;
