@@ -2,6 +2,24 @@ import { z } from "zod";
 import { askJson, type ClaudeUsage } from "@/lib/claude";
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchCatalog, fetchExchangeRateConfig, fetchStock, fetchPreOwnedUnits, catalogModelText, nexiosAvailable } from "@/lib/nexios";
+import { computeEffectiveRate, isExchangeRateSource } from "@/lib/exchange-rates";
+
+/**
+ * Dólar efectivo (igual al que ve el cliente en NexiOS): BNB usa una fuente en vivo (blue/dolarhoy +
+ * margen), no un valor manual fijo — por eso NO alcanza con fx.manual solo. Se cachea un rato en
+ * memoria del proceso para no pegarle a criptoya/dolarhoy en cada mensaje de WhatsApp.
+ */
+let cachedDollar: { value: number | null; at: number } | null = null;
+const DOLLAR_CACHE_MS = 5 * 60 * 1000;
+
+async function effectiveDollar(fx: Awaited<ReturnType<typeof fetchExchangeRateConfig>>): Promise<number | null> {
+  if (!fx) return null;
+  if (cachedDollar && Date.now() - cachedDollar.at < DOLLAR_CACHE_MS) return cachedDollar.value;
+  const type = fx.source && isExchangeRateSource(fx.source) ? fx.source : "manual";
+  const effective = await computeEffectiveRate({ type, provider: fx.provider, markupPct: fx.markupPct ?? 0, manual: fx.manual });
+  cachedDollar = { value: effective.rate, at: Date.now() };
+  return effective.rate;
+}
 
 /**
  * Coeficientes de financiación con tarjeta, copiados de resellerapp (src/lib/cuotas.ts).
@@ -64,7 +82,7 @@ async function catalogContext(): Promise<string> {
   if (!nexiosAvailable()) return "(Sin acceso al catálogo de NexiOS ahora mismo: no inventes precios ni stock, decile al cliente que un vendedor le confirma.)";
   const [catalog, stock, fx, preOwned] = await Promise.all([fetchCatalog(), fetchStock(), fetchExchangeRateConfig(), fetchPreOwnedUnits()]);
   const stockByKey = new Map((stock ?? []).map((s) => [`${s.device_type}|${s.model}|${s.capacity ?? ""}`, s.units]));
-  const dollar = fx?.manual ?? null; // Si algún día no hay manual, mejor no inventar la cotización en vivo acá: el bot avisa que no tiene el dólar de hoy.
+  const dollar = await effectiveDollar(fx); // Dólar en vivo (fuente + margen) o manual, lo que haya configurado NexiOS.
   const cuotas = (priceUsd: number) => {
     if (!dollar) return "";
     const priceArs = priceUsd * dollar;
