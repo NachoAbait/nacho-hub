@@ -267,53 +267,35 @@ export async function fetchStock(): Promise<StockRow[] | null> {
   return [...map.values()].sort((a, b) => a.oldest_entry.localeCompare(b.oldest_entry));
 }
 
-export interface PreOwnedGroup {
+export interface PreOwnedUnit {
   device_type: string;
   model: string;
   capacity: string | null;
-  units: number;
-  min_price_usd: number | null;
-  max_price_usd: number | null;
-  min_battery: number | null;
-  max_battery: number | null;
+  color: string | null;
+  price_usd: number | null;
+  battery_pct: number | null;
 }
 
 /**
- * Usados disponibles para VENTA, agrupados por modelo/capacidad. Viven en `products` (unidad por
- * unidad, con IMEI y batería propia) con condition="pre_owned" — NO en price_catalog, que solo
- * tiene sellados (ver fetchCatalog). Por eso el precio y la batería se devuelven como rango: cada
- * unidad del mismo modelo puede valer distinto según su estado real.
+ * Usados disponibles para VENTA, unidad por unidad (cada una con su propio color/batería/precio).
+ * Viven en `products` con condition="pre_owned" — NO en price_catalog, que solo tiene sellados
+ * (ver fetchCatalog). Se devuelve el detalle real de cada unidad: Nacho carga precio y batería por
+ * IMEI porque no hay dos usados iguales.
  */
-export async function fetchPreOwnedStock(): Promise<PreOwnedGroup[] | null> {
+export async function fetchPreOwnedUnits(): Promise<PreOwnedUnit[] | null> {
   const db = nexios();
   if (!db) return null;
   const { data, error } = await db
     .from("products")
-    .select("device_type, model, capacity, price_usd, battery_pct")
+    .select("device_type, model, capacity, color, price_usd, battery_pct")
     .eq("organization_id", NEXIOS_ORG_ID)
     .eq("condition", "pre_owned")
-    .eq("status", "available");
+    .eq("status", "available")
+    .order("model")
+    .order("capacity")
+    .order("price_usd");
   if (error) throw new Error(`NexiOS products (usados): ${error.message}`);
-  const map = new Map<string, PreOwnedGroup>();
-  for (const p of data ?? []) {
-    const key = `${p.device_type}|${p.model}|${p.capacity ?? ""}`;
-    const price = p.price_usd == null ? null : Number(p.price_usd);
-    const cur = map.get(key) ?? {
-      device_type: p.device_type, model: p.model, capacity: p.capacity,
-      units: 0, min_price_usd: null, max_price_usd: null, min_battery: null, max_battery: null,
-    };
-    cur.units += 1;
-    if (price != null) {
-      cur.min_price_usd = cur.min_price_usd == null ? price : Math.min(cur.min_price_usd, price);
-      cur.max_price_usd = cur.max_price_usd == null ? price : Math.max(cur.max_price_usd, price);
-    }
-    if (p.battery_pct != null) {
-      cur.min_battery = cur.min_battery == null ? p.battery_pct : Math.min(cur.min_battery, p.battery_pct);
-      cur.max_battery = cur.max_battery == null ? p.battery_pct : Math.max(cur.max_battery, p.battery_pct);
-    }
-    map.set(key, cur);
-  }
-  return [...map.values()].sort((a, b) => a.model.localeCompare(b.model));
+  return (data ?? []).map((p) => ({ ...p, price_usd: p.price_usd == null ? null : Number(p.price_usd) }));
 }
 
 /** Gastos del período en USD (los de ARS ya vienen con fx_rate congelado). */

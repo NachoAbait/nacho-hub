@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { askJson, type ClaudeUsage } from "@/lib/claude";
 import { supabaseAdmin } from "@/lib/supabase";
-import { fetchCatalog, fetchExchangeRateConfig, fetchStock, fetchPreOwnedStock, catalogModelText, nexiosAvailable } from "@/lib/nexios";
+import { fetchCatalog, fetchExchangeRateConfig, fetchStock, fetchPreOwnedUnits, catalogModelText, nexiosAvailable } from "@/lib/nexios";
 
 /**
  * Coeficientes de financiación con tarjeta, copiados de resellerapp (src/lib/cuotas.ts).
@@ -62,7 +62,7 @@ async function saveMessage(conversationId: string, role: "customer" | "bot", bod
 /** Catálogo + stock + cotización armados en texto plano para el prompt: precio USD, pesos y cuotas. */
 async function catalogContext(): Promise<string> {
   if (!nexiosAvailable()) return "(Sin acceso al catálogo de NexiOS ahora mismo: no inventes precios ni stock, decile al cliente que un vendedor le confirma.)";
-  const [catalog, stock, fx, preOwned] = await Promise.all([fetchCatalog(), fetchStock(), fetchExchangeRateConfig(), fetchPreOwnedStock()]);
+  const [catalog, stock, fx, preOwned] = await Promise.all([fetchCatalog(), fetchStock(), fetchExchangeRateConfig(), fetchPreOwnedUnits()]);
   const stockByKey = new Map((stock ?? []).map((s) => [`${s.device_type}|${s.model}|${s.capacity ?? ""}`, s.units]));
   const dollar = fx?.manual ?? null; // Si algún día no hay manual, mejor no inventar la cotización en vivo acá: el bot avisa que no tiene el dólar de hoy.
   const cuotas = (priceUsd: number) => {
@@ -77,22 +77,20 @@ async function catalogContext(): Promise<string> {
     const priceUsd = r.price_usd;
     return `- ${name}${r.capacity ? " " + r.capacity : ""}: US$${priceUsd ?? "?"}${priceUsd != null ? cuotas(priceUsd) : ""} · stock: ${units > 0 ? units + " unidad(es)" : "sin stock ahora"}`;
   });
-  // Usados: viven por unidad en products (cada uno con su propia batería/precio), no en price_catalog.
-  // Se muestran como rango porque dos unidades del mismo modelo pueden valer distinto según su estado.
-  const usedLines = (preOwned ?? []).map((g) => {
-    const name = g.capacity ? `${g.model} ${g.capacity}` : g.model;
-    const priceTxt =
-      g.min_price_usd == null ? "US$?"
-      : g.min_price_usd === g.max_price_usd ? `US$${g.min_price_usd}${cuotas(g.min_price_usd)}`
-      : `US$${g.min_price_usd}–${g.max_price_usd} según estado`;
-    const batteryTxt = g.min_battery == null ? "" : g.min_battery === g.max_battery ? `, batería ${g.min_battery}%` : `, batería ${g.min_battery}–${g.max_battery}%`;
-    return `- ${name} (usado${batteryTxt}): ${priceTxt} · stock: ${g.units} unidad(es)`;
+  // Usados: viven unidad por unidad en products (cada una con su propio color/batería/precio), no en
+  // price_catalog. Se lista cada unidad real, no un agregado: no hay dos usados iguales.
+  const usedLines = (preOwned ?? []).map((u) => {
+    const name = u.capacity ? `${u.model} ${u.capacity}` : u.model;
+    const color = u.color ? `, color ${u.color}` : "";
+    const battery = u.battery_pct != null ? `, batería ${u.battery_pct}%` : "";
+    const priceTxt = u.price_usd != null ? `US$${u.price_usd}${cuotas(u.price_usd)}` : "US$?";
+    return `- ${name} (usado${battery}${color}): ${priceTxt}`;
   });
   const dollarLine = dollar ? `Dólar de la casa hoy: $${dollar.toLocaleString("es-AR")}.` : "No hay cotización manual cargada: si preguntan el precio en pesos, avisá que lo confirma un vendedor.";
   return (
     `${dollarLine}\n\n` +
     `Catálogo sellado (nuevo):\n${sealedLines.length ? sealedLines.join("\n") : "(sin sellados activos cargados)"}\n\n` +
-    `Usados disponibles (cada unidad es distinta: precio y batería varían según el estado real de esa unidad puntual):\n` +
+    `Usados disponibles ahora mismo, unidad por unidad (no hay dos iguales, por eso van una por una):\n` +
     `${usedLines.length ? usedLines.join("\n") : "(sin unidades usadas disponibles ahora)"}`
   );
 }
@@ -108,11 +106,11 @@ abajo). Usalos para responder precio en dólares, en pesos y en cuotas (6/9/12, 
 algo no está en los datos o no hay stock, decilo con naturalidad — nunca inventes un precio, un modelo o
 una cantidad que no esté ahí.
 
-Los usados son unidades reales, cada una con su propio estado y batería — por eso a veces te paso un
-RANGO de precio para un mismo modelo en vez de un número fijo. Si el cliente pregunta por un usado
-puntual, contestá con el rango y aclará que el precio final depende de la unidad concreta (batería,
-estado estético); si ya quiere avanzar con uno, ahí es cuando corresponde derivar a un vendedor para que
-le confirme cuál unidad exacta y su precio final.
+Los usados te los paso unidad por unidad, cada una con su batería y precio real (no hay dos iguales). Si
+hay varias del mismo modelo, podés elegir cuál mencionar según lo que pida el cliente (la más barata, la
+de mejor batería, etc.) o resumir el rango si pregunta en general — pero siempre con datos reales de la
+lista, nunca inventados. Cuando el cliente ya se decidió por una unidad puntual y quiere avanzar, ahí
+corresponde derivar a un vendedor para coordinar la entrega.
 
 Tenés autonomía casi total: podés cotizar, comparar modelos, explicar diferencias, negociar dentro de lo
 razonable, resolver dudas de financiación. Lo ÚNICO que no hacés es cerrar la operación vos: cuando el
