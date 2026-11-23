@@ -253,6 +253,75 @@ export async function loadBacklogItems(project: string): Promise<BacklogItem[]> 
   return items.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 }
 
+export interface CustomerConversation {
+  id: string;
+  phone: string;
+  name: string | null;
+  status: "open" | "handed_off";
+  lastMessageAt: string;
+  messageCount: number;
+  lastMessagePreview: string | null;
+}
+
+/**
+ * Conversaciones del bot de clientes por WhatsApp (lib/agents/customer-bot.ts) — hoy sin ningún lugar
+ * visual propio (no está dado de alta como agente de la oficina, a diferencia de Micaela/DM Handler,
+ * que es un bot aparte para Instagram), así que se muestra acá, junto al backlog de Ernesto, por la
+ * misma razón que ese panel: no abrir un cuarto lugar donde mirar. Va a estar vacío hasta que termine
+ * la verificación de Meta Business Manager y entren mensajes reales.
+ */
+export async function loadCustomerConversations(): Promise<CustomerConversation[]> {
+  const db = supabaseAdmin();
+  const [{ data: convos }, { data: msgs }] = await Promise.all([
+    db
+      .from("customer_conversations")
+      .select("id, phone, name, status, last_message_at")
+      .order("last_message_at", { ascending: false })
+      .returns<{ id: string; phone: string; name: string | null; status: "open" | "handed_off"; last_message_at: string }[]>(),
+    db
+      .from("customer_messages")
+      .select("conversation_id, body, created_at")
+      .order("created_at", { ascending: true })
+      .returns<{ conversation_id: string; body: string; created_at: string }[]>(),
+  ]);
+
+  const byConvo = new Map<string, { count: number; lastBody: string }>();
+  for (const m of msgs ?? []) {
+    const cur = byConvo.get(m.conversation_id) ?? { count: 0, lastBody: "" };
+    cur.count += 1;
+    cur.lastBody = m.body; // ordenado asc: la última escritura es la más reciente
+    byConvo.set(m.conversation_id, cur);
+  }
+
+  return (convos ?? []).map((c) => ({
+    id: c.id,
+    phone: c.phone,
+    name: c.name,
+    status: c.status,
+    lastMessageAt: c.last_message_at,
+    messageCount: byConvo.get(c.id)?.count ?? 0,
+    lastMessagePreview: byConvo.get(c.id)?.lastBody ?? null,
+  }));
+}
+
+export interface CustomerMessageRow {
+  id: string;
+  role: "customer" | "bot";
+  body: string;
+  createdAt: string;
+}
+
+/** Hilo completo de una conversación puntual — se pide solo cuando Nacho la abre, no de entrada. */
+export async function loadCustomerMessages(conversationId: string): Promise<CustomerMessageRow[]> {
+  const { data } = await supabaseAdmin()
+    .from("customer_messages")
+    .select("id, role, body, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .returns<{ id: string; role: "customer" | "bot"; body: string; created_at: string }[]>();
+  return (data ?? []).map((m) => ({ id: m.id, role: m.role, body: m.body, createdAt: m.created_at }));
+}
+
 export interface VideoClip {
   id: string;
   driveFileName: string;

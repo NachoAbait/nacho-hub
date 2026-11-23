@@ -13,6 +13,7 @@ import { CatalogManagerPanel } from "@/components/office/catalog-manager-panel";
 import { MarketWatcherPanel } from "@/components/office/market-watcher-panel";
 import { ChiefOfStaffPanel } from "@/components/office/chief-of-staff-panel";
 import { ErnestoBacklogPanel } from "@/components/office/ernesto-backlog-panel";
+import { CustomerConversationsPanel } from "@/components/office/customer-conversations-panel";
 import { ContentCreatorPanel } from "@/components/office/content-creator-panel";
 import { CopyWriterPanel } from "@/components/office/copy-writer-panel";
 import { GlobalAnalystPanel } from "@/components/office/global-analyst-panel";
@@ -212,6 +213,7 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
           )}
 
           {agent.id === "chief-of-staff" && focus?.floor === "BNB" && <ErnestoBacklogPanel project="BNB" />}
+          {agent.id === "chief-of-staff" && focus?.floor === "BNB" && <CustomerConversationsPanel />}
 
           {agent.id === "content-creator" && focus && (
             <div className="border-t border-white/10 pt-4">
