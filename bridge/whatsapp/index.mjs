@@ -196,11 +196,20 @@ async function start() {
         );
       }
       if (!body) continue;
-      // En chats con LID, y siempre dentro de un grupo, el número real viene en senderPn / participantPn.
-      let sender = (msg.key.senderPn ?? msg.key.participantPn ?? msg.key.participant ?? jid).toString();
-      // Comunidades/canales nuevos: WhatsApp manda un @lid (id anónimo) en vez del número real.
-      // Baileys guarda el mapeo lid->número si ya lo vio antes; si no, sigue sin resolver (no hay forma
-      // de "preguntarle" a WhatsApp el número de alguien que nunca escribió directo).
+      // Chats 1 a 1 con addressingMode "lid": WhatsApp identifica el chat con un id anónimo (el jid
+      // termina en @lid), pero Baileys ya nos manda el número real aparte, en remoteJidAlt — ahí no
+      // hace falta resolver nada. OJO: en estos casos "participant" viene como "" (string vacío, no
+      // undefined), así que "??" no cae al jid — por eso se chequea remoteJidAlt ANTES de armar sender.
+      let sender;
+      if (!isGroup && typeof msg.key.remoteJidAlt === "string" && msg.key.remoteJidAlt.endsWith("@s.whatsapp.net")) {
+        sender = msg.key.remoteJidAlt;
+      } else {
+        // En chats de grupo/comunidad, el número real viene en senderPn / participantPn.
+        sender = (msg.key.senderPn || msg.key.participantPn || msg.key.participant || jid).toString();
+      }
+      // Comunidades/canales: WhatsApp manda un @lid (id anónimo) en vez del número real. Baileys guarda
+      // el mapeo lid->número si ya lo vio antes; si no, sigue sin resolver (no hay forma de "preguntarle"
+      // a WhatsApp el número de alguien que nunca escribió directo).
       if (sender.endsWith("@lid")) {
         try {
           const resolved = await sock.signalRepository.lidMapping.getPNForLID(sender);
@@ -226,8 +235,15 @@ async function start() {
       });
       // No es proveedor cargado ni hubo error: si es un chat 1 a 1, se lo pasamos al bot de clientes.
       if (!isSupplier && !isGroup) {
+        const barePhone = toBarePhone(sender);
+        if (!barePhone) {
+          // DIAGNÓSTICO TEMPORAL: no pudimos sacar un número real de este mensaje 1 a 1 (sender vacío
+          // o LID sin resolver). Volcamos la key completa para entender qué campo trae el número.
+          console.log(`[debug] sin número válido para responder. jid=${jid} key=${JSON.stringify(msg.key)}`);
+          continue;
+        }
         await sendToCustomerBot({
-          sender: toBarePhone(sender),
+          sender: barePhone,
           sender_name: msg.pushName ?? null,
           body,
         });
