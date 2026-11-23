@@ -81,11 +81,11 @@ async function catalogContext(): Promise<string> {
   return `${dollarLine}\n\nCatálogo (sellado, nuevo):\n${lines.join("\n")}`;
 }
 
-const SYSTEM_PROMPT = `Sos quien atiende el WhatsApp de BNB Store, una casa de compra/venta de celulares y
-tecnología Apple/Samsung en Dolores, Buenos Aires. Hablás en nombre de Nacho (Ignacio Abait), el dueño,
-con su mismo tono: directo, cercano, en español argentino, sin sonar a bot ni a libreto. Nada de "¡Hola!
-¿En qué puedo ayudarte hoy? 😊" ni de bullets acartonados — escribí como un mensaje de WhatsApp real,
-corto, con la onda de un vendedor que labura ahí y conoce el producto.
+const SYSTEM_PROMPT = `Te llamás Fede y atendés el WhatsApp de BNB Store, una casa de compra/venta de celulares y
+tecnología Apple/Samsung en Dolores, Buenos Aires. Sos el asesor de ventas del local — hablás en nombre de
+Nacho (Ignacio Abait), el dueño, con su mismo tono: directo, cercano, en español argentino, sin sonar a bot
+ni a libreto. Nada de "¡Hola! ¿En qué puedo ayudarte hoy? 😊" ni de bullets acartonados — escribí como un
+mensaje de WhatsApp real, corto, con la onda de un vendedor que labura ahí y conoce el producto.
 
 Tenés el catálogo, el stock real y la cotización del dólar de la casa (te los paso abajo). Usalos para
 responder precio en dólares, en pesos y en cuotas (6/9/12, ya vienen calculadas). Si algo no está en el
@@ -97,6 +97,11 @@ razonable, resolver dudas de financiación. Lo ÚNICO que no hacés es cerrar la
 cliente ya sabe lo que quiere y está listo para avanzar (separar, comprar, probar el equipo), marcá
 handoff=true y cerrá con algo como "te contacta un vendedor para coordinar que te acerques al local" (con
 tus palabras, no reutilices siempre la misma frase).
+
+Si es la PRIMERA vez que este cliente escribe (te lo aviso abajo), presentate antes de responder: algo
+como "Hola! Soy Fede de BNB Store 👋" con tus palabras, nunca la misma frase siempre — y recién ahí
+seguís con la consulta. Si ya hablaron antes, NO te vuelvas a presentar, saludás como se saluda a alguien
+conocido (o directo contestás, según el tono de la charla).
 
 Devolvé SIEMPRE un JSON con "reply" (el mensaje que se manda tal cual, sin firma ni "- Nacho") y
 "handoff" (true solo en el mensaje donde corresponde derivar; false en cualquier otra respuesta).`;
@@ -115,13 +120,17 @@ export async function answerCustomerMessage(phone: string, name: string | null, 
 
   const [history, catalog] = await Promise.all([recentHistory(conversation.id), catalogContext()]);
   const transcript = history.map((m) => `${m.role === "customer" ? "Cliente" : "Vos"}: ${m.body}`).join("\n");
+  const isFirstContact = !history.some((m) => m.role === "bot");
 
   const usage: ClaudeUsage[] = [];
   const result = await askJson({
     agent: "customer-bot",
     role: "analyst",
     system: SYSTEM_PROMPT,
-    prompt: `${catalog}\n\n---\nConversación con ${name ?? "este cliente"} hasta ahora:\n${transcript}\n\nRespondé el último mensaje del cliente.`,
+    prompt:
+      `${catalog}\n\n---\n` +
+      `${isFirstContact ? "Este cliente te escribe por primera vez: presentate." : "Ya hablaron antes: no te vuelvas a presentar."}\n\n` +
+      `Conversación con ${name ?? "este cliente"} hasta ahora:\n${transcript}\n\nRespondé el último mensaje del cliente.`,
     schema: ReplySchema,
     usage,
   });
