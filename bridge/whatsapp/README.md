@@ -1,12 +1,15 @@
 # Puente de WhatsApp para NACHO Hub
 
-Deja la computadora escuchando el WhatsApp del negocio y le manda al hub las listas de precios de tus proveedores.
-No se instala en la app web: es un paquete aparte que corre en la Mac (o la PC) del local.
+Deja la computadora escuchando el WhatsApp del negocio. Hace dos cosas con el mismo número:
+le manda al hub las listas de precios de tus proveedores, y le contesta a los clientes que preguntan por productos
+(stock, precio, cuotas). No se instala en la app web: es un paquete aparte que corre en la Mac (o la PC) del local.
 
 ## Paso 0 (el más importante): cargar los proveedores en el panel
 
-Este WhatsApp recibe de todo, también consultas de clientes. **El puente solo reenvía y el hub solo procesa los números
-que vos cargaste como proveedores.** Cualquier otro remitente se ignora en silencio y no se guarda nada.
+Este WhatsApp recibe de todo: listas de proveedores y consultas de clientes, mezclado. **El puente manda cada mensaje
+al hub, y el hub decide:** si el número es uno de los que cargaste como proveedor, lo procesa como lista de precios;
+si no, y no es un grupo, se lo pasa al bot de clientes, que responde solo por este mismo WhatsApp (no usa la API
+oficial de Meta: no hace falta verificar el negocio ante Meta para esto).
 
 **Antes de que lleguen las listas, abrí https://nacho-hub.vercel.app, tocá al agente Lucas (Price Reader) y, en el
 recuadro "Proveedores", pegá un número por línea con código de país y sin el +** (por ejemplo `5492257123456, Mayorista Uno`)
@@ -58,9 +61,13 @@ Alternativa en Mac sin pm2 (launchd): creá `~/Library/LaunchAgents/com.nachohub
 
 ## Qué hace y qué no
 
-- Ignora tus propios mensajes, los grupos y los estados.
+- Ignora tus propios mensajes, los grupos y los estados — a los grupos nunca les contesta el bot de clientes, tampoco
+  se procesan como lista de precios ahí (eso sigue siendo solo chats 1 a 1).
 - Lee texto de mensajes, respuestas y epígrafes de imagen. Las listas en imagen sin texto no se leen: pegalas a mano en el panel.
 - Manda al hub cada mensaje; el hub decide si el número es un proveedor cargado. Las difusiones se marcan como señal extra,
   pero nunca alcanzan por sí solas.
+- Si no es proveedor (y no es grupo), se lo pasa al bot de clientes, que le contesta solo con datos reales de stock/precio.
+- Cada 4 segundos (configurable con `OUTBOX_POLL_MS` en el `.env`) le pregunta al hub si hay respuestas del bot
+  pendientes de mandar y las manda por este mismo WhatsApp.
 - Si se cae la conexión, reconecta solo, salvo que cierres la sesión desde el celular.
 - Los mensajes que llegan con la computadora apagada se descargan al volver a conectar, pero conviene dejarla prendida de 8:00 a 10:30.

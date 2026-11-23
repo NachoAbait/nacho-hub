@@ -21,6 +21,7 @@ if (!CRON_SECRET) {
   console.error("Falta CRON_SECRET. Creá bridge/whatsapp/.env con HUB_URL y CRON_SECRET (ver README).");
   process.exit(1);
 }
+const OUTBOX_POLL_MS = Number(process.env.OUTBOX_POLL_MS ?? 4000);
 
 const silent = { level: "silent", trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {}, child() { return silent; } };
 
@@ -33,6 +34,13 @@ function extractText(message) {
   return m.conversation || m.extendedTextMessage?.text || m.imageMessage?.caption || m.videoMessage?.caption || m.documentMessage?.caption || "";
 }
 
+/** Siempre dígitos solos, nunca con sufijo @s.whatsapp.net / @lid. */
+function toBarePhone(jidOrNumber) {
+  return jidOrNumber.replace(/@.*$/, "");
+}
+
+/** true si el hub lo procesó como proveedor (lista de precios). false si lo ignoró (no es proveedor
+ * cargado) — en ese caso, si no es grupo, se lo pasa al bot de clientes. */
 async function sendToHub(payload) {
   try {
     const res = await fetch(`${HUB_URL}/api/agents/price-reader/ingest`, {
@@ -41,11 +49,70 @@ async function sendToHub(payload) {
       body: JSON.stringify(payload),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return console.error(`[hub] ${res.status}`, json);
-    if (json.ignored) return; // no es un proveedor cargado: se ignora en silencio
+    if (!res.ok) {
+      console.error(`[hub] ${res.status}`, json);
+      return true; // error real: no lo tratamos como "no es proveedor"
+    }
+    if (json.ignored) return false;
     console.log(`[hub] lista de ${json.supplier ?? payload.sender}: ${json.run?.summary ?? json.run?.error ?? "procesada"}`);
+    return true;
   } catch (err) {
     console.error("[hub] no pude llegar al hub:", err.message);
+    return true;
+  }
+}
+
+async function sendToCustomerBot(payload) {
+  try {
+    const res = await fetch(`${HUB_URL}/api/agents/customer-bot/ingest`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${CRON_SECRET}` },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) console.error(`[hub] (bot clientes) ${res.status}`, json);
+  } catch (err) {
+    console.error("[hub] (bot clientes) no pude llegar al hub:", err.message);
+  }
+}
+
+async function fetchOutbox() {
+  try {
+    const res = await fetch(`${HUB_URL}/api/agents/customer-bot/outbox`, {
+      headers: { authorization: `Bearer ${CRON_SECRET}` },
+    });
+    if (!res.ok) return [];
+    const json = await res.json().catch(() => ({}));
+    return json.items ?? [];
+  } catch (err) {
+    console.error("[hub] no pude pedir la cola de respuestas:", err.message);
+    return [];
+  }
+}
+
+async function reportOutboxResult(id, status, error) {
+  try {
+    await fetch(`${HUB_URL}/api/agents/customer-bot/outbox`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${CRON_SECRET}` },
+      body: JSON.stringify({ id, status, error }),
+    });
+  } catch (err) {
+    console.error("[hub] no pude avisar el resultado del envío:", err.message);
+  }
+}
+
+async function sendPendingReplies(sock) {
+  const items = await fetchOutbox();
+  for (const item of items) {
+    try {
+      await sock.sendMessage(`${toBarePhone(item.phone)}@s.whatsapp.net`, { text: item.body });
+      await reportOutboxResult(item.id, "sent");
+      console.log(`[wa] bot de clientes respondió a ${item.phone}`);
+    } catch (err) {
+      await reportOutboxResult(item.id, "error", err.message);
+      console.error(`[wa] no pude mandarle a ${item.phone}:`, err.message);
+    }
   }
 }
 
@@ -66,6 +133,8 @@ async function start() {
 
   sock.ev.on("creds.update", saveCreds);
 
+  let outboxTimer = null;
+
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       console.log("\nEscaneá este QR desde WhatsApp > Dispositivos vinculados > Vincular un dispositivo:\n");
@@ -74,9 +143,14 @@ async function start() {
     }
     if (connection === "open") {
       reconnectAttempts = 0;
-      console.log("Conectado a WhatsApp. Esperando listas de proveedores…");
+      console.log("Conectado a WhatsApp. Esperando listas de proveedores y consultas de clientes…");
+      if (!outboxTimer) outboxTimer = setInterval(() => sendPendingReplies(sock), OUTBOX_POLL_MS);
     }
     if (connection === "close") {
+      if (outboxTimer) {
+        clearInterval(outboxTimer);
+        outboxTimer = null;
+      }
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
         console.error("Se cerró la sesión desde el celular. Borrá la carpeta auth y volvé a correr npm start para escanear otro QR.");
@@ -140,7 +214,7 @@ async function start() {
           console.log(`[debug] error resolviendo LID ${sender}: ${err.message}`);
         }
       }
-      await sendToHub({
+      const isSupplier = await sendToHub({
         sender,
         sender_name: msg.pushName ?? null,
         body,
@@ -150,6 +224,14 @@ async function start() {
         broadcast: msg.broadcast === true,
         group: isGroup,
       });
+      // No es proveedor cargado ni hubo error: si es un chat 1 a 1, se lo pasamos al bot de clientes.
+      if (!isSupplier && !isGroup) {
+        await sendToCustomerBot({
+          sender: toBarePhone(sender),
+          sender_name: msg.pushName ?? null,
+          body,
+        });
+      }
     }
   });
 }

@@ -3,7 +3,7 @@ import { runAgent, type RunOutcome } from "@/lib/agents/runtime";
 import { priceReader } from "@/lib/agents/price-reader";
 import { priceAnalyst } from "@/lib/agents/price-analyst";
 import { catalogManager } from "@/lib/agents/catalog-manager";
-import { findAllowedSupplier, normalizePhone, notePendingSender } from "@/lib/suppliers";
+import { findAllowedSupplier, normalizePhone, notePendingSender, senderKind } from "@/lib/suppliers";
 
 export interface IngestInput {
   sender?: string | null;
@@ -40,11 +40,13 @@ export async function ingestPriceList(input: IngestInput): Promise<IngestResult>
   if (input.source === "whatsapp") {
     const supplier = input.sender ? await findAllowedSupplier(db, input.sender) : null;
     if (!supplier) {
-      // No toca precios: deja registro para que Nacho lo sume como proveedor desde el panel (un
-      // número mal cargado, o un canal cuyo identificador no se puede cargar de antemano). Dentro de
-      // un grupo/comunidad NO se registra: ahí puede escribir cualquiera de los miembros, no solo
-      // proveedores, y eso es trabajo de otro agente (el que atiende mensajes de clientes), no de Lucas.
-      if (input.sender && !input.group) await notePendingSender(db, input.sender, input.sender_name ?? null, body);
+      // No toca precios. Si es un número (no un canal), ya lo atiende en vivo el bot de clientes: no
+      // hace falta un borrador de Micaela para lo mismo. Solo queda registrar los canales de difusión
+      // (@newsletter), cuyo identificador no se puede cargar de antemano como proveedor. Dentro de un
+      // grupo/comunidad NO se registra: ahí puede escribir cualquiera de los miembros, no solo proveedores.
+      if (input.sender && !input.group && senderKind(input.sender) === "channel") {
+        await notePendingSender(db, input.sender, input.sender_name ?? null, body);
+      }
       return { ok: true, ignored: true, reason: "remitente que no es proveedor cargado" };
     }
     supplierId = supplier.id;
