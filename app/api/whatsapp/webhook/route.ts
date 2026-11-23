@@ -44,8 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, lane: "supplier", result });
     }
 
-    const { reply } = await answerCustomerMessage(inbound.from, inbound.name, inbound.text);
-    await sendWhatsAppMessage(inbound.from, reply);
+    const { replies } = await answerCustomerMessage(inbound.from, inbound.name, inbound.text);
+    for (const reply of replies) await sendWhatsAppMessage(inbound.from, reply);
     return NextResponse.json({ ok: true, lane: "customer" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido";

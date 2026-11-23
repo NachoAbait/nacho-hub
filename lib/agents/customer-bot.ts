@@ -54,7 +54,8 @@ function travelScheduleNote(): string {
 }
 
 const ReplySchema = z.object({
-  reply: z.string(),
+  /** Una o más burbujas de WhatsApp separadas (ver instrucción de formato en el prompt). */
+  replies: z.array(z.string()).min(1),
   /** true cuando el bot ya resolvió la consulta y corresponde cerrar derivando a un vendedor. */
   handoff: z.boolean(),
 });
@@ -106,17 +107,24 @@ async function catalogContext(): Promise<string> {
   // fuera el stock del sellado del mismo modelo).
   const stockByKey = new Map((stock ?? []).map((s) => [`${s.device_type}|${s.model}|${s.capacity ?? ""}|${s.condition ?? ""}`, s.units]));
   const dollar = await effectiveDollar(fx); // Dólar en vivo (fuente + margen) o manual, lo que haya configurado NexiOS.
-  const cuotas = (priceUsd: number) => {
-    if (!dollar) return "";
+  const cuotasText = (priceUsd: number): string | null => {
+    if (!dollar) return null;
     const priceArs = priceUsd * dollar;
-    return " | " + CUOTAS.map((c) => `${c.n}c $${Math.round((priceArs * c.coef) / c.n).toLocaleString("es-AR")}`).join(", ");
+    return CUOTAS.map((c) => `${c.n}c $${Math.round((priceArs * c.coef) / c.n).toLocaleString("es-AR")}`).join(", ");
+  };
+  // Dólares + pesos siempre visibles; las cuotas van entre corchetes [cuotas: ...] — el prompt le dice
+  // al bot que eso NO se muestra de entrada, solo cuando preguntan puntual por cuotas/financiación.
+  const priceLine = (priceUsd: number | null): string => {
+    if (priceUsd == null) return "US$?";
+    const pesos = dollar ? ` | $${Math.round(priceUsd * dollar).toLocaleString("es-AR")}` : "";
+    const ct = cuotasText(priceUsd);
+    return `US$${priceUsd}${pesos}${ct ? ` [cuotas: ${ct}]` : ""}`;
   };
   // Para sellados NO se muestra stock acá (ver prompt: eso se reserva para cuando el cliente ya
   // decidió el modelo puntual). El número real se pasa aparte, marcado como uso interno.
   const sealedLines = (catalog ?? []).map((r) => {
     const name = catalogModelText(r);
-    const priceUsd = r.price_usd;
-    return `- ${name}${r.capacity ? " " + r.capacity : ""}: US$${priceUsd ?? "?"}${priceUsd != null ? cuotas(priceUsd) : ""}`;
+    return `- ${name}${r.capacity ? " " + r.capacity : ""}: ${priceLine(r.price_usd)}`;
   });
   const sealedStockLines = (catalog ?? []).map((r) => {
     const name = catalogModelText(r);
@@ -129,8 +137,7 @@ async function catalogContext(): Promise<string> {
     const name = u.capacity ? `${u.model} ${u.capacity}` : u.model;
     const color = u.color ? `, color ${u.color}` : "";
     const battery = u.battery_pct != null ? `, batería ${u.battery_pct}%` : "";
-    const priceTxt = u.price_usd != null ? `US$${u.price_usd}${cuotas(u.price_usd)}` : "US$?";
-    return `- ${name} (usado${battery}${color}): ${priceTxt}`;
+    return `- ${name} (usado${battery}${color}): ${priceLine(u.price_usd)}`;
   });
   const dollarLine = dollar ? `Dólar de la casa hoy: $${dollar.toLocaleString("es-AR")}.` : "No hay cotización manual cargada: si preguntan el precio en pesos, avisá que lo confirma un vendedor.";
   return (
@@ -155,10 +162,32 @@ sí usá saltos de línea, uno por ítem, porque todo pegado cansa y cuesta leer
 corto de una sola idea puede ir en una sola línea, sin problema. Podés usar *negrita* (con asteriscos,
 así se ve en WhatsApp) para resaltar un modelo o un precio puntual.
 
+Mensajes separados: devolvés un array "replies" — cada elemento es una burbuja de WhatsApp distinta, no
+todo un bloque único. Cuando tengas que decir varias cosas de naturaleza distinta (ej: las opciones, y
+aparte una conclusión/comparación, y aparte una pregunta), separalas en elementos distintos del array en
+vez de pegarlas todas juntas. Ejemplo típico — cliente pide comparar sellado vs usado de un modelo:
+1) un mensaje con las opciones (precios de cada una)
+2) otro mensaje con la conclusión (ej. cuánto ahorra el usado respecto del sellado, si aplica)
+3) otro mensaje preguntando qué le interesó o si querés el detalle de alguno puntual
+Para una respuesta simple de una sola idea, un solo elemento en el array alcanza — no fuerces la
+separación si no hay nada que separar.
+
 Tenés el catálogo de sellados, los usados disponibles y la cotización del dólar de la casa (te los paso
-abajo). Usalos para responder precio en dólares, en pesos y en cuotas (6/9/12, ya vienen calculadas). Si
-algo no está en los datos o no hay stock, decilo con naturalidad — nunca inventes un precio, un modelo o
-una cantidad que no esté ahí.
+abajo). Cada línea ya trae el precio en dólares y en pesos, y entre corchetes [cuotas: ...] el detalle de
+cuotas — eso de los corchetes NO lo muestres en la respuesta general (mostrás solo dólares y pesos, y
+podés invitar con algo como "consultá por cuotas" si querés). Cuando el cliente pregunte puntualmente por
+cuotas o financiación, ahí sí le das el detalle completo de ese [cuotas: ...] para el modelo que preguntó
+— si no aclaró cuál modelo, preguntale primero de cuál, porque el valor de cada cuota depende del precio
+de ESE equipo. Si algo no está en los datos o no hay stock, decilo con naturalidad — nunca inventes un
+precio, un modelo o una cantidad que no esté ahí.
+
+Métodos de pago, política fija del local (podés afirmarla siempre, no hace falta derivar para esto):
+efectivo en pesos, transferencia en pesos, efectivo en dólares, y cuotas con tarjeta de crédito. Las
+cuotas son SIEMPRE a través de Mercado Pago: el cliente adhiere su tarjeta a la cuenta de Mercado Pago de
+BNB Store (no es con posnet ni máquina de tarjeta tradicional). Se puede combinar todo: una parte en
+efectivo en pesos, otra en dólares, y el resto en cuotas, en la misma compra. Cuando te pregunten por
+cuotas de un modelo puntual, explicá que es vía Mercado Pago (tarjeta adherida a la cuenta de BNB Store)
+y pasale el detalle de 6/9/12 cuotas de ese modelo (del [cuotas: ...] correspondiente).
 
 Los usados te los paso unidad por unidad, cada una con su batería y precio real (no hay dos iguales). Si
 hay varias del mismo modelo, podés elegir cuál mencionar según lo que pida el cliente (la más barata, la
@@ -224,12 +253,12 @@ como "Hola! Soy Fede de BNB Store 👋" con tus palabras, nunca la misma frase s
 seguís con la consulta. Si ya hablaron antes, NO te vuelvas a presentar, saludás como se saluda a alguien
 conocido (o directo contestás, según el tono de la charla).
 
-Devolvé SIEMPRE un JSON con "reply" (el mensaje que se manda tal cual, sin firma ni "- Nacho") y
-"handoff" (true solo en el mensaje donde corresponde derivar; false en cualquier otra respuesta).`;
+Devolvé SIEMPRE un JSON con "replies" (array de uno o más mensajes, cada uno tal cual se manda, sin firma
+ni "- Nacho") y "handoff" (true solo si corresponde derivar; false en cualquier otra respuesta).`;
 
 export interface CustomerBotResult {
   conversationId: string;
-  reply: string;
+  replies: string[];
   handoff: boolean;
   usage: ClaudeUsage[];
 }
@@ -256,7 +285,7 @@ export async function answerCustomerMessage(phone: string, name: string | null, 
     usage,
   });
 
-  await saveMessage(conversation.id, "bot", result.reply);
+  for (const msg of result.replies) await saveMessage(conversation.id, "bot", msg);
   if (result.handoff) {
     await supabaseAdmin().from("customer_conversations").update({ status: "handed_off" }).eq("id", conversation.id);
   }

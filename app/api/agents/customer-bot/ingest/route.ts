@@ -10,10 +10,9 @@ export const maxDuration = 60;
  * Authorization: Bearer <CRON_SECRET>
  * Body: { sender, sender_name, body }
  *
- * Mensajes del puente de Baileys DEDICADO al bot de clientes (número nuevo, separado del de la
- * oficina — ver bridge/whatsapp-customer/). No confundir con /api/agents/price-reader/ingest: ese
- * es el puente viejo, de proveedores, en el número de la oficina. Acá no hace falta filtrar por
- * remitente permitido — todo lo que llega a este número es un cliente.
+ * Mensajes del puente de Baileys (bridge/whatsapp/, el mismo número de la oficina) para remitentes
+ * que el hub NO reconoce como proveedor cargado — ver ingestPriceList en lib/agents/ingest.ts, que
+ * es quien decide y reenvía acá. Acá no hace falta filtrar de nuevo: todo lo que llega ya es cliente.
  */
 export async function POST(request: Request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -30,8 +29,8 @@ export async function POST(request: Request) {
   const senderName = typeof b.sender_name === "string" ? b.sender_name : null;
 
   try {
-    const { conversationId, reply } = await answerCustomerMessage(sender, senderName, body);
-    await enqueueOutboxMessage(conversationId, sender, reply);
+    const { conversationId, replies } = await answerCustomerMessage(sender, senderName, body);
+    for (const reply of replies) await enqueueOutboxMessage(conversationId, sender, reply);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido";
