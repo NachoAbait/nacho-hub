@@ -102,6 +102,7 @@ Devolvé SIEMPRE un JSON con "reply" (el mensaje que se manda tal cual, sin firm
 "handoff" (true solo en el mensaje donde corresponde derivar; false en cualquier otra respuesta).`;
 
 export interface CustomerBotResult {
+  conversationId: string;
   reply: string;
   handoff: boolean;
   usage: ClaudeUsage[];
@@ -129,5 +130,5 @@ export async function answerCustomerMessage(phone: string, name: string | null, 
   if (result.handoff) {
     await supabaseAdmin().from("customer_conversations").update({ status: "handed_off" }).eq("id", conversation.id);
   }
-  return { ...result, usage };
+  return { ...result, usage, conversationId: conversation.id };
 }

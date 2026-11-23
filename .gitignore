@@ -46,3 +46,9 @@ bridge/whatsapp/auth.bak-*
 bridge/whatsapp/.env
 bridge/whatsapp/node_modules
 bridge/whatsapp/qr.png
+
+# puente de WhatsApp del bot de clientes (número nuevo, sesión separada)
+bridge/whatsapp-customer/auth
+bridge/whatsapp-customer/.env
+bridge/whatsapp-customer/node_modules
+bridge/whatsapp-customer/qr.png
