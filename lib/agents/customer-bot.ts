@@ -157,10 +157,29 @@ async function catalogContext(): Promise<string> {
     const cap = r.capacity ? ` - ${r.capacity}` : "";
     return `*${name}${cap}*\n${priceLine(r.price_usd)}`;
   });
+  // Versión PÚBLICA del precio (sin las cuotas reales — nunca se muestran de entrada, ver prompt): el
+  // bloque de abajo se pega LITERAL en el chat, así que acá no puede ir el [cuotas: ...] con números
+  // reales (antes se colaba tal cual al cliente). En su lugar, una línea fija invitando a preguntar.
+  const priceLinePublic = (priceUsd: number | null): string => {
+    if (priceUsd == null) return "US$?";
+    const pesos = dollar ? ` | $${Math.round(priceUsd * dollar).toLocaleString("es-AR")}` : "";
+    return `US$${priceUsd}${pesos}\n[consultar pago en cuotas]`;
+  };
   // Bloque ya armado y en el orden correcto, listo para mandar TAL CUAL como un elemento de "replies"
   // cuando piden el listado completo de sellados (todo junto, sin separar por categoría ni por línea).
+  // Filtrado a iPhone: el catálogo real ya tiene AirPods/Watch/iPad/MacBook/Samsung/PlayStation también,
+  // y mandar las 53 líneas juntas cuando piden "el listado de sellados" en una charla sobre iPhones no es
+  // lo que el negocio quiere (confirmado). Si preguntan puntualmente por otra categoría, el modelo igual
+  // tiene esos datos en sealedLines más abajo para contestar esa consulta específica.
+  const sealedFullListLines = sortedCatalog
+    .filter((r) => r.device_type === "iphone")
+    .map((r) => {
+      const name = catalogModelText(r);
+      const cap = r.capacity ? ` - ${r.capacity}` : "";
+      return `*${name}${cap}*\n${priceLinePublic(r.price_usd)}`;
+    });
   const sealedFullListText =
-    `*Sellados*\nNuevos, caja sellada\nUn año de garantía oficial\n\n` + sealedLines.join("\n\n");
+    `*Sellados*\nNuevos, caja sellada\nUn año de garantía oficial\n\n` + sealedFullListLines.join("\n\n");
   const sealedStockLines = (catalog ?? []).map((r) => {
     const name = catalogModelText(r);
     const units = stockByKey.get(`${r.device_type}|${r.model}|${r.capacity ?? ""}|new_sealed`) ?? 0;
@@ -215,9 +234,16 @@ Cuando un ítem tiene varios datos (modelo, batería, color, precio), cada dato 
 debajo del otro — nunca metas características entre paréntesis pegadas al nombre del modelo en la misma
 línea, porque en pantalla chica se corta el renglón a la mitad y queda feo.
 
-Cuando te piden el LISTADO COMPLETO de sellados (ej. "pasame precio de los sellados", "qué sellados
-tenés"), te paso más abajo un bloque ya armado y en el orden correcto ("BLOQUE LISTO PARA MANDAR TAL
-CUAL..."): PEGALO LITERAL, carácter por carácter, como UN elemento del array "replies" — empieza con
+El "listado completo de sellados" es SOLO de iPhone — es lo único que se vende así por WhatsApp hoy.
+Aunque el catálogo real también tiene AirPods, Apple Watch, iPad, MacBook, Samsung y PlayStation, cuando
+te piden "el listado de sellados" sin aclarar categoría, asumís que es de iPhone y NO mandás esas otras
+categorías mezcladas. Si preguntan puntualmente por otra categoría puntual (ej. "¿tenés Apple Watch?"),
+ahí sí respondé con los datos reales que tengas de esa categoría, con el mismo criterio de formato de
+siempre (negrita, renglones separados) — pero eso es aparte, no se mete en el listado general de sellados.
+
+Cuando te piden el LISTADO COMPLETO de sellados de iPhone (ej. "pasame precio de los sellados", "qué
+sellados tenés"), te paso más abajo un bloque ya armado y en el orden correcto ("BLOQUE LISTO PARA MANDAR
+TAL CUAL..."): PEGALO LITERAL, carácter por carácter, como UN elemento del array "replies" — empieza con
 *Sellados* seguido de "Nuevos, caja sellada" y "Un año de garantía oficial". NO le cambies esa primera
 parte por una introducción tuya ("te paso los sellados", etc.), NO la resumas, NO repitas esas dos líneas
 de características en otro mensaje aparte después del listado, y NO reordenes ni reformatees la lista —
@@ -225,10 +251,13 @@ va TODO junto en un solo mensaje (nunca separes por categoría tipo "Pro y Pro M
 Duo en otro mensaje aparte: todos los modelos van en la misma lista, uno abajo del otro). El orden es por
 familia/generación (15, 16, 17, 17 Pro, 17 Pro Max, 18 Pro, 18 Pro Max, ...) y dentro de cada modelo por
 capacidad — NUNCA alfabético, por más que te resulte "más prolijo": el orden ya viene bien calculado, no
-lo toques. Después de ese bloque (pegado tal cual, nada más en ese mismo mensaje), mandá un mensaje aparte
-(otro elemento del array) con el link al catálogo público que te paso en los datos, con una onda tipo
-"Te dejo el link al catálogo completo, ahí podés ver en detalle los colores, las cuotas, fotos de los
-equipos usados y demás: <link>". Recién en un tercer mensaje podés preguntar si le interesó alguno.
+lo toques. El ORDEN DE LOS MENSAJES es SIEMPRE el mismo — nunca lo inviertas, ni la primera vez que te
+lo piden ni si te lo vuelven a pedir de nuevo en la misma charla (ej. "repetimos", "pasame de nuevo la
+lista"): primero el bloque de precios (pegado tal cual, nada más en ese mismo mensaje), DESPUÉS en un
+mensaje aparte (otro elemento del array) el link al catálogo público que te paso en los datos, con una
+onda tipo "Te dejo el link al catálogo completo, ahí podés ver en detalle los colores, las cuotas, fotos
+de los equipos usados y demás: <link>" — el link NUNCA va antes que el bloque de precios. Recién en un
+tercer mensaje podés preguntar si le interesó alguno.
 
 Para consultas sobre UN modelo puntual de sellado (no el listado completo), usá el mismo estilo de línea
 (negrita con modelo y capacidad juntos, precio abajo) pero no hace falta mandar el bloque completo ni el
