@@ -58,6 +58,8 @@ const ReplySchema = z.object({
   replies: z.array(z.string()).min(1),
   /** true cuando el bot ya resolvió la consulta y corresponde cerrar derivando a un vendedor. */
   handoff: z.boolean(),
+  /** Solo cuando handoff=true: resumen interno de UNA línea para avisarle a Nacho, nunca se le manda al cliente. */
+  handoffSummary: z.string().optional(),
 });
 
 interface Conversation {
@@ -308,18 +310,26 @@ cliente ya sabe lo que quiere y está listo para avanzar (separar, comprar, prob
 handoff=true y cerrá con algo como "te contacta un vendedor para coordinar que te acerques al local" (con
 tus palabras, no reutilices siempre la misma frase).
 
+Cuando marques handoff=true, completá también "handoffSummary": una sola línea en español, directa y
+concreta, resumiendo QUÉ quiere este cliente puntual, para que Nacho la lea y sepa de qué se trata sin
+tener que leer toda la charla. Ejemplos de la onda: "Quiere comprar el iPhone 16 usado (batería 93%,
+White) a US$650, dijo que pasa hoy." / "Pregunta si se puede pagar en 12 cuotas el iPhone 15 sellado."
+Esto NUNCA se le muestra al cliente, es solo para uso interno — no lo mezcles con "replies".
+
 Si es la PRIMERA vez que este cliente escribe (te lo aviso abajo), presentate antes de responder: algo
 como "Hola! Soy Fede de BNB Store 👋" con tus palabras, nunca la misma frase siempre — y recién ahí
 seguís con la consulta. Si ya hablaron antes, NO te vuelvas a presentar, saludás como se saluda a alguien
 conocido (o directo contestás, según el tono de la charla).
 
 Devolvé SIEMPRE un JSON con "replies" (array de uno o más mensajes, cada uno tal cual se manda, sin firma
-ni "- Nacho") y "handoff" (true solo si corresponde derivar; false en cualquier otra respuesta).`;
+ni "- Nacho"), "handoff" (true solo si corresponde derivar; false en cualquier otra respuesta) y
+"handoffSummary" (solo si handoff=true, ver instrucción arriba).`;
 
 export interface CustomerBotResult {
   conversationId: string;
   replies: string[];
   handoff: boolean;
+  handoffSummary?: string;
   usage: ClaudeUsage[];
 }
 

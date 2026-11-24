@@ -44,8 +44,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, lane: "supplier", result });
     }
 
-    const { replies } = await answerCustomerMessage(inbound.from, inbound.name, inbound.text);
+    const { replies, handoff, handoffSummary } = await answerCustomerMessage(inbound.from, inbound.name, inbound.text);
     for (const reply of replies) await sendWhatsAppMessage(inbound.from, reply);
+    if (handoff && process.env.NACHO_PHONE_NUMBER) {
+      const who = inbound.name ? `${inbound.name} (${inbound.from})` : inbound.from;
+      await sendWhatsAppMessage(
+        process.env.NACHO_PHONE_NUMBER,
+        `Nacho, ${who} está esperando tu mensaje.${handoffSummary ? ` ${handoffSummary}` : " Quiere avanzar con una compra, revisá el chat."}`
+      );
+    }
     return NextResponse.json({ ok: true, lane: "customer" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido";

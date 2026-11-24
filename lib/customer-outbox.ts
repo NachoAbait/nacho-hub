@@ -51,3 +51,26 @@ export async function markOutboxSent(id: string): Promise<void> {
 export async function markOutboxError(id: string, message: string): Promise<void> {
   await supabaseAdmin().from("customer_outbox").update({ status: "error", error_message: message }).eq("id", id);
 }
+
+/**
+ * Cuando el bot deriva una conversación (handoff=true), le avisa a Nacho por el mismo WhatsApp de la
+ * oficina (reusa esta misma cola/puente: "phone" es simplemente el destino de cada fila, no tiene que
+ * coincidir con el cliente de la conversación — ver bridge/whatsapp/index.mjs sendPendingReplies). No
+ * rompe nada si todavía no está configurado NACHO_PHONE_NUMBER: solo lo loguea y sigue.
+ */
+export async function notifyOwnerOfHandoff(
+  conversationId: string,
+  customerPhone: string,
+  customerName: string | null,
+  summary: string | undefined
+): Promise<void> {
+  const ownerPhone = process.env.NACHO_PHONE_NUMBER;
+  if (!ownerPhone) {
+    console.warn("[customer-outbox] handoff sin avisar: falta NACHO_PHONE_NUMBER");
+    return;
+  }
+  const who = customerName ? `${customerName} (${customerPhone})` : customerPhone;
+  const body = `Nacho, ${who} está esperando tu mensaje.${summary ? ` ${summary}` : " Quiere avanzar con una compra, revisá el chat."}`;
+  const { error } = await supabaseAdmin().from("customer_outbox").insert({ conversation_id: conversationId, phone: ownerPhone, body });
+  if (error) console.error("[customer-outbox] no pude avisarle a Nacho:", error.message);
+}

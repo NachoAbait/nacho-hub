@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 import { answerCustomerMessage } from "@/lib/agents/customer-bot";
-import { enqueueOutboxMessage } from "@/lib/customer-outbox";
+import { enqueueOutboxMessage, notifyOwnerOfHandoff } from "@/lib/customer-outbox";
 
 export const maxDuration = 60;
 
@@ -29,8 +29,9 @@ export async function POST(request: Request) {
   const senderName = typeof b.sender_name === "string" ? b.sender_name : null;
 
   try {
-    const { conversationId, replies } = await answerCustomerMessage(sender, senderName, body);
+    const { conversationId, replies, handoff, handoffSummary } = await answerCustomerMessage(sender, senderName, body);
     for (const reply of replies) await enqueueOutboxMessage(conversationId, sender, reply);
+    if (handoff) await notifyOwnerOfHandoff(conversationId, sender, senderName, handoffSummary);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido";
