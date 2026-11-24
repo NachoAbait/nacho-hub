@@ -34,9 +34,12 @@ export function matchUsedModel(model: string): string | null {
 
 export interface UsedReferenceRow {
   model: string;
-  /** Precio mayorista de usado más barato visto (null = sin dato). */
-  minUsd: number | null;
+  /** Ahora es parte de la identidad de la fila, no solo un dato de la mejor cotización: un mismo
+   * modelo puede tener 128/256/512GB a precios bien distintos y antes se mezclaban (se mostraba
+   * el GB más barato como si fuera "el" precio del modelo, aunque el canje real fuera de otra capacidad). */
   capacity: string | null;
+  /** Precio mayorista de usado más barato visto para ese modelo+capacidad (null = sin dato). */
+  minUsd: number | null;
   supplier: string | null;
   date: string | null;
   stale: boolean;
@@ -63,41 +66,57 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b) - Date.parse(a)) / 86400_000);
 }
 
-/** Función pura (testeable): de las filas crudas a la tabla de 15 modelos. */
+/** Para ordenar las capacidades de un modelo de menor a mayor (128GB, 256GB, 512GB, ...). */
+function capacityGB(capacity: string | null): number {
+  if (!capacity) return Infinity; // sin capacidad especificada: al final
+  const m = capacity.match(/(\d+)/);
+  return m ? Number(m[1]) : Infinity;
+}
+
+/** Función pura (testeable): de las filas crudas a la tabla de referencia, una fila por modelo+capacidad. */
 export function buildUsedReference(
   quotes: UsedQuoteDbRow[],
   supplierNames: Map<string, string>,
   today: string,
 ): UsedReferenceData {
-  // Por modelo y proveedor, solo vale su cotización MÁS RECIENTE (si un proveedor subió el precio, el
-  // viejo ya no existe); dentro de ese día, la más barata. Después, el mínimo entre proveedores.
-  const latest = new Map<string, { model: string; supplier: string; price: number; date: string; capacity: string | null }>();
+  // Por modelo+capacidad y proveedor, solo vale su cotización MÁS RECIENTE (si un proveedor subió el
+  // precio, el viejo ya no existe); dentro de ese día, la más barata. Después, el mínimo entre proveedores.
+  const latest = new Map<string, { model: string; capacity: string | null; supplier: string; price: number; date: string }>();
   for (const q of quotes) {
     if (q.category !== "iphone") continue;
     const model = matchUsedModel(q.model);
     const price = Number(q.price_usd);
     if (!model || !(price > 0)) continue;
-    const key = `${model}|${q.supplier_id ?? "?"}`;
+    const capacity = q.capacity ?? null;
+    const key = `${model}|${capacity ?? "?"}|${q.supplier_id ?? "?"}`;
     const cur = latest.get(key);
     if (!cur || q.quote_date > cur.date || (q.quote_date === cur.date && price < cur.price)) {
-      latest.set(key, { model, supplier: q.supplier_id ? supplierNames.get(q.supplier_id) ?? "proveedor" : "proveedor sin identificar", price, date: q.quote_date, capacity: q.capacity });
+      latest.set(key, { model, capacity, supplier: q.supplier_id ? supplierNames.get(q.supplier_id) ?? "proveedor" : "proveedor sin identificar", price, date: q.quote_date });
     }
   }
 
-  const rows = USED_TARGET_MODELS.map((model): UsedReferenceRow => {
+  const rows: UsedReferenceRow[] = [];
+  for (const model of USED_TARGET_MODELS) {
     const cands = [...latest.values()].filter((c) => c.model === model);
-    if (!cands.length) return { model, minUsd: null, capacity: null, supplier: null, date: null, stale: false, suggestedUsd: null };
-    const best = cands.reduce((a, b) => (b.price < a.price || (b.price === a.price && b.date > a.date) ? b : a));
-    return {
-      model,
-      minUsd: best.price,
-      capacity: best.capacity,
-      supplier: best.supplier,
-      date: best.date,
-      stale: daysBetween(best.date, today) > USED_STALE_AFTER_DAYS,
-      suggestedUsd: Math.max(0, best.price - USED_BATTERY_DISCOUNT_USD),
-    };
-  });
+    if (!cands.length) {
+      rows.push({ model, capacity: null, minUsd: null, supplier: null, date: null, stale: false, suggestedUsd: null });
+      continue;
+    }
+    const capacities = [...new Set(cands.map((c) => c.capacity))].sort((a, b) => capacityGB(a) - capacityGB(b));
+    for (const capacity of capacities) {
+      const ofCapacity = cands.filter((c) => c.capacity === capacity);
+      const best = ofCapacity.reduce((a, b) => (b.price < a.price || (b.price === a.price && b.date > a.date) ? b : a));
+      rows.push({
+        model,
+        capacity,
+        minUsd: best.price,
+        supplier: best.supplier,
+        date: best.date,
+        stale: daysBetween(best.date, today) > USED_STALE_AFTER_DAYS,
+        suggestedUsd: Math.max(0, best.price - USED_BATTERY_DISCOUNT_USD),
+      });
+    }
+  }
   return { rows, discountUsd: USED_BATTERY_DISCOUNT_USD, staleAfterDays: USED_STALE_AFTER_DAYS };
 }
 
