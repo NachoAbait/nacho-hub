@@ -75,6 +75,7 @@ export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
     .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, created_at, updated_at, attributes")
     .eq("organization_id", NEXIOS_ORG_ID)
     .eq("is_active", true)
+    .eq("public_visible", true) // el "ojito": is_active=true sin esto puede ser un modelo que ya no se consigue
     .eq("condition", "new_sealed")
     .order("device_type")
     .order("model")
