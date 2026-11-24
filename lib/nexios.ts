@@ -14,6 +14,7 @@ import type { Category } from "@/lib/types";
 
 export const NEXIOS_URL = process.env.NEXIOS_SUPABASE_URL ?? "https://xlpkdztjmxslrcipxpzm.supabase.co";
 export const NEXIOS_ORG_ID = process.env.NEXIOS_ORG_ID ?? "fac40dd4-f516-4c5a-bf4d-06fa01caeee4";
+export const NEXIOS_PUBLIC_CATALOG_URL = "https://www.nexiosapp.com/c/bnb-store";
 
 let client: SupabaseClient | null = null;
 

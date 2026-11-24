@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { askJson, type ClaudeUsage } from "@/lib/claude";
 import { supabaseAdmin } from "@/lib/supabase";
-import { fetchCatalog, fetchExchangeRateConfig, fetchStock, fetchPreOwnedUnits, catalogModelText, nexiosAvailable } from "@/lib/nexios";
+import { fetchCatalog, fetchExchangeRateConfig, fetchStock, fetchPreOwnedUnits, catalogModelText, nexiosAvailable, NEXIOS_PUBLIC_CATALOG_URL } from "@/lib/nexios";
 import { computeEffectiveRate, isExchangeRateSource } from "@/lib/exchange-rates";
 
 /**
@@ -100,6 +100,29 @@ async function saveMessage(conversationId: string, role: "customer" | "bot", bod
   await db.from("customer_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
 }
 
+/**
+ * Orden de familia para el listado de sellados (15, 16, 17, 17 Pro, 17 Pro Max, 18 Pro, ...), NUNCA
+ * alfabético: el orden alfabético deja "17 Pro Max" antes que "18 Pro", que es justo el error que Nacho
+ * reportó. Se calcula acá y NO se le pide al modelo que ordene, por la misma razón que el dólar o las
+ * cuotas: un LLM no reordena esto de forma confiable mensaje tras mensaje.
+ */
+function capacityGB(capacity: string | null): number {
+  if (!capacity) return 0;
+  const m = capacity.match(/(\d+)\s*(GB|TB)/i);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return m[2].toUpperCase() === "TB" ? n * 1024 : n;
+}
+
+function sealedSortKey(model: string, capacity: string | null): [number, number, number] {
+  if (model === "iPhone Duo") return [9999, 0, capacityGB(capacity)]; // línea premium aparte, siempre al final
+  const m = model.match(/^iPhone (\d+)(e)?(?: (Pro Max|Pro|Air))?$/);
+  if (!m) return [500, 0, capacityGB(capacity)]; // modelo no reconocido: al final, nunca se pierde
+  const gen = Number(m[1]);
+  const variant = m[3] === "Pro Max" ? 3 : m[3] === "Pro" ? 2 : m[3] === "Air" ? 1 : m[2] === "e" ? 0.5 : 0;
+  return [gen, variant, capacityGB(capacity)];
+}
+
 /** Catálogo + stock + cotización armados en texto plano para el prompt: precio USD, pesos y cuotas. */
 async function catalogContext(): Promise<string> {
   if (!nexiosAvailable()) return "(Sin acceso al catálogo de NexiOS ahora mismo: no inventes precios ni stock, decile al cliente que un vendedor le confirma.)";
@@ -124,10 +147,20 @@ async function catalogContext(): Promise<string> {
   };
   // Para sellados NO se muestra stock acá (ver prompt: eso se reserva para cuando el cliente ya
   // decidió el modelo puntual). El número real se pasa aparte, marcado como uso interno.
-  const sealedLines = (catalog ?? []).map((r) => {
-    const name = catalogModelText(r);
-    return `- ${name}${r.capacity ? " " + r.capacity : ""}: ${priceLine(r.price_usd)}`;
+  const sortedCatalog = [...(catalog ?? [])].sort((a, b) => {
+    const ka = sealedSortKey(a.model, a.capacity);
+    const kb = sealedSortKey(b.model, b.capacity);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
   });
+  const sealedLines = sortedCatalog.map((r) => {
+    const name = catalogModelText(r);
+    const cap = r.capacity ? ` - ${r.capacity}` : "";
+    return `*${name}${cap}*\n${priceLine(r.price_usd)}`;
+  });
+  // Bloque ya armado y en el orden correcto, listo para mandar TAL CUAL como un elemento de "replies"
+  // cuando piden el listado completo de sellados (todo junto, sin separar por categoría ni por línea).
+  const sealedFullListText =
+    `*Sellados*\nNuevos, caja sellada\nUn año de garantía oficial\n\n` + sealedLines.join("\n\n");
   const sealedStockLines = (catalog ?? []).map((r) => {
     const name = catalogModelText(r);
     const units = stockByKey.get(`${r.device_type}|${r.model}|${r.capacity ?? ""}|new_sealed`) ?? 0;
@@ -144,7 +177,11 @@ async function catalogContext(): Promise<string> {
   const dollarLine = dollar ? `Dólar de la casa hoy: $${dollar.toLocaleString("es-AR")}.` : "No hay cotización manual cargada: si preguntan el precio en pesos, avisá que lo confirma un vendedor.";
   return (
     `${dollarLine}\n\n` +
-    `Catálogo sellado (nuevo) — precios, SIN mencionar stock (ver instrucción sobre esto):\n${sealedLines.length ? sealedLines.join("\n") : "(sin sellados activos cargados)"}\n\n` +
+    `Catálogo sellado (nuevo) — precios, SIN mencionar stock (ver instrucción sobre esto), YA EN EL ORDEN\n` +
+    `CORRECTO (no lo reordenes vos):\n${sealedLines.length ? sealedLines.join("\n\n") : "(sin sellados activos cargados)"}\n\n` +
+    `BLOQUE LISTO PARA MANDAR TAL CUAL cuando pidan el listado COMPLETO de sellados (todo junto, un solo\n` +
+    `mensaje, sin separar por categoría ni mandar el Duo aparte):\n${sealedFullListText}\n\n` +
+    `Link al catálogo público (fotos, colores, cuotas, usados): ${NEXIOS_PUBLIC_CATALOG_URL}\n\n` +
     `USO INTERNO, stock real de sellados (NO es para mostrar en el pantallazo general, ver instrucción):\n` +
     `${sealedStockLines.length ? sealedStockLines.join("\n") : "(sin datos)"}\n\n` +
     `${travelScheduleNote()}\n\n` +
@@ -176,16 +213,27 @@ Cuando un ítem tiene varios datos (modelo, batería, color, precio), cada dato 
 debajo del otro — nunca metas características entre paréntesis pegadas al nombre del modelo en la misma
 línea, porque en pantalla chica se corta el renglón a la mitad y queda feo.
 
-Ejemplo real y correcto para una lista de sellados:
+Cuando te piden el LISTADO COMPLETO de sellados (ej. "pasame precio de los sellados", "qué sellados
+tenés"), te paso más abajo un bloque ya armado y en el orden correcto ("BLOQUE LISTO PARA MANDAR TAL
+CUAL..."): PEGALO LITERAL, carácter por carácter, como UN elemento del array "replies" — empieza con
+*Sellados* seguido de "Nuevos, caja sellada" y "Un año de garantía oficial". NO le cambies esa primera
+parte por una introducción tuya ("te paso los sellados", etc.), NO la resumas, NO repitas esas dos líneas
+de características en otro mensaje aparte después del listado, y NO reordenes ni reformatees la lista —
+va TODO junto en un solo mensaje (nunca separes por categoría tipo "Pro y Pro Max", ni mandes el iPhone
+Duo en otro mensaje aparte: todos los modelos van en la misma lista, uno abajo del otro). El orden es por
+familia/generación (15, 16, 17, 17 Pro, 17 Pro Max, 18 Pro, 18 Pro Max, ...) y dentro de cada modelo por
+capacidad — NUNCA alfabético, por más que te resulte "más prolijo": el orden ya viene bien calculado, no
+lo toques. Después de ese bloque (pegado tal cual, nada más en ese mismo mensaje), mandá un mensaje aparte
+(otro elemento del array) con el link al catálogo público que te paso en los datos, con una onda tipo
+"Te dejo el link al catálogo completo, ahí podés ver en detalle los colores, las cuotas, fotos de los
+equipos usados y demás: <link>". Recién en un tercer mensaje podés preguntar si le interesó alguno.
 
-*Sellados*
-(Caja sellada, 1 año de garantía oficial de Apple):
+Para consultas sobre UN modelo puntual de sellado (no el listado completo), usá el mismo estilo de línea
+(negrita con modelo y capacidad juntos, precio abajo) pero no hace falta mandar el bloque completo ni el
+link — solo lo que preguntó. Ejemplo:
 
-• iPhone 16 128GB
-US$835 | $1.440.584
-
-• iPhone 15 128GB
-US$775 | $1.337.069
+*iPhone 17 - 256GB*
+US$1010 | $1.742.503
 
 Ejemplo real y correcto para una lista de usados (cada dato en su línea, nunca entre paréntesis):
 
@@ -271,6 +319,15 @@ BNB Store (no es con posnet ni máquina de tarjeta tradicional). Se puede combin
 efectivo en pesos, otra en dólares, y el resto en cuotas, en la misma compra. Cuando te pregunten por
 cuotas de un modelo puntual, explicá que es vía Mercado Pago (tarjeta adherida a la cuenta de BNB Store)
 y pasale el detalle de 6/9/12 cuotas de ese modelo (del [cuotas: ...] correspondiente).
+
+Plan canje: BNB SÍ toma equipos usados del cliente como parte de pago. Si preguntan si hacen canje, o te
+dicen que tienen un equipo para entregar (ej. "tengo un iPhone 13 para entregar"), confirmá que sí se
+hace, con naturalidad. Todavía NO podés cotizar cuánto te toman por ese equipo — no inventes un monto ni
+dejes caer una cifra aproximada. Si falta algún dato básico del equipo que entrega (modelo, capacidad,
+estado/batería a ojo), preguntaselo — es una pregunta que sí podés aprovechar, porque se la vas a pasar al
+vendedor. Una vez que tengas esos datos (o si ya te los dio todos de entrada), marcá handoff=true con un
+handoffSummary tipo "Pregunta por plan canje: entrega un iPhone 13 128GB, estado bueno según dice, para
+parte de pago de [lo que quiere llevarse si lo mencionó]." para que un vendedor le confirme la valuación.
 
 Los usados te los paso unidad por unidad, cada una con su batería y precio real (no hay dos iguales). Si
 hay varias del mismo modelo, podés elegir cuál mencionar según lo que pida el cliente (la más barata, la
