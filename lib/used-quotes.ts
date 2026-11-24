@@ -32,6 +32,47 @@ export function matchUsedModel(model: string): string | null {
   return USED_TARGET_MODELS.includes(name) ? name : null;
 }
 
+/** Categorías estéticas, mismo orden que ya usa el resto del sistema (NexiOS, Configuración >
+ * Categorías): A+ es el mejor estado, C el peor. */
+export const AESTHETIC_GRADES = ["A+", "A", "B", "C"] as const;
+export type AestheticGrade = (typeof AESTHETIC_GRADES)[number];
+
+/** Franjas de batería real del equipo que trae el cliente. Por debajo de 85% no entra en plan canje
+ * (requisito fijo del negocio, ver DECISIONS.md), por eso no hay franja para eso. */
+export const BATTERY_TIERS = [
+  { min: 90, label: "90–100%", extraUsd: 0 },
+  { min: 85, label: "85–89%", extraUsd: 30 },
+] as const;
+
+/**
+ * Extra que se resta además de USED_BATTERY_DISCOUNT_USD según el estado estético del equipo que
+ * trae el cliente (A+ = el mismo caso de siempre, sin extra). Los números de A/B son una primera
+ * estimación de Nacho (24-11-2026, "por ahí $30 más, la verdad que no sé"): quedan como constante
+ * fácil de ajustar, no una fórmula — calibrar con ventas reales en cuanto haya. C es la misma
+ * progresión extrapolada, sin ningún dato real detrás todavía.
+ */
+export const AESTHETIC_EXTRA_USD: Record<AestheticGrade, number> = {
+  "A+": 0,
+  "A": 30,
+  "B": 60,
+  "C": 90,
+};
+
+/** A qué franja de batería cae un % real, o null si está por debajo del mínimo de plan canje. */
+export function batteryTierFor(batteryPct: number): (typeof BATTERY_TIERS)[number] | null {
+  if (batteryPct < 85) return null;
+  return BATTERY_TIERS.find((t) => batteryPct >= t.min) ?? BATTERY_TIERS[BATTERY_TIERS.length - 1];
+}
+
+/** El precio a ofrecer por un equipo concreto: el mínimo mayorista del modelo+capacidad, menos la
+ * batería (fija + franja) y menos el estado estético. Nunca negativo. Null si la batería no alcanza
+ * para entrar en plan canje. */
+export function suggestedForCondition(minUsd: number, batteryPct: number, grade: AestheticGrade): number | null {
+  const tier = batteryTierFor(batteryPct);
+  if (!tier) return null;
+  return Math.max(0, minUsd - USED_BATTERY_DISCOUNT_USD - tier.extraUsd - AESTHETIC_EXTRA_USD[grade]);
+}
+
 export interface UsedReferenceRow {
   model: string;
   /** Ahora es parte de la identidad de la fila, no solo un dato de la mejor cotización: un mismo
