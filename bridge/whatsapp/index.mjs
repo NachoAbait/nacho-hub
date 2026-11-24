@@ -102,9 +102,16 @@ async function reportOutboxResult(id, status, error) {
   }
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Delay entre mensajes seguidos al mismo número: aunque se manden en orden, sin esto a veces
+ * un mensaje corto le llega al cliente antes que uno más largo mandado justo antes (ej. una lista). */
+const BETWEEN_MESSAGES_DELAY_MS = 1500;
+
 async function sendPendingReplies(sock) {
   const items = await fetchOutbox();
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     try {
       await sock.sendMessage(`${toBarePhone(item.phone)}@s.whatsapp.net`, { text: item.body });
       await reportOutboxResult(item.id, "sent");
@@ -113,6 +120,8 @@ async function sendPendingReplies(sock) {
       await reportOutboxResult(item.id, "error", err.message);
       console.error(`[wa] no pude mandarle a ${item.phone}:`, err.message);
     }
+    const nextIsSamePhone = items[i + 1]?.phone === item.phone;
+    if (nextIsSamePhone) await sleep(BETWEEN_MESSAGES_DELAY_MS);
   }
 }
 

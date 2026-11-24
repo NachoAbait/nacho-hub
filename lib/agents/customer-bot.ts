@@ -67,6 +67,14 @@ interface Conversation {
   phone: string;
   name: string | null;
   status: "open" | "handed_off";
+  handed_off_until: string | null;
+}
+
+/** "Hasta que termine el día" en hora de Dolores (ART, UTC-3 todo el año, sin horario de verano). */
+function endOfTodayArgentinaUTC(): string {
+  const artNow = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const endArt = Date.UTC(artNow.getUTCFullYear(), artNow.getUTCMonth(), artNow.getUTCDate(), 23, 59, 59, 999);
+  return new Date(endArt + 3 * 60 * 60 * 1000).toISOString();
 }
 
 async function getOrCreateConversation(phone: string, name: string | null): Promise<Conversation> {
@@ -479,6 +487,14 @@ export async function answerCustomerMessage(phone: string, name: string | null, 
   const conversation = await getOrCreateConversation(phone, name);
   await saveMessage(conversation.id, "customer", incoming);
 
+  // Derivado a Nacho: no contesta más en esta charla hasta que termine el día (así Nacho puede escribir
+  // desde el mismo chat sin que el bot se meta) — pasado ese momento se reabre sola, sin que nadie la toque.
+  if (conversation.status === "handed_off") {
+    const stillPaused = conversation.handed_off_until && new Date(conversation.handed_off_until) > new Date();
+    if (stillPaused) return { conversationId: conversation.id, replies: [], handoff: false, usage: [] };
+    await supabaseAdmin().from("customer_conversations").update({ status: "open", handed_off_until: null }).eq("id", conversation.id);
+  }
+
   const [history, catalog] = await Promise.all([recentHistory(conversation.id), catalogContext()]);
   const transcript = history.map((m) => `${m.role === "customer" ? "Cliente" : "Vos"}: ${m.body}`).join("\n");
   const isFirstContact = !history.some((m) => m.role === "bot");
@@ -498,7 +514,10 @@ export async function answerCustomerMessage(phone: string, name: string | null, 
 
   for (const msg of result.replies) await saveMessage(conversation.id, "bot", msg);
   if (result.handoff) {
-    await supabaseAdmin().from("customer_conversations").update({ status: "handed_off" }).eq("id", conversation.id);
+    await supabaseAdmin()
+      .from("customer_conversations")
+      .update({ status: "handed_off", handed_off_until: endOfTodayArgentinaUTC() })
+      .eq("id", conversation.id);
   }
   return { ...result, usage, conversationId: conversation.id };
 }
