@@ -54,9 +54,10 @@ function goalFor(view: OfficeView, focus: SectorFocus | null): Shot {
       if (desk) {
         const [ax, az] = desk;
         // Los demás escritorios ya se esconden solos (ver desk.tsx, prop "dimmed") así que esta
-        // toma no necesita estar pegada al agente para dejarlos afuera de cuadro — solo tiene que
-        // entrar cómoda: el cartel (arriba de la cabeza) y la tarea completa, sin recortarse.
-        return { position: [ax, y + 4.8, az + 7.8], target: [ax, y + 1, az - 0.3] };
+        // toma no necesita estar pegada al agente para dejarlos afuera de cuadro — casi la misma
+        // distancia que el plano de sector de abajo, pero centrada en SU escritorio en vez del
+        // centro del sector: entra cómodo el cartel entero y la tarea, sin recortarse.
+        return { position: [ax, y + 7, az + 12], target: [ax, y + 1, az - 0.3] };
       }
     }
     const sector = SECTORS.find((s) => s.tier === focus.tier)!;
