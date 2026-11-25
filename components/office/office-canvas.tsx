@@ -14,10 +14,10 @@ const Scene = dynamic(() => import("@/components/office/scene"), {
 
 interface Props {
   statuses: Record<string, AgentStatus>;
-  designerBanner: DesignerBanner | null;
+  designerBanners: DesignerBanner[];
 }
 
-export function OfficeCanvas({ statuses, designerBanner }: Props) {
+export function OfficeCanvas({ statuses, designerBanners }: Props) {
   const [view, setView] = useState<OfficeView>("BNB");
   // Efecto de ascensor: dirección y un contador para reiniciar la animación CSS en cada viaje.
   const [fx, setFx] = useState<{ dir: "up" | "down" | "zoom"; key: number } | null>(null);
@@ -80,7 +80,7 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
         onClearFocus={() => { setFocus(null); setSelectedId(null); }}
         onClose={() => setSelectedId(null)}
         statuses={effective}
-        designerBanner={designerBanner}
+        designerBanners={designerBanners}
       />
     </div>
   );

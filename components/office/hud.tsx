@@ -23,8 +23,10 @@ import { ReelScoutPanel } from "@/components/office/reel-scout-panel";
 import { VideoEditorPanel } from "@/components/office/video-editor-panel";
 import { AgentReportPanel } from "@/components/office/agent-report-panel";
 import { REGISTERED_AGENT_IDS } from "@/lib/agents";
+import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
 export interface DesignerBanner {
+  category: Category;
   url: string;
   generatedAt: string;
 }
@@ -39,7 +41,7 @@ interface Props {
   onClearFocus: () => void;
   onClose: () => void;
   statuses: Record<string, AgentStatus>;
-  designerBanner: DesignerBanner | null;
+  designerBanners: DesignerBanner[];
 }
 
 const CONTEXT_LABEL: Record<string, string> = { BNB: "BNB", AgroScan: "AgroScan", GLOBAL: "Economía" };
@@ -52,7 +54,7 @@ const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
 ];
 
 
-export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClearFocus, onClose, statuses, designerBanner }: Props) {
+export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClearFocus, onClose, statuses, designerBanners }: Props) {
   const agent = selectedId ? agentById(selectedId) : undefined;
   const brief = agent ? BRIEFS[agent.id] : undefined;
   const status = agent ? statuses[agent.id] ?? "idle" : "idle";
@@ -265,14 +267,32 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
           {agent.id === "designer" && (
             <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">Último banner</span>
-                <div className="flex flex-col items-end gap-2"><RunNowButton agentId="designer" onPendingChange={onDesignerWorking} /><RegenerateButton category="iphone" onPendingChange={onDesignerWorking} /></div>
+                <span className="text-sm font-semibold">Banners · último por categoría</span>
+                <RunNowButton agentId="designer" onPendingChange={onDesignerWorking} />
               </div>
-              {designerBanner ? (
-                <a href={designerBanner.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-white/10">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={designerBanner.url} alt="Último banner de iPhone" className="w-full" />
-                </a>
+              {designerBanners.length ? (
+                // Ancho fijo + snap: se desliza una categoría a la vez (como un carrusel), en vez
+                // de un <img> suelto a lo ancho del panel, que con el panel agrandado se veía
+                // gigante y deforme (la imagen es 9:16, no cuadrada).
+                <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2">
+                  {designerBanners.map((b) => (
+                    <div key={b.category} className="flex w-[200px] flex-none snap-center flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-white/80">{CATEGORY_LABEL[b.category]}</span>
+                        <RegenerateButton category={b.category} onPendingChange={onDesignerWorking} />
+                      </div>
+                      <a
+                        href={b.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="aspect-[9/16] overflow-hidden rounded-lg border border-white/10 bg-black"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={b.url} alt={`Banner ${CATEGORY_LABEL[b.category]}`} className="h-full w-full object-cover" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <p className="text-xs text-white/50">Todavía no hay banners.</p>
               )}
