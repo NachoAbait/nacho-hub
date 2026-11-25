@@ -140,11 +140,16 @@ export interface GenerateAllResult {
  * repetidas veces en el mismo invocation serverless es lo que venía agotando memoria y tirando
  * "Unable to capture screenshot" a partir de la 2ª o 3ª categoría (visto en prod desde el
  * 2026-11-15).
+ *
+ * Ese mismo Chromium compartido a veces se cae solo a mitad de la corrida (visto en prod el
+ * 25-11-2026: "browser has been closed" desde la 2ª categoría en adelante, aunque cada una sola
+ * generaba bien por separado). Sin el relanzamiento de abajo, UNA categoría que lo tumbara
+ * arrastraba a TODAS las que venían después en la lista.
  */
 export async function generateAllBanners(only?: Category[]): Promise<GenerateAllResult[]> {
   const out: GenerateAllResult[] = [];
   const usdArs = await fetchUsdArsRate();
-  const browser = await launchBrowser();
+  let browser = await launchBrowser();
   try {
     for (const category of only ?? CATEGORIES) {
       const products = await activeProducts(category);
@@ -156,11 +161,25 @@ export async function generateAllBanners(only?: Category[]): Promise<GenerateAll
         const banner = await generateBanner(category, browser, usdArs);
         out.push({ category, ok: true, banner, products: products.length });
       } catch (err) {
-        out.push({ category, ok: false, error: err instanceof Error ? err.message : String(err), products: products.length });
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/closed|disconnected/i.test(message)) {
+          out.push({ category, ok: false, error: message, products: products.length });
+          continue;
+        }
+        // El browser se cayó: relanzar una vez y reintentar esta misma categoría antes de darla
+        // por perdida. Las categorías siguientes usan este browser nuevo.
+        await browser.close().catch(() => {});
+        browser = await launchBrowser();
+        try {
+          const banner = await generateBanner(category, browser, usdArs);
+          out.push({ category, ok: true, banner, products: products.length });
+        } catch (err2) {
+          out.push({ category, ok: false, error: err2 instanceof Error ? err2.message : String(err2), products: products.length });
+        }
       }
     }
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
   return out;
 }
