@@ -7,15 +7,27 @@ import { damp3 } from "maath/easing";
 import { Vector3 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Tier } from "@/lib/agents";
-import { FLOOR_GAP, SECTORS, floorTheme } from "@/lib/office/layout";
+import { FLOOR_GAP, SECTORS, floorLayout, floorTheme } from "@/lib/office/layout";
 import type { BusinessContext } from "@/lib/types";
 
 export type OfficeView = "BNB" | "AgroScan" | "GLOBAL" | "AMBOS";
 
-/** Sector enfocado: piso + tier. */
+/** Sector enfocado: piso + tier, y opcionalmente UN agente puntual de ese sector (acercarse a su
+ * escritorio en vez de mostrar todo el sector con sus compañeros al lado). */
 export interface SectorFocus {
   floor: BusinessContext;
   tier: Tier;
+  agentId?: string;
+}
+
+/** Dónde está el escritorio de un agente puntual dentro de su piso, o null si no se encontró (no
+ * debería pasar: todo agente definido tiene un escritorio, hasta los reservados de fases futuras). */
+function deskPositionFor(floor: BusinessContext, agentId: string): [number, number] | null {
+  for (const placement of floorLayout(floor)) {
+    const desk = placement.desks.find((d) => d.agent.id === agentId);
+    if (desk) return desk.position;
+  }
+  return null;
 }
 
 type Vec = [number, number, number];
@@ -36,8 +48,18 @@ const CUT = 0.35;
 
 function goalFor(view: OfficeView, focus: SectorFocus | null): Shot {
   if (focus) {
-    const sector = SECTORS.find((s) => s.tier === focus.tier)!;
     const y = floorTheme(focus.floor).y;
+    if (focus.agentId) {
+      const desk = deskPositionFor(focus.floor, focus.agentId);
+      if (desk) {
+        const [ax, az] = desk;
+        // Mucho más cerca que el plano de sector de abajo: a esta distancia, con el FOV angosto
+        // (30°) y la columna 3D ya achicada al 30% de pantalla (ver office-canvas.tsx), el
+        // siguiente escritorio (3.4 unidades al lado, 2.9 atrás/adelante) queda afuera de cuadro.
+        return { position: [ax, y + 3.6, az + 5.2], target: [ax, y + 0.95, az - 0.3] };
+      }
+    }
+    const sector = SECTORS.find((s) => s.tier === focus.tier)!;
     const [cx, cz] = sector.center;
     return { position: [cx, y + 7, cz + 11.5], target: [cx, y + 0.9, cz - 0.5] };
   }
