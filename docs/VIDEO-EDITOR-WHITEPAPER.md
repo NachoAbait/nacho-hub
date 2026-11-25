@@ -59,9 +59,13 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   además de cortar por puntuación o pausa real (>0.45s) — así alguien hablando corrido sin comas no
   termina armando un solo bloque gigante de texto.
 - **Sin colores.** Todo el texto es blanco con contorno negro sólido. El énfasis lo marcan SOLO
-  tipografía (ArchivoBlack para "normal", Anton para "keyword"/"critical") y tamaño (`LEVEL_STYLE` en
-  `ReelComposition.tsx`: 1x / 1.18x / 1.4x). Pedido explícito: "no uses tantos colores, solo con
-  cambiar tipografía... y tamaño alcanza".
+  tipografía y tamaño (`LEVEL_STYLE` en `ReelComposition.tsx`). Pedido explícito: "no uses tantos
+  colores, solo con cambiar tipografía... y tamaño alcanza".
+- **Tipografía (refresco del 25-11-2026):** Archivo itálica, dos pesos — 500 para "normal", 700 para
+  "keyword"/"critical" — en vez del combo anterior (ArchivoBlack + Anton, las dos en mayúscula de
+  palo ancha). Pedido explícito: "más cursiva, no tanto negrita, que es medio aburrido". Tamaño base
+  48 (antes 54). El criterio de CUÁNTO énfasis (1-2 palabras "critical" por oración, el resto
+  "normal") no cambió, solo cómo se ve.
 - **El énfasis es semántico y tiene que leer el guión completo, no palabra por palabra aislada.**
   `caption-style.ts` (`classifyWordEmphasis`) le pasa a Claude el guión YA agrupado por oración real
   (mismo criterio que `content-analysis.ts`) para que primero entienda el rol de cada oración dentro
@@ -107,7 +111,45 @@ manual de un cambio nuevo al propio pipeline — eso sigue necesitando capturas 
 momentos puntuales (arranque/final de una ventana de producto, mitad de una frase larga) antes de
 mandar cualquier versión nueva, como pidió Nacho explícitamente para no iterar a ciegas.
 
-## 6. Pendiente / no resuelto
+## 6. Transiciones, cartel de texto y escenas especiales (25-11-2026)
+
+Nacho empezó a subir sus tomas ya unidas en un solo archivo (en vez de un clip por toma) — los
+cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nuevas, todas opcionales
+(listas vacías = comportamiento de siempre):
+
+- **Transiciones entre cortes duros** (`lib/video-editor/transitions.ts`, `detectHardCuts` — ffmpeg
+  `select='gt(scene,0.1)'` sobre el clip YA cortado/mejorado, nunca el crudo). Cada corte detectado
+  se pasa como `transitionPoints` a `renderReel`; `ReelComposition.tsx` superpone un freeze-frame de
+  la toma saliente que se desvanece con un empujón de zoom (`TRANSITION_LENGTH` = 10 frames) en vez
+  de dejar el corte seco.
+- **Cartel de texto anclado a una frase literal** (`findPhraseWindow` en `product-match.ts` — busca
+  texto exacto palabra por palabra en toda la transcripción, no el match de modelo por oración de
+  `content-analysis.ts`). Hoy lo usa el cartel "100% ORIGINAL / Sin cambios / Sin arreglos"
+  (`BadgeSegment`/`Badge` en `ReelComposition.tsx`) cuando Nacho dice esa frase — mismo lenguaje
+  visual que la caja de producto (tarjeta, borde dorado) pero sin foto. Arriba de la cabeza, no
+  centrado: centrado le tapaba la cara.
+- **Escenas especiales recortando a Nacho del fondo** (fondo blanco con subtítulos detrás de él, o
+  lluvia de billetes con él adelante) — `scripts/video-editor/cutout_scene.py`. MediaPipe no corre
+  adentro de Remotion/Chromium, así que esto NO pasa por la composición en vivo: un script Python
+  aparte segmenta persona/fondo frame por frame (Selfie Segmentation, Tasks API — la versión
+  "legacy" `mp.solutions` ya no existe en mediapipe 1.x), compone sobre el fondo nuevo, y el
+  resultado es un .mp4 normal que `CutoutScene` en `ReelComposition.tsx` reproduce durante esa
+  ventana en vez de la cámara (`Sequence` remapea el frame local a 0). Notas de la implementación:
+  - La categoría de persona del modelo es la **0**, no la 1 — falso a primera vista, confirmado
+    componiendo las dos opciones contra un frame real.
+  - Limpieza de máscara: solo el componente conexo que toca el borde inferior del cuadro (Nacho
+    siempre llega hasta ahí sentado; un objeto de fondo como el logo de Apple en la pared, no) +
+    cierre/apertura morfológica + blur + mezcla con el alpha del frame anterior (reduce parpadeo).
+  - Los subtítulos de estas escenas van UNA ORACIÓN A LA VEZ (`--captions` recibe grupos por
+    oración, no una lista plana) — con todo el guión en una sola lista acumulándose, una escena de
+    varios segundos con dos oraciones seguidas hacía que la última línea (la palabra más importante,
+    "imposible") se saliera del cuadro por abajo. Mismo principio que la sección 3 de arriba, aplicado
+    acá a mano porque este script no reusa `captions.ts`.
+  - **Esto no está enganchado al cron automático** — qué frase dispara qué efecto depende del guión
+    de cada video puntual, no es una regla general. Se corre a mano (ver comentario de uso en el
+    propio script) cuando Nacho pide un efecto así para un video nuevo.
+
+## 7. Pendiente / no resuelto
 
 - iPhone 13 mini, 13 Pro, 13 Pro Max y 14 Plus no tienen foto en ningún lado (ni CDN de Apple, que los
   retiró, ni biblioteca local) — si Nacho los nombra, el QC los va a marcar como `missingPhotos` y hay

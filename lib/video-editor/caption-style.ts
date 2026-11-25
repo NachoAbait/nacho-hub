@@ -83,7 +83,10 @@ export async function classifyWordEmphasis(
     prompt,
     schema: EmphasisSchema,
     usage,
-    maxTokens: 4000,
+    // 4000 se quedaba corto y cortaba el JSON a mitad de un string (visto en vivo el 25-11-2026 con
+    // un clip de 191 palabras: "Unterminated string in JSON") — un objeto por palabra entera
+    // {index,level,sentiment} no es caro, pero con clips largos se va acumulando.
+    maxTokens: 8000,
   });
 
   const byIndex = new Map(result.words.map((w) => [w.index, w]));

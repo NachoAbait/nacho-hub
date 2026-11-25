@@ -26,7 +26,7 @@ interface ProcessedClip {
   qcIssues: string[];
 }
 
-interface ContentTimeline {
+export interface ContentTimeline {
   phrases: ReelPhrase[];
   overlaySegments: OverlaySegmentInput[];
   moodSegments: MoodSegmentInput[];
@@ -51,7 +51,7 @@ const EMPTY_TIMELINE: ContentTimeline = { phrases: [], overlaySegments: [], mood
  * siga con `EMPTY_TIMELINE` — el clip se renderiza igual, solo que con el fallback por nombre de
  * archivo y sin colores de tono.
  */
-async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promise<ContentTimeline> {
+export async function buildContentTimeline(ctx: AgentContext, videoPath: string): Promise<ContentTimeline> {
   const transcript = await transcribeClip(videoPath);
   if (!transcript) return EMPTY_TIMELINE;
 

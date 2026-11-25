@@ -51,14 +51,20 @@ export async function analyzeContent(
     `Transcripción de un reel de BNB Store (reventa de celulares), oración por oración:\n\n${numbered}\n\n` +
     `Catálogo de modelos con foto disponible (usá EXACTAMENTE estos strings en "product_models" para los que una oración ` +
     `mencione; si menciona un modelo que no está en esta lista, NO lo pongas en "product_models", pero sí anotalo en ` +
-    `"all_mentioned_models" con el nombre completo tal como se entiende del habla, ej. "iPhone 13"):\n${catalogModels.join(", ")}\n\n` +
+    `"all_mentioned_models" con el nombre completo tal como se entiende del habla, ej. un modelo nombrado de pasada que no ` +
+    `está en la lista):\n${catalogModels.join(", ")}\n\n` +
     `Para CADA oración (por su índice, en el mismo orden, sin saltarte ninguna):\n` +
-    `1. "product_models": TODOS los modelos DEL CATÁLOGO que menciona esa oración (puede ser más de uno, ej. "te recomiendo ` +
-    `el 16, el 17 Pro y el 14 Pro" menciona tres).\n` +
+    `1. "product_models": TODOS los modelos DEL CATÁLOGO que menciona esa oración (puede nombrar más de uno seguido).\n` +
     `2. "all_mentioned_models": TODOS los modelos de celular que se nombran en esa oración, estén o no en el catálogo — ` +
     `siempre un superset de "product_models".\n` +
     `3. "sentiment": positive/negative/neutral, sobre lo que se está diciendo en esa oración puntual, no una opinión general ` +
-    `sobre el modelo.`;
+    `sobre el modelo.\n\n` +
+    `REGLA ANTI-INVENCIÓN (crítica — un modelo de más en el video es peor que uno de menos): un modelo cuenta como ` +
+    `"mencionado" SOLO si su número/nombre aparece literalmente en ESA oración o en la oración INMEDIATAMENTE ANTERIOR. ` +
+    `Si una oración usa una referencia sin repetir el número (ej. "esos mismos modelos", "los mismos", "estos", "en versión ` +
+    `Pro Max") tenés que resolverla contra los números que SÍ aparecen escritos en la oración anterior — nunca agregues un ` +
+    `número o variante que no esté escrito en ninguna de las dos. Ante la duda entre inventar un modelo o dejarlo afuera, ` +
+    `dejalo afuera.`;
 
   const result = await askJson({
     agent: "video-editor",
@@ -69,13 +75,29 @@ export async function analyzeContent(
     prompt,
     schema: AnalysisSchema,
     usage,
-    maxTokens: 2000,
+    // 2000 se quedaba corto y cortaba el JSON a mitad de un string con transcripciones largas/con
+    // varios modelos por oración (visto en vivo el 25-11-2026: "Unterminated string in JSON") — igual
+    // síntoma y mismo arreglo que el maxTokens de caption-style.ts.
+    maxTokens: 6000,
   });
 
-  return result.segments.map((s) => ({
-    index: s.index,
-    productModels: s.product_models,
-    allMentionedModels: s.all_mentioned_models,
-    sentiment: s.sentiment,
-  }));
+  // Red de seguridad determinística además del prompt de arriba: a Claude se le puede escapar un
+  // número que no esté en ningún lado del texto real (visto en vivo: tras un pedido ambiguo del
+  // tipo "esos mismos modelos en versión Pro Max", una corrida devolvió "iPhone 17 Pro" sin que
+  // "17" apareciera en ninguna oración del clip). Si un modelo tiene dígitos (13, 14, 15...) y esos
+  // dígitos no aparecen ni en la oración actual ni en la anterior, se descarta — un modelo de más en
+  // el video es peor que uno de menos.
+  const digitsOf = (text: string) => new Set(text.match(/\d+/g) ?? []);
+  const segmentDigits = segments.map((s) => digitsOf(s.text));
+
+  return result.segments.map((s) => {
+    const windowDigits = new Set([...(segmentDigits[s.index] ?? []), ...(segmentDigits[s.index - 1] ?? [])]);
+    const hasEvidence = (model: string) => {
+      const modelDigits = digitsOf(model);
+      return modelDigits.size === 0 || [...modelDigits].some((d) => windowDigits.has(d));
+    };
+    const allMentionedModels = s.all_mentioned_models.filter(hasEvidence);
+    const productModels = s.product_models.filter((m) => hasEvidence(m) && allMentionedModels.includes(m));
+    return { index: s.index, productModels, allMentionedModels, sentiment: s.sentiment };
+  });
 }

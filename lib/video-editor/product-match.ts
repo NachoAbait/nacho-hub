@@ -127,3 +127,34 @@ export function anchorOverlaySegments(
     return { startSec: a.start, endSec: Math.max(nextStart, a.start + 0.6), imageUrl: a.model.imageUrl, label: a.model.label };
   });
 }
+
+function plainNormalize(word: string): string {
+  return word
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Busca, palabra por palabra, dónde arranca y termina una frase EXACTA (ej. ["sin","cambios"]) en la
+ * transcripción completa — a diferencia de anchorOverlaySegments (que ancla un modelo dentro de UNA
+ * oración ya identificada por Claude), esto busca texto literal en todo el clip, sin pasar por
+ * content-analysis: lo usan los efectos que dependen de que Nacho diga una frase puntual (ej. el
+ * cartel de "sin cambios, sin arreglos"), no de qué producto se nombra.
+ */
+export function findPhraseWindow(words: WhisperWord[], phrase: string[]): { start: number; end: number } | null {
+  const target = phrase.map(plainNormalize);
+  for (let i = 0; i <= words.length - target.length; i++) {
+    let matches = true;
+    for (let j = 0; j < target.length; j++) {
+      if (plainNormalize(words[i + j].word) !== target[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return { start: words[i].start, end: words[i + target.length - 1].end };
+  }
+  return null;
+}

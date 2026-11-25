@@ -75,6 +75,27 @@ export interface MoodSegmentInput {
   mood: "positive" | "negative";
 }
 
+/** Ventana del cartel de "sin cambios, sin arreglos" (ver BadgeSegment en ReelComposition.tsx). */
+export interface BadgeSegmentInput {
+  startSec: number;
+  endSec: number;
+}
+
+/** Segundo (de la línea de tiempo del clip YA cortado/mejorado) donde hay un corte duro entre tomas
+ * — ver lib/video-editor/transitions.ts. */
+export interface TransitionPointInput {
+  sec: number;
+}
+
+/** Escena especial ya compuesta por Python (ver scripts/tmp-fork/cutout_scene.py) que reemplaza la
+ * cámara normal durante esta ventana. `clipFileName` tiene que estar dentro de VIDEO_EDITOR_TMP_DIR
+ * (mismo publicDir que el clip principal) para que Remotion lo pueda servir. */
+export interface CutoutSceneInput {
+  startSec: number;
+  endSec: number;
+  clipFileName: string;
+}
+
 export interface RenderReelInput {
   /** Ruta local del clip crudo ya descargado (ver downloadClipToTmp). */
   videoPath: string;
@@ -94,6 +115,9 @@ export interface RenderReelInput {
   /** Subtítulos ya armados (ver lib/video-editor/captions.ts, buildPhrases) — render.ts no llama a
    * Whisper, solo ensambla lo que ya le pasaron. */
   phrases?: ReelPhrase[];
+  badgeSegments?: BadgeSegmentInput[];
+  transitionPoints?: TransitionPointInput[];
+  cutoutScenes?: CutoutSceneInput[];
 }
 
 const DEFAULT_OVERLAY_SECONDS = 6;
@@ -135,6 +159,11 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   ).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), imageUrl: s.imageUrl, label: s.label }));
 
   const moodSegments = (input.moodSegments ?? []).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), mood: s.mood }));
+  const badgeSegments = (input.badgeSegments ?? []).map((s) => toFrameWindow(s.startSec, s.endSec));
+  const transitionPoints = (input.transitionPoints ?? []).map((t) => ({
+    frame: Math.max(0, Math.min(durationInFrames, Math.round(t.sec * REEL_FPS))),
+  }));
+  const cutoutScenes = (input.cutoutScenes ?? []).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), clipFileName: s.clipFileName }));
 
   const serveUrl = await getServeUrl();
   const inputProps: ReelCompositionProps = {
@@ -147,6 +176,9 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     overlaySegments,
     moodSegments,
     phrases: input.phrases ?? [],
+    badgeSegments,
+    transitionPoints,
+    cutoutScenes,
   };
   const serializableProps = inputProps as unknown as Record<string, unknown>;
 
@@ -156,7 +188,12 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   // crf 16 (no el default ~23 de Remotion): este es el SEGUNDO de dos pasos de compresión (el
   // primero es enhanceClip) — sin esto se pierde calidad dos veces seguidas y el resultado final se
   // ve notoriamente peor que el clip original.
-  await renderMedia({ composition, serveUrl, codec: "h264", crf: 16, outputLocation, inputProps: serializableProps });
+  //
+  // timeoutInMilliseconds más alto que el default (30s): un render real tiró "Timeout (30000ms)
+  // exceeded rendering the component at frame 340" el 25-11-2026 en esta misma máquina, sin que el
+  // frame en cuestión tuviera nada especial — este es el primer lugar donde agregar más composición
+  // por frame (transición, cartel, escena especial) podía hacer que volviera a pasar más seguido.
+  await renderMedia({ composition, serveUrl, codec: "h264", crf: 16, outputLocation, inputProps: serializableProps, timeoutInMilliseconds: 120_000 });
 
   const buffer = await fs.readFile(outputLocation);
   await fs.unlink(outputLocation).catch(() => {});
