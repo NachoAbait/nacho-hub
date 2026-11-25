@@ -55,6 +55,7 @@ export default function Scene({ view, focus, statuses, selectedId, onSelect, onF
           statuses={statuses}
           selectedId={selectedId}
           focusedTier={focus?.floor === theme.id ? focus.tier : null}
+          focusedAgentId={focus?.floor === theme.id ? focus.agentId : undefined}
           onSelect={onSelect}
           onFocusSector={(tier) => onFocusSector(theme.id, tier)}
           visible={view === "AMBOS" || view === theme.id}

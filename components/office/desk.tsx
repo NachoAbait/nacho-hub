@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
+import { Group, Material, Mesh } from "three";
 import { STATUS_COLOR, STATUS_LABEL, type AgentDef, type AgentStatus } from "@/lib/agents";
 import { Character } from "@/components/office/character";
 import { screenTexture, woodTexture } from "@/lib/office/textures";
@@ -19,18 +21,69 @@ interface Props {
   visible: boolean;
   /** "normal" en la vista del piso, "detail" si su sector está en foco, "hidden" si el foco está en otro sector. */
   labelMode: "normal" | "detail" | "hidden";
+  /** Hay OTRO agente puntual en foco (no este): el escritorio entero se desvanece. Su cartel (Html
+   * de drei) no encoge con la distancia como el resto de la escena, así que con la cámara bien
+   * cerca del elegido terminaba tapándolo — se esconde en vez de solo achicarse. */
+  dimmed?: boolean;
   accentText?: string;
   onSelect: (id: string) => void;
 }
 
+function applyOpacity(list: Material[], value: number) {
+  for (const m of list) {
+    m.opacity = value;
+    m.transparent = value < 1;
+  }
+}
+
 /** Escritorio + monitor + silla + agente. El muñeco mira a +z (hacia la cámara). */
-export function Desk({ agent, status, position, deskColor, accent, selected, seed, visible, labelMode, onSelect }: Props) {
+export function Desk({ agent, status, position, deskColor, accent, selected, seed, visible, labelMode, dimmed, onSelect }: Props) {
   const [hover, setHover] = useState(false);
   const [x, z] = position;
   const screenGlow = status === "working" ? 1.8 : status === "live" ? 1.1 : status === "done" ? 0.6 : 0.08;
 
   const wood = useMemo(() => woodTexture(deskColor, [1.5, 0.8], 11), [deskColor]);
   const screen = useMemo(() => screenTexture(accent, Math.round(seed * 10)), [accent, seed]);
+
+  const group = useRef<Group>(null);
+  const materials = useRef<Material[]>([]);
+  const opacity = useRef(dimmed ? 0 : 1);
+  const [shown, setShown] = useState(!dimmed);
+
+  // Junta los materiales del escritorio una sola vez, para poder desvanecerlos todos juntos.
+  useEffect(() => {
+    const list: Material[] = [];
+    group.current?.traverse((o) => {
+      const m = (o as Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) if (!list.includes(mat)) list.push(mat);
+    });
+    materials.current = list;
+  }, []);
+
+  useFrame((_, rawDelta) => {
+    const g = group.current;
+    if (!g) return;
+    const delta = Math.min(rawDelta, 0.1);
+    const target = dimmed ? 0 : 1;
+    const prev = opacity.current;
+    if (Math.abs(prev - target) < 0.002) {
+      if (prev !== target) {
+        opacity.current = target;
+        applyOpacity(materials.current, target);
+        g.visible = target > 0;
+        if (shown !== !dimmed) setShown(!dimmed);
+      }
+      return;
+    }
+    // Entrar es más lento (se nota la transición); salir es más rápido (no estorba al que sí elegiste).
+    const next = prev + (target - prev) * (1 - Math.exp(-delta * (dimmed ? 14 : 8)));
+    opacity.current = next;
+    g.visible = true;
+    applyOpacity(materials.current, next);
+    const isShown = next > 0.5;
+    if (isShown !== shown) setShown(isShown);
+  });
 
   function click(e: ThreeEvent<MouseEvent>) {
     e.stopPropagation();
@@ -39,6 +92,7 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
 
   return (
     <group
+      ref={group}
       position={[x, 0, z]}
       onClick={click}
       onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = "pointer"; }}
@@ -125,7 +179,7 @@ export function Desk({ agent, status, position, deskColor, accent, selected, see
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onSelect(agent.id); }}
-          style={{ visibility: visible && labelMode !== "hidden" ? "visible" : "hidden", pointerEvents: visible && labelMode !== "hidden" ? "auto" : "none" }}
+          style={{ visibility: visible && shown && labelMode !== "hidden" ? "visible" : "hidden", pointerEvents: visible && shown && labelMode !== "hidden" ? "auto" : "none" }}
           className={`flex cursor-pointer flex-col items-center whitespace-nowrap rounded-lg border bg-black/85 text-white shadow-lg backdrop-blur transition hover:bg-black ${labelMode === "detail" ? "px-3 py-2" : "px-2.5 py-1.5"} ${selected ? "border-amber-400" : "border-white/15"}`}
         >
           <div className="flex items-center gap-1.5">

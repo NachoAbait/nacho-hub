@@ -16,6 +16,10 @@ interface Props {
   statuses: Record<string, AgentStatus>;
   selectedId: string | null;
   focusedTier: Tier | null;
+  /** Un agente puntual en foco (se tocó su escritorio, no la alfombra del sector): todos los demás
+   * escritorios se desvanecen, carteles incluidos — los carteles son Html de drei, de tamaño fijo
+   * en pantalla, y con la cámara tan cerca del elegido terminaban tapándolo igual que un cartel real. */
+  focusedAgentId?: string;
   onSelect: (id: string) => void;
   onFocusSector: (tier: Tier | null) => void;
   visible: boolean;
@@ -73,7 +77,7 @@ function applyOpacity(list: Material[], value: number) {
   }
 }
 
-export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFocusSector, visible, compact }: Props) {
+export function Floor({ theme, statuses, selectedId, focusedTier, focusedAgentId, onSelect, onFocusSector, visible, compact }: Props) {
   const layout = floorLayout(theme.id);
   const group = useRef<Group>(null);
   const materials = useRef<Material[]>([]);
@@ -221,21 +225,26 @@ export function Floor({ theme, statuses, selectedId, focusedTier, onSelect, onFo
                 </div>
               </div>
             </Html>
-            {desks.map(({ agent, position }, i) => (
-              <Desk
-                key={agent.id}
-                agent={agent}
-                status={statuses[agent.id] ?? "idle"}
-                position={position}
-                deskColor={theme.desk}
-                accent={theme.accent}
-                selected={selectedId === agent.id}
-                seed={i * 1.7 + cx}
-                visible={labelsShown}
-                labelMode={!focusedTier ? "normal" : focused ? "detail" : "hidden"}
-                onSelect={onSelect}
-              />
-            ))}
+            {desks.map(({ agent, position }, i) => {
+              const thisAgentFocused = focusedAgentId === agent.id;
+              const otherAgentFocused = !!focusedAgentId && !thisAgentFocused;
+              return (
+                <Desk
+                  key={agent.id}
+                  agent={agent}
+                  status={statuses[agent.id] ?? "idle"}
+                  position={position}
+                  deskColor={theme.desk}
+                  accent={theme.accent}
+                  selected={selectedId === agent.id}
+                  seed={i * 1.7 + cx}
+                  visible={labelsShown}
+                  labelMode={focusedAgentId ? (thisAgentFocused ? "detail" : "hidden") : !focusedTier ? "normal" : focused ? "detail" : "hidden"}
+                  dimmed={otherAgentFocused}
+                  onSelect={onSelect}
+                />
+              );
+            })}
           </group>
         );
       })}
