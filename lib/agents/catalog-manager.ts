@@ -39,12 +39,12 @@ export interface PendingVisibility {
 /**
  * Días que un producto tiene que pasar sin que NADIE lo cotice antes de darlo por sin stock.
  *
- * Con un solo día alcanzaba para vaciar la tienda: el 13-11-2026 un proveedor mandó una lista de
- * 11 ítems (6 iPhone, 4 MacBook, 1 iPad) y el agente ocultó 40 productos de un saque, porque leyó
- * "nadie lo cotizó hoy" como "no hay stock". Media lista, o un día sin que escriban, no es falta
- * de stock.
+ * Antes era 3 (margen para absorber una lista parcial de un proveedor, ver el incidente del
+ * 13-11-2026 más abajo). Nacho decidió el 25-11-2026 sacar ese margen: prefiere ocultar de más
+ * por un día de lista parcial que mostrar en el catálogo público algo que hoy nadie confirmó que
+ * hay. El freno de TOPE_OCULTAR sigue de pie como única red de seguridad contra ese escenario.
  */
-const DIAS_SIN_COTIZAR = 3;
+const DIAS_SIN_COTIZAR = 1;
 
 /** Qué porción del catálogo visible puede ocultar UNA corrida sin que Nacho lo confirme. */
 const TOPE_OCULTAR = 0.25;
