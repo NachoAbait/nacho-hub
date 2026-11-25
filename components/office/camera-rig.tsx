@@ -53,10 +53,10 @@ function goalFor(view: OfficeView, focus: SectorFocus | null): Shot {
       const desk = deskPositionFor(focus.floor, focus.agentId);
       if (desk) {
         const [ax, az] = desk;
-        // Mucho más cerca que el plano de sector de abajo: a esta distancia, con el FOV angosto
-        // (30°) y la columna 3D ya achicada al 30% de pantalla (ver office-canvas.tsx), el
-        // siguiente escritorio (3.4 unidades al lado, 2.9 atrás/adelante) queda afuera de cuadro.
-        return { position: [ax, y + 3.6, az + 5.2], target: [ax, y + 0.95, az - 0.3] };
+        // Los demás escritorios ya se esconden solos (ver desk.tsx, prop "dimmed") así que esta
+        // toma no necesita estar pegada al agente para dejarlos afuera de cuadro — solo tiene que
+        // entrar cómoda: el cartel (arriba de la cabeza) y la tarea completa, sin recortarse.
+        return { position: [ax, y + 4.8, az + 7.8], target: [ax, y + 1, az - 0.3] };
       }
     }
     const sector = SECTORS.find((s) => s.tier === focus.tier)!;
