@@ -57,14 +57,19 @@ export function OfficeCanvas({ statuses, designerBanner }: Props) {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-[#0a0b10]">
-      <Scene
-        view={view}
-        focus={focus}
-        statuses={effective}
-        selectedId={selectedId}
-        onSelect={selectAgent}
-        onFocusSector={focusSector}
-      />
+      {/* Con un agente seleccionado, el 3D se achica a una columna angosta ("ahí está, sentado
+          trabajando") y el panel de info pasa a ocupar el resto de la pantalla (ver Hud). Sin
+          selección, el 3D ocupa todo como siempre. */}
+      <div className={`absolute inset-y-0 left-0 transition-[width] duration-300 ease-out ${selectedId ? "w-[30%] min-w-[280px]" : "w-full"}`}>
+        <Scene
+          view={view}
+          focus={focus}
+          statuses={effective}
+          selectedId={selectedId}
+          onSelect={selectAgent}
+          onFocusSector={focusSector}
+        />
+      </div>
       {fx && <div key={fx.key} className={`elevator-fx ${fx.dir}`} aria-hidden />}
       <Hud
         view={view}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { STATUS_COLOR, STATUS_LABEL, TIERS, agentById, type AgentStatus } from "@/lib/agents";
 import type { OfficeView, SectorFocus } from "@/components/office/camera-rig";
 import { RegenerateButton } from "@/components/dashboard/regenerate-button";
@@ -58,6 +59,15 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
   const liveCount = Object.values(statuses).filter((s) => s !== "idle").length;
   const workingCount = Object.values(statuses).filter((s) => s === "working").length;
 
+  // Siempre tiene que haber una salida con el teclado, no solo la cruz: el video-editor ya nos
+  // quemó una vez con una vista sin forma de volver atrás.
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, onClose]);
+
   return (
     <>
       {/* título */}
@@ -110,9 +120,10 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
         <span className="text-white/35">· Tocá una alfombra para acercarte al sector, un agente para ver su panel</span>
       </div>
 
-      {/* panel del agente */}
+      {/* panel del agente: ocupa el 70% derecho de la pantalla (el otro 30% es el 3D, ver
+          office-canvas.tsx), en vez de flotar como tarjeta chica sobre la escena. */}
       {agent && (
-        <aside key={agent.id} className={`panel-enter absolute bottom-5 right-5 top-20 z-[100] flex ${agent.id === "price-analyst" || agent.id === "catalog-manager" || agent.id === "price-historian" ? "w-[680px]" : agent.id === "price-reader" || agent.id === "stock-analyst" ? "w-[480px]" : "w-[340px]"} max-w-[calc(100vw-2.5rem)] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-md`}>
+        <aside key={agent.id} className="panel-enter absolute bottom-5 left-[calc(30%+1.25rem)] right-5 top-20 z-[100] flex min-w-[380px] flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-black/90 p-6 backdrop-blur-md">
           <header className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-amber-400">

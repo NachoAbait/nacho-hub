@@ -18,9 +18,19 @@ const STATUS_STYLE: Record<VideoClip["status"], { label: string; dot: string; bo
  */
 export function VideoEditorPanel() {
   const [clips, setClips] = useState<VideoClip[] | undefined>(undefined);
+  const [preview, setPreview] = useState<VideoClip | null>(null);
   useEffect(() => {
     loadVideoClips().then(setClips);
   }, []);
+
+  // El video abría en una pestaña nueva (el visor nativo del navegador no tiene cruz propia):
+  // ahora se ve adentro de la app, con una salida siempre visible (cruz, click afuera o Escape).
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreview(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preview]);
 
   if (clips === undefined) return <PanelSkeleton />;
   if (clips.length === 0) {
@@ -54,15 +64,14 @@ export function VideoEditorPanel() {
               )}
 
               {clip.status === "done" && clip.outputUrl && (
-                <a
-                  href={clip.outputUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="overflow-hidden rounded-lg border border-white/10"
+                <button
+                  type="button"
+                  onClick={() => setPreview(clip)}
+                  className="overflow-hidden rounded-lg border border-white/10 text-left"
                 >
                   <video src={clip.outputUrl} className="aspect-[9/16] w-full max-w-[160px] bg-black object-cover" muted preload="metadata" />
                   <span className="block px-2 py-1 text-center text-[10px] text-amber-300">Ver reel editado →</span>
-                </a>
+                </button>
               )}
 
               {clip.status === "error" && clip.errorMessage && (
@@ -72,6 +81,30 @@ export function VideoEditorPanel() {
           );
         })}
       </div>
+
+      {preview && preview.outputUrl && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm"
+          onClick={() => setPreview(null)}
+        >
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setPreview(null)}
+              aria-label="Cerrar"
+              className="absolute -right-3 -top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black text-white/80 hover:bg-white/10 hover:text-white"
+            >
+              ✕
+            </button>
+            <video
+              src={preview.outputUrl}
+              className="max-h-[80vh] max-w-[90vw] rounded-xl border border-white/10 bg-black"
+              controls
+              autoPlay
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
