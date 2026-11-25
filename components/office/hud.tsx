@@ -46,6 +46,24 @@ interface Props {
 
 const CONTEXT_LABEL: Record<string, string> = { BNB: "BNB", AgroScan: "AgroScan", GLOBAL: "Economía" };
 
+/** A qué día de ART (UTC-3 fijo) corresponde un instante, como clave comparable. */
+function artDateKey(iso: string): string {
+  return new Date(Date.parse(iso) - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Para que se note a simple vista si un banner es de hoy o quedó viejo (pedido de Nacho: "¿cómo sé
+ * que está actualizado?") — sin esto, el panel mostraba la imagen sin decir cuándo se generó. */
+function bannerFreshness(generatedAt: string): { label: string; fresh: boolean } {
+  const genKey = artDateKey(generatedAt);
+  const todayKey = artDateKey(new Date().toISOString());
+  if (genKey === todayKey) {
+    const time = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(generatedAt));
+    return { label: `Hoy ${time}`, fresh: true };
+  }
+  const days = Math.round((Date.parse(todayKey) - Date.parse(genKey)) / 86400_000);
+  return { label: days === 1 ? "Ayer" : `Hace ${days} días`, fresh: false };
+}
+
 const VIEW_BUTTONS: { id: OfficeView; label: string; hint: string }[] = [
   { id: "BNB", label: "BNB", hint: "Planta baja" },
   { id: "AgroScan", label: "AgroScan", hint: "Primer piso" },
@@ -275,12 +293,21 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
                 // de un <img> suelto a lo ancho del panel, que con el panel agrandado se veía
                 // gigante y deforme (la imagen es 9:16, no cuadrada).
                 <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2">
-                  {designerBanners.map((b) => (
+                  {designerBanners.map((b) => {
+                    const freshness = bannerFreshness(b.generatedAt);
+                    return (
                     <div key={b.category} className="flex w-[200px] flex-none snap-center flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-white/80">{CATEGORY_LABEL[b.category]}</span>
                         <RegenerateButton category={b.category} onPendingChange={onDesignerWorking} />
                       </div>
+                      <span
+                        className={`self-start rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                          freshness.fresh ? "bg-emerald-400/15 text-emerald-300" : "bg-amber-400/15 text-amber-300"
+                        }`}
+                      >
+                        {freshness.label}
+                      </span>
                       <a
                         href={b.url}
                         target="_blank"
@@ -291,7 +318,8 @@ export function Hud({ view, onView, onDesignerWorking, selectedId, focus, onClea
                         <img src={b.url} alt={`Banner ${CATEGORY_LABEL[b.category]}`} className="h-full w-full object-cover" />
                       </a>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-xs text-white/50">Todavía no hay banners.</p>
