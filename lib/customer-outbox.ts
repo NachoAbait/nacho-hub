@@ -12,7 +12,7 @@ export interface OutboxItem {
  * oficina, así que no hay forma de que el hub (serverless) le hable directo al puente (corre en la
  * compu de Nacho, sin IP pública); el puente hace polling acá.
  */
-export async function enqueueOutboxMessage(conversationId: string, phone: string, body: string): Promise<void> {
+export async function enqueueOutboxMessage(conversationId: string | null, phone: string, body: string): Promise<void> {
   const { error } = await supabaseAdmin().from("customer_outbox").insert({ conversation_id: conversationId, phone, body });
   if (error) throw new Error(`No pude encolar la respuesta: ${error.message}`);
 }

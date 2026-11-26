@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 import { claimPendingOutbox, markOutboxError, markOutboxSent } from "@/lib/customer-outbox";
+import { deliverDueOwnerReminders } from "@/lib/agents/owner-reminders";
 
 /**
  * GET /api/agents/customer-bot/outbox — el puente hace polling cada pocos segundos: devuelve
@@ -12,6 +13,9 @@ import { claimPendingOutbox, markOutboxError, markOutboxSent } from "@/lib/custo
  */
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  // El puente ya pollea esto cada pocos segundos sin parar: es el mismo lugar donde se fijan los
+  // recordatorios que ya vencieron, sin necesidad de un cron propio (ver owner-reminders.ts).
+  await deliverDueOwnerReminders();
   const items = await claimPendingOutbox();
   return NextResponse.json({ items });
 }
