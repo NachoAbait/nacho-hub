@@ -6,6 +6,13 @@ import { VIDEO_EDITOR_TMP_DIR } from "@/lib/video-editor/render";
  * corte" — pero no todo silencio: las pausas cortas y naturales de alguien hablando a cámara se dejan
  * como están, cortarlas todas haría el video ilegible). */
 const MIN_SILENCE_SECONDS = 1.0;
+/** El silencio ANTES de la primera palabra es otra cosa: no es una pausa natural entre ideas (ahí
+ * todavía no hay nadie hablando), es tiempo muerto quieto mirando a cámara antes de arrancar — y con
+ * el umbral de arriba (1s) se quedaba sin cortar cualquier cosa debajo de un segundo, que es
+ * JUSTAMENTE donde más pasa (pedido explícito, 26-11-2026: "hay fracciones de segundo antes de que
+ * comience a hablar y queda feo"). Por eso se evalúa aparte con un umbral mucho más bajo — sin el
+ * riesgo de comerse pausas naturales de alguien ya hablando, porque acá no hay habla que proteger. */
+const LEADING_SILENCE_MIN_SECONDS = 0.2;
 /** Nivel por debajo del cual ffmpeg considera "silencio" — no es 0 absoluto, ruido de ambiente/mic
  * real nunca llega a -∞dB. */
 const SILENCE_NOISE_DB = "-30dB";
@@ -81,6 +88,10 @@ export interface SilenceCutResult {
  *
  * Nunca tira: si ffmpeg/ffprobe fallan, o no hay silencios de al menos 1s, devuelve el path original
  * sin tocar — el caller sigue con el clip completo en vez de perder el render.
+ *
+ * El silencio ANTES de la primera palabra se evalúa con un umbral mucho más bajo que el resto (ver
+ * LEADING_SILENCE_MIN_SECONDS) — es tiempo muerto quieto mirando a cámara, no una pausa natural a
+ * proteger.
  */
 export async function cutSilences(videoPath: string): Promise<SilenceCutResult> {
   try {
@@ -88,6 +99,15 @@ export async function cutSilences(videoPath: string): Promise<SilenceCutResult> 
     if (duration <= 0) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
 
     const silences = await detectSilences(videoPath);
+
+    // Silencio inicial con el umbral bajo (ver LEADING_SILENCE_MIN_SECONDS): si el silencio normal
+    // (d=1.0) ya encontró uno que arranca en 0, no hay nada que sumar — ya va a cortarse. Si no, se
+    // suma el que encuentre el umbral bajo, siempre que de verdad arranque en 0 (si no, es una pausa
+    // normal más adelante en el clip, no el silencio inicial, y esa la protege el umbral de 1s).
+    if (silences.length === 0 || silences[0].start > 0.05) {
+      const leading = (await detectSilences(videoPath, LEADING_SILENCE_MIN_SECONDS))[0];
+      if (leading && leading.start <= 0.05) silences.unshift(leading);
+    }
     if (silences.length === 0) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
 
     const keep: SilenceWindow[] = [];

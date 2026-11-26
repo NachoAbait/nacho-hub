@@ -36,9 +36,13 @@ const PAUSE_THRESHOLD_SECONDS = 0.45;
  * podía armar un solo segmento gigante (varias ideas, varios productos) que en pantalla se sentía
  * como un párrafo completándose en vez de una oración a la vez. Con esto se corta igual aunque no
  * haya pausa ni puntuación — no es perfecto (puede cortar en medio de una idea), pero mantiene cada
- * frase en pantalla corta y legible, que es lo que se pidió. */
-const MAX_SEGMENT_WORDS = 11;
-const MAX_SEGMENT_SECONDS = 4.5;
+ * frase en pantalla corta y legible, que es lo que se pidió.
+ *
+ * Bajado de 11 a 7 el 26-11-2026 — pedido explícito: "no quiero que aparezcan más de 6/7 palabras en
+ * una oración". MAX_SEGMENT_SECONDS también bajó en la misma proporción (7 palabras habladas a ritmo
+ * normal no necesitan 4.5s en pantalla). */
+const MAX_SEGMENT_WORDS = 7;
+const MAX_SEGMENT_SECONDS = 3;
 
 /** Si el tope de arriba cae justo antes de uno de estos, se espera una palabra más — sin esto, "el
  * 14 Pro" se cortaba en "el 14" y "Pro" quedaba solo, como su propia frase de una sola palabra en

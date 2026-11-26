@@ -8,7 +8,15 @@ import { withExtraModels } from "@/lib/video-editor/model-image-library";
 import { buildPhrases, transcribeClip } from "@/lib/video-editor/captions";
 import { analyzeContent } from "@/lib/video-editor/content-analysis";
 import { classifyWordEmphasis } from "@/lib/video-editor/caption-style";
-import { canRenderHere, renderReel, VERCEL_BLOCKER_MESSAGE, type MoodSegmentInput, type OverlaySegmentInput } from "@/lib/video-editor/render";
+import {
+  canRenderHere,
+  renderReel,
+  VERCEL_BLOCKER_MESSAGE,
+  type CutoutSceneInput,
+  type MoodSegmentInput,
+  type OverlaySegmentInput,
+} from "@/lib/video-editor/render";
+import { buildDepthScenes } from "@/lib/video-editor/depth-captions";
 import { enhanceClip } from "@/lib/video-editor/enhance";
 import { cutSilences } from "@/lib/video-editor/silence-cut";
 import { runQc } from "@/lib/video-editor/qc";
@@ -30,8 +38,11 @@ export interface ContentTimeline {
   phrases: ReelPhrase[];
   overlaySegments: OverlaySegmentInput[];
   moodSegments: MoodSegmentInput[];
-  /** Avisos legibles para el reporte (hoy: modelos mencionados sin foto) — ver `missingPhotos` abajo
-   * para la versión en datos crudos que usa el QC. */
+  /** Escenas "subtítulo detrás tuyo" (ver lib/video-editor/depth-captions.ts) — [] si no hay modelo
+   * de MediaPipe instalado en esta máquina, o si ninguna oración calificó. */
+  cutoutScenes: CutoutSceneInput[];
+  /** Avisos legibles para el reporte (modelos mencionados sin foto, escenas "detrás tuyo" que
+   * fallaron) — ver `missingPhotos` abajo para la versión en datos crudos que usa el QC. */
   warnings: string[];
   /** Modelos que se nombraron pero no tienen foto en ningún lado (catálogo activo ni biblioteca
    * extra) — separado de `warnings` (texto ya armado para el reporte) porque qc.ts necesita la
@@ -39,7 +50,14 @@ export interface ContentTimeline {
   missingPhotos: string[];
 }
 
-const EMPTY_TIMELINE: ContentTimeline = { phrases: [], overlaySegments: [], moodSegments: [], warnings: [], missingPhotos: [] };
+const EMPTY_TIMELINE: ContentTimeline = {
+  phrases: [],
+  overlaySegments: [],
+  moodSegments: [],
+  cutoutScenes: [],
+  warnings: [],
+  missingPhotos: [],
+};
 
 /**
  * Transcribe el clip y le pide a Claude que identifique, oración por oración, de qué modelo del
@@ -71,44 +89,52 @@ export async function buildContentTimeline(ctx: AgentContext, videoPath: string)
   const phrases = await buildPhrases(videoPath, transcript.words, transcript.segments, REEL_FPS, levels);
   if (transcript.segments.length === 0) return { ...EMPTY_TIMELINE, phrases };
 
-  const catalog = withExtraModels(await getActiveCatalog(ctx.db));
-  if (catalog.length === 0) return { ...EMPTY_TIMELINE, phrases };
-
-  const analysis = await analyzeContent(
-    transcript.segments,
-    catalog.map((c) => c.model),
-    ctx.usage,
-  );
-
   const overlaySegments: OverlaySegmentInput[] = [];
   const moodSegments: MoodSegmentInput[] = [];
   const missingPhotos = new Set<string>();
-  for (const a of analysis) {
-    const seg = transcript.segments[a.index];
-    if (!seg) continue;
 
-    // Una misma frase puede nombrar varios modelos seguidos ("te recomiendo el 16, el 17 Pro y el
-    // 14 Pro") — en vez de repartir el tiempo de la frase en partes iguales (hacía que la caja
-    // cambiara de producto antes o después de que se lo nombrara de verdad), se busca palabra por
-    // palabra en qué momento se dice cada uno (ver anchorOverlaySegments).
-    const matched: { label: string; imageUrl: string }[] = [];
-    for (const modelName of a.productModels) {
-      const product = catalog.find((c) => c.model === modelName);
-      if (product) matched.push({ label: product.model, imageUrl: product.hero_image_url });
-    }
-    // `allMentionedModels` es superset de `productModels` — acá quedan justo los que se nombraron
-    // pero no tienen foto en ningún lado (ni catálogo activo ni la biblioteca extra de
-    // model-image-library.ts), que es lo que de verdad hay que avisar.
-    for (const modelName of a.allMentionedModels) {
-      if (!catalog.some((c) => c.model === modelName)) missingPhotos.add(modelName);
-    }
-    if (matched.length > 0) {
-      const segWords = transcript.words.filter((w) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);
-      overlaySegments.push(...anchorOverlaySegments(seg, segWords, matched));
-    }
+  const catalog = withExtraModels(await getActiveCatalog(ctx.db));
+  if (catalog.length > 0) {
+    const analysis = await analyzeContent(
+      transcript.segments,
+      catalog.map((c) => c.model),
+      ctx.usage,
+    );
 
-    if (a.sentiment !== "neutral") moodSegments.push({ startSec: seg.start, endSec: seg.end, mood: a.sentiment });
+    for (const a of analysis) {
+      const seg = transcript.segments[a.index];
+      if (!seg) continue;
+
+      // Una misma frase puede nombrar varios modelos seguidos ("te recomiendo el 16, el 17 Pro y el
+      // 14 Pro") — en vez de repartir el tiempo de la frase en partes iguales (hacía que la caja
+      // cambiara de producto antes o después de que se lo nombrara de verdad), se busca palabra por
+      // palabra en qué momento se dice cada uno (ver anchorOverlaySegments).
+      const matched: { label: string; imageUrl: string }[] = [];
+      for (const modelName of a.productModels) {
+        const product = catalog.find((c) => c.model === modelName);
+        if (product) matched.push({ label: product.model, imageUrl: product.hero_image_url });
+      }
+      // `allMentionedModels` es superset de `productModels` — acá quedan justo los que se nombraron
+      // pero no tienen foto en ningún lado (ni catálogo activo ni la biblioteca extra de
+      // model-image-library.ts), que es lo que de verdad hay que avisar.
+      for (const modelName of a.allMentionedModels) {
+        if (!catalog.some((c) => c.model === modelName)) missingPhotos.add(modelName);
+      }
+      if (matched.length > 0) {
+        const segWords = transcript.words.filter((w) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);
+        overlaySegments.push(...anchorOverlaySegments(seg, segWords, matched));
+      }
+
+      if (a.sentiment !== "neutral") moodSegments.push({ startSec: seg.start, endSec: seg.end, mood: a.sentiment });
+    }
   }
+
+  // Efecto "subtítulo detrás tuyo" (ver lib/video-editor/depth-captions.ts) — automático para
+  // CUALQUIER video, no depende de que haya catálogo ni de que se haya detectado ningún modelo, solo
+  // de que haya oraciones elegibles. Nunca tira: sin modelo de MediaPipe instalado, o si falla una
+  // escena puntual, sigue con subtítulo normal ahí (ver warnings).
+  const { cutoutScenes, warnings: depthWarnings } = await buildDepthScenes(videoPath, transcript.segments, transcript.words, overlaySegments);
+  for (const w of depthWarnings) ctx.log(w);
 
   // QC básico pedido por Nacho: si Claude detectó que se nombra un modelo que SÍ está en el catálogo
   // pero sin foto (o directamente no está en el catálogo de modelos con foto), avisar explícito en
@@ -117,7 +143,7 @@ export async function buildContentTimeline(ctx: AgentContext, videoPath: string)
     (model) => `Se menciona "${model}" pero no tiene foto en el catálogo activo — no pudo aparecer en el video.`,
   );
 
-  return { phrases, overlaySegments, moodSegments, warnings, missingPhotos: [...missingPhotos] };
+  return { phrases, overlaySegments, moodSegments, cutoutScenes, warnings, missingPhotos: [...missingPhotos] };
 }
 
 /**

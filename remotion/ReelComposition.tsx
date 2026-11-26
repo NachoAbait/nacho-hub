@@ -1,5 +1,6 @@
 import { AbsoluteFill, Freeze, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { loadFont as loadArchivo } from "@remotion/google-fonts/Archivo";
+import { loadFont as loadFraunces } from "@remotion/google-fonts/Fraunces";
 
 // Refresh de tipografía pedido por Nacho el 25-11-2026: el combo anterior (ArchivoBlack + Anton,
 // las dos en mayúscula de palo ancha) lo sintió "aburrido" — pidió más cursiva y menos negrita. En
@@ -9,6 +10,11 @@ import { loadFont as loadArchivo } from "@remotion/google-fonts/Archivo";
 // anterior que sigue en pie), solo que ahora es peso+itálica en vez de dos familias distintas.
 const { fontFamily: CAPTION_FONT } = loadArchivo("italic", { weights: ["500"], subsets: ["latin"] });
 const { fontFamily: KEYWORD_FONT } = loadArchivo("italic", { weights: ["700"], subsets: ["latin"] });
+// Segunda tipografía de énfasis (26-11-2026, pedido explícito: "quiero que el editor combine
+// fuentes, tamaños") — una serifa itálica bien distinta de Archivo para que la palabra "critical" de
+// ALGUNAS oraciones cambie de familia, no solo de peso. Nunca para "normal" (esa sigue siempre en
+// Archivo, es la base legible de la frase) — ver phraseFontVariant más abajo para cuándo se usa.
+const { fontFamily: ACCENT_FONT } = loadFraunces("italic", { weights: ["600"], subsets: ["latin"] });
 
 /** Contorno negro sólido (no un blur) + una sombra suave debajo — el look "impact text" de los
  * subtítulos de la competencia, legible sobre cualquier fondo sin necesitar una placa detrás. */
@@ -135,6 +141,15 @@ const LEVEL_STYLE: Record<"normal" | "keyword" | "critical", { scale: number; fo
   critical: { scale: 1.32, font: KEYWORD_FONT, weight: 700 },
 };
 
+/** Cada oración (no cada palabra — mezclar tipografías dentro de una misma frase se ve a los
+ * ponchazos) decide si su palabra "critical" usa la itálica de Archivo (la mayoría de las veces) o
+ * la serifa de Fraunces (1 de cada 3, variedad real de familia, no solo de peso) — determinístico
+ * por índice de frase, no al azar en cada render, para que un mismo video dé siempre el mismo
+ * resultado si hay que re-renderizarlo. */
+function accentFontFor(phraseIndex: number): string {
+  return phraseIndex % 3 === 1 ? ACCENT_FONT : KEYWORD_FONT;
+}
+
 /**
  * Estilo "spotlight de producto" copiado de la competencia que Nacho mostró: fondo con el
  * presentador difuminado y oscurecido, una caja redondeada con borde que brilla (dorado neutro,
@@ -198,6 +213,7 @@ export function ReelComposition({
   // La frase se va completando: todas las palabras cuyo `startFrame` ya pasó quedan en pantalla
   // juntas (no se reemplazan entre sí) hasta que termina la frase entera.
   const visibleWords = activePhrase?.words.filter((w) => frame >= w.startFrame) ?? [];
+  const activePhraseIndex = activePhrase ? phrases.indexOf(activePhrase) : 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -218,15 +234,12 @@ export function ReelComposition({
               cual — es justo el caso de uso que documenta Remotion para esto. */}
           <OffthreadVideo
             src={staticFile(videoSrc)}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              // Menos oscuro que antes (brightness 0.55 → 0.78, el degradé de abajo 0.7 → 0.4 de opacidad
-              // máxima): se había puesto demasiado opaco, apenas se distinguía al presentador.
-              filter: "blur(2px) brightness(0.78) saturate(0.95)",
-              transform: `scale(${videoScale})`,
-            }}
+            // Sin filtro de color ni viñeta (sacados el 26-11-2026, pedido explícito: "en cuanto a
+            // filtros e imagen no se toque nada" — el blur/brightness/saturate + la viñeta oscura que
+            // había acá antes eran justo lo que violaba ese pedido). `enhance.ts` sigue siendo el único
+            // lugar que mejora la imagen (contraste/brillo/saturación real, no un filtro CSS encima). El
+            // zoom/drift de abajo es movimiento de cámara, no un filtro de imagen — se mantiene.
+            style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${videoScale})` }}
           />
           {/* Transición entre tomas (ver TransitionPoint): freeze de la toma saliente que se desvanece
               con un empujoncito de zoom, revelando la toma entrante que el layer de arriba ya está
@@ -240,19 +253,12 @@ export function ReelComposition({
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  filter: "blur(2px) brightness(0.78) saturate(0.95)",
                   transform: `scale(${videoScale * interpolate(frame - activeTransition.frame, [0, TRANSITION_LENGTH], [1, 1.045])})`,
                   opacity: interpolate(frame - activeTransition.frame, [0, TRANSITION_LENGTH], [1, 0]),
                 }}
               />
             </Freeze>
           )}
-          {/* Viñeta: oscurece los bordes (no el centro, donde está la cara) — dar sensación de foco sin
-              tocar la nitidez real del video (eso lo arruinaría; la calidad del archivo se cuida en
-              enhance.ts/render.ts con crf 16, no acá). */}
-          <AbsoluteFill
-            style={{ background: "radial-gradient(ellipse 85% 65% at 50% 32%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.5) 100%)" }}
-          />
         </>
       )}
 
@@ -345,7 +351,7 @@ export function ReelComposition({
         <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 780 }}>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "baseline", gap: "6px 18px", maxWidth: "88%" }}>
             {visibleWords.map((w, i) => (
-              <WordSpan key={i} word={w} frame={frame} fps={fps} />
+              <WordSpan key={i} word={w} frame={frame} fps={fps} phraseIndex={activePhraseIndex} />
             ))}
           </div>
         </AbsoluteFill>
@@ -408,9 +414,12 @@ function Badge({ startFrame, frame, fps }: { startFrame: number; frame: number; 
 // bajarla un poco no resta legibilidad.
 const CAPTION_BASE_SIZE = 48;
 
-function WordSpan({ word, frame, fps }: { word: ReelWord; frame: number; fps: number }) {
+function WordSpan({ word, frame, fps, phraseIndex }: { word: ReelWord; frame: number; fps: number; phraseIndex: number }) {
   const pop = spring({ frame: frame - word.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 });
   const level = LEVEL_STYLE[word.level ?? "normal"];
+  // Variedad de familia tipográfica solo en la palabra "critical" (ver accentFontFor) — "normal" y
+  // "keyword" se quedan siempre en Archivo, que es la base legible de la frase.
+  const font = word.level === "critical" ? accentFontFor(phraseIndex) : level.font;
   // `fontSize` real, no `transform: scale()` — un scale visual no mueve el layout, así que una
   // palabra "critical" más grande se superponía con la de al lado en vez de empujarla (visto en
   // vivo: "NO" tapando "RECOMIENDO"). Con fontSize el navegador sí reserva el espacio real.
@@ -420,7 +429,7 @@ function WordSpan({ word, frame, fps }: { word: ReelWord; frame: number; fps: nu
   return (
     <span
       style={{
-        fontFamily: level.font,
+        fontFamily: font,
         fontStyle: "italic",
         fontWeight: level.weight,
         letterSpacing: "0.005em",

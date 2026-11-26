@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """
-Compone una escena especial (fondo blanco o lluvia de billetes) recortando a Nacho del fondo real
-con MediaPipe Selfie Segmentation y pegándolo sobre un fondo nuevo. Pensado para tramos CORTOS (unos
-pocos segundos) del video, no para el clip entero — por eso procesa un rango [start,end] en vez de
-todo el archivo.
+Compone una escena especial recortando a Nacho del fondo real con MediaPipe Selfie Segmentation.
+Tres modos: fondo blanco, lluvia de billetes, o "depth" (el fondo real sin tocar, con el subtítulo
+dibujado detrás de la persona — ver más abajo). Pensado para tramos CORTOS (unos pocos segundos) del
+video, no para el clip entero — por eso procesa un rango [start,end] en vez de todo el archivo.
 
 Dependencias (no están en package.json porque esto corre con python3, no con Node):
   pip3 install mediapipe opencv-python-headless pillow numpy
 Modelo y fuente ya incluidos en assets/ (selfie_segmenter.tflite, archivo-italic.ttf) — no hace
 falta bajarlos de nuevo.
 
-No está enganchado al cron automático (lib/agents/video-editor.ts): estos efectos salen de frases
-puntuales de UN guión (25-11-2026, "Que no te tomen el pelo"), no de una regla general que aplique
-a cualquier video — por eso se corre a mano por ahora. `--captions` espera una lista de GRUPOS por
-oración (no una lista plana de palabras): `[{"start":S,"end":E,"words":[{"text":"...","start":s}]}]`,
-todo en segundos relativos al arranque de la escena — así cada oración limpia la pantalla antes de
-que empiece la siguiente, en vez de ir acumulando líneas hasta salirse del cuadro.
+whitebg/moneyrain siguen sin engancharse al cron automático: salen de frases puntuales de UN guión
+(25-11-2026, "Que no te tomen el pelo"), se corren a mano. El modo "depth" SÍ está enganchado al
+pipeline automático (26-11-2026, ver lib/video-editor/depth-captions.ts y lib/agents/video-editor.ts)
+— para ALGUNAS oraciones de CUALQUIER video, automático, no una frase puntual. `--captions` espera
+una lista de GRUPOS por oración (no una lista plana de palabras):
+`[{"start":S,"end":E,"words":[{"text":"...","start":s}]}]`, todo en segundos relativos al arranque
+de la escena — así cada oración limpia la pantalla antes de que empiece la siguiente, en vez de ir
+acumulando líneas hasta salirse del cuadro.
 
 Uso:
-  python3 cutout_scene.py --video <mp4> --start S --end E --mode whitebg|moneyrain --out <mp4> \
+  python3 cutout_scene.py --video <mp4> --start S --end E --mode whitebg|moneyrain|depth --out <mp4> \
       --model assets/selfie_segmenter.tflite [--captions <json-de-oraciones>]
 """
 import argparse
@@ -224,7 +226,7 @@ def main():
     ap.add_argument("--video", required=True)
     ap.add_argument("--start", type=float, required=True)
     ap.add_argument("--end", type=float, required=True)
-    ap.add_argument("--mode", choices=["whitebg", "moneyrain"], required=True)
+    ap.add_argument("--mode", choices=["whitebg", "moneyrain", "depth"], required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--captions", default=None, help="JSON: [{text,start}] start relativo a --start")
@@ -281,6 +283,17 @@ def _run_scene(args, fps, tmpdir):
             bg_pil = Image.fromarray(bg)
             if captions:
                 bg_pil = draw_caption(bg_pil, captions, t_sec, (46, 40, 30), w, position="upper")
+            bg = np.array(bg_pil)
+            comp = (img_rgb.astype(np.float32) * alpha3 + bg.astype(np.float32) * (1 - alpha3)).astype(np.uint8)
+        elif args.mode == "depth":
+            # Pedido explícito de Nacho (26-11-2026): el efecto "subtítulo detrás tuyo" SIN tocar ni
+            # reemplazar el fondo real — a diferencia de whitebg/moneyrain (que pintan un fondo nuevo
+            # entero), acá el "fondo" sobre el que se dibuja el texto es el frame real tal cual salió
+            # de cámara. El texto queda atrás solo porque la persona (recortada con alpha) se
+            # superpone encima en la misma composición — el fondo del video no cambia en nada.
+            bg_pil = Image.fromarray(img_rgb)
+            if captions:
+                bg_pil = draw_caption(bg_pil, captions, t_sec, (255, 255, 255), w, position="upper", stroke=((0, 0, 0), max(2, int(w * 0.006))))
             bg = np.array(bg_pil)
             comp = (img_rgb.astype(np.float32) * alpha3 + bg.astype(np.float32) * (1 - alpha3)).astype(np.uint8)
         else:

@@ -17,6 +17,12 @@ mirar un solo frame suelto.
    margen de cada lado para no comerse el ataque de una palabra), no todo silencio — las pausas cortas
    y naturales de alguien hablando a cámara se dejan como están. Como corre antes de Whisper, todo lo
    que viene después ya trabaja sobre la línea de tiempo del clip YA recortado.
+   - **Silencio inicial (refresco del 26-11-2026):** el tramo ANTES de la primera palabra no es una
+     pausa a proteger — ahí todavía no hay nadie hablando, es tiempo muerto quieto mirando a cámara.
+     Pedido explícito: "hay fracciones de segundo antes de que comience a hablar y queda feo". Por eso
+     se evalúa aparte con un umbral mucho más bajo (`LEADING_SILENCE_MIN_SECONDS = 0.2`, no 1s) — solo
+     para el silencio que arranca en el segundo 0 del clip, el resto del video sigue protegido por el
+     umbral de 1s de siempre.
 2. **Mejora de imagen tipo "Enhance" de CapCut** (`lib/video-editor/enhance.ts`, `enhanceClip`) —
    contraste/brillo/saturación + nitidez (unsharp mask). Esto es lo que de verdad mejora la imagen; la
    "calidad 4K/HD" de CapCut es solo resolución de exportación, no hace nada por sí sola.
@@ -55,9 +61,10 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   hasta terminar esa oración — ahí se limpia todo y arranca la siguiente (`ReelPhrase`/`ReelWord` en
   `ReelComposition.tsx`). Nunca "una palabra reemplaza a la anterior" (karaoke clásico).
 - **Una oración a la vez, no un párrafo cargándose de a poco.** Cada frase en pantalla tiene un tope
-  duro de 11 palabras / 4.5 segundos (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`),
-  además de cortar por puntuación o pausa real (>0.45s) — así alguien hablando corrido sin comas no
-  termina armando un solo bloque gigante de texto.
+  duro de **7 palabras / 3 segundos** (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`,
+  bajado de 11/4.5 el 26-11-2026 — pedido explícito: "no quiero que aparezcan más de 6/7 palabras en
+  una oración"), además de cortar por puntuación o pausa real (>0.45s) — así alguien hablando corrido
+  sin comas no termina armando un solo bloque gigante de texto.
 - **Sin colores.** Todo el texto es blanco con contorno negro sólido. El énfasis lo marcan SOLO
   tipografía y tamaño (`LEVEL_STYLE` en `ReelComposition.tsx`). Pedido explícito: "no uses tantos
   colores, solo con cambiar tipografía... y tamaño alcanza".
@@ -66,6 +73,11 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   palo ancha). Pedido explícito: "más cursiva, no tanto negrita, que es medio aburrido". Tamaño base
   48 (antes 54). El criterio de CUÁNTO énfasis (1-2 palabras "critical" por oración, el resto
   "normal") no cambió, solo cómo se ve.
+  - **Variedad de familia (refresco del 26-11-2026):** pedido explícito "quiero que el editor combine
+    fuentes, tamaños" (con el ejemplo de un reel de Instagram). La palabra "critical" de 1 de cada 3
+    oraciones usa Fraunces itálica en vez de Archivo itálica (`accentFontFor` en
+    `ReelComposition.tsx`, determinístico por índice de frase, no al azar en cada render). "normal" y
+    "keyword" siguen siempre en Archivo — es la base legible de la frase, nunca cambia.
 - **El énfasis es semántico y tiene que leer el guión completo, no palabra por palabra aislada.**
   `caption-style.ts` (`classifyWordEmphasis`) le pasa a Claude el guión YA agrupado por oración real
   (mismo criterio que `content-analysis.ts`) para que primero entienda el rol de cada oración dentro
@@ -85,12 +97,42 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 - `crf: 16` en LAS DOS pasadas de compresión (`enhance.ts` / `silence-cut.ts` como primer paso, y
   `render.ts` como paso final) — nunca el default de ffmpeg/Remotion (~23), se nota y se acumula.
 - Zoom de entrada (spring de 1.32x a 1x en 0.6s) + drift lento tipo Ken Burns durante todo el clip
-  (hasta 1.16x) sobre el fondo.
-- Viñeta: oscurece los bordes con un gradiente radial, nunca el centro (ahí está la cara) — nunca a
-  costa de nitidez real del archivo (eso se cuida en el `crf`, no acá).
+  (hasta 1.16x) sobre el fondo — es movimiento de cámara, no un filtro de imagen, sigue en pie.
+- **Sin filtro de color ni viñeta sobre el video principal (sacados el 26-11-2026).** Antes había un
+  `filter: blur(2px) brightness(0.78) saturate(0.95)` + una viñeta oscura en los bordes, siempre,
+  automático — pedido explícito: "en cuanto a filtros e imagen no se toque nada". `enhance.ts` (paso
+  2 del pipeline) sigue siendo el ÚNICO lugar que mejora la imagen de verdad (contraste/brillo/
+  saturación + nitidez real, no un filtro CSS encima) — eso no cambió, solo se sacó la capa extra que
+  además de `enhance.ts` seguía alterando el video en `ReelComposition.tsx`.
 - Caja de producto: "spotlight" — la misma foto del producto de fondo (difuminada, agrandada) +
   versión nítida encima, con reflejo tenue debajo. Borde y brillo según el tono detectado (dorado
-  neutro / verde positivo / rojo negativo).
+  neutro / verde positivo / rojo negativo). Esto es un efecto de la CAJA, no del video de fondo — no
+  lo afecta el punto anterior.
+
+## 4b. Subtítulo "detrás tuyo" (automático, 26-11-2026)
+
+Pedido explícito, con el ejemplo de un reel de Instagram: a veces (no siempre) el subtítulo tiene que
+quedar DETRÁS de Nacho, con el fondo real sin tocar (ni blanco, ni difuminado nuevo, ni ningún
+filtro) — distinto de las escenas especiales manuales de la sección 6 (que sí reemplazan todo el
+fondo por uno nuevo).
+
+- `lib/video-editor/depth-captions.ts` (`buildDepthScenes`) corre automático para CUALQUIER video,
+  dentro de `buildContentTimeline` (`lib/agents/video-editor.ts`) — no depende de que haya catálogo
+  ni de que se detecte ningún modelo, solo de que haya oraciones elegibles.
+- Elige **1 de cada 4** oraciones elegibles (`EVERY_NTH_ELIGIBLE`), con un tope de **3 por video**
+  (`MAX_DEPTH_SCENES_PER_CLIP`) — oraciones de al menos 1.2s, y nunca durante una ventana donde ya
+  está la caja de producto (se pisarían).
+- Por cada una elegida, llama a `scripts/video-editor/cutout_scene.py --mode depth` (MediaPipe Selfie
+  Segmentation, mismo segmentador que usan las escenas manuales de la sección 6) — el "fondo" sobre
+  el que se dibuja el subtítulo es el FRAME REAL tal cual, no uno nuevo: el texto queda atrás solo
+  porque la persona recortada se superpone encima en la misma composición.
+- El resultado (un .mp4 corto ya compuesto) se agrega como `cutoutScenes` — mismo mecanismo que ya
+  usaban las escenas manuales de whitebg/moneyrain (`ReelComposition.tsx` las reproduce en vez de la
+  cámara normal durante esa ventana, con prioridad sobre el subtítulo normal).
+- Nunca tira: sin `selfie_segmenter.tflite` instalado, o si python3/mediapipe fallan, esa oración
+  sigue con el subtítulo normal (de frente) en vez de perder el render.
+- Verificado con capturas de frames reales de un clip real el 26-11-2026 (ver commit) antes de darlo
+  por bueno — no alcanzaba con que compilara.
 
 ## 5. QC automático antes de dar un render por bueno
 
@@ -157,3 +199,8 @@ cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nueva
 - El corte de silencios es nuevo (sección 1, paso 1) — la primera vez que corra sobre clips reales,
   conviene revisar con atención el log (`corté Xs de silencio...`) y comparar contra el clip original
   para confirmar que no se comió ninguna palabra, no solo confiar en que el código "debería" andar.
+- El efecto "detrás tuyo" automático (sección 4b) es nuevo el 26-11-2026 — probado con un clip real
+  en una ventana fabricada a mano, pero todavía no corrió dentro de una corrida real del agente
+  (Drive → Whisper → Claude → render). La primera vez que lo haga, revisar en qué oraciones eligió
+  meterlo y si se siente repetido o mal ubicado (ej. muy pegado a otra escena especial) — el criterio
+  de selección (1 de cada 4, tope 3) es un primer número, no algo ya validado en video real completo.
