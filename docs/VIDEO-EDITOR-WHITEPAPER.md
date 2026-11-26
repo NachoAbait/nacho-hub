@@ -66,25 +66,32 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   explícito: "no quiero que aparezcan más de 6/7 palabras en una oración"), además de cortar por
   puntuación o pausa real (>0.45s) — así alguien hablando corrido sin comas no termina armando un solo
   bloque gigante de texto.
-  - **Bloques de pantalla más cortos que la oración (refresco 26-11-2026).** Lo de arriba sigue siendo
-    la unidad que analiza Claude (contexto completo para el énfasis — ver más abajo), pero en PANTALLA
-    se corta aparte en bloques de **máximo 3 palabras** (`DISPLAY_CHUNK_WORDS` en `captions.ts`, dentro
-    de `buildPhrases`) que se limpian y cambian más seguido — pedido explícito: "que cambien o vayan
-    desapareciendo después de no más de 3 palabras, se hace mucho más dinámico". Esto NO toca el
-    análisis semántico de arriba, solo cómo se reparte esa misma oración ya analizada en pantalla.
+  - **Se probó y se revirtió: fragmentar en mini-bloques de 3 palabras (26-11-2026).** Hubo una
+    versión que cortaba cada oración en bloques de máximo 3 palabras en pantalla, combinada con una
+    posición que rotaba entre 3 zonas por bloque (ver más abajo) — se probó en un render real el mismo
+    día y se revirtió: "no me gusta que ponga 2 palabras de un lado y de la nada salgas con una
+    palabra abajo del todo, totalmente cruzada y opuesta... que termine la idea ahí arriba y abajo dos
+    o tres palabras más". Esto último YA pasa solo con una oración completa (hasta 7 palabras) y el
+    `flexWrap` de abajo, sin fragmentar nada — un bloque, una posición fija, que envuelve a una
+    segunda línea más corta cuando hace falta. `buildPhrases` (`captions.ts`) vuelve a armar un
+    `ReelPhrase` por oración completa, no por mini-bloque.
 - **Sin colores.** Todo el texto es blanco con contorno negro sólido. El énfasis lo marcan SOLO
   tipografía y tamaño (`LEVEL_STYLE` en `ReelComposition.tsx`). Pedido explícito: "no uses tantos
   colores, solo con cambiar tipografía... y tamaño alcanza".
-- **Tipografía (refresco del 25-11-2026):** Archivo itálica, dos pesos — 500 para "normal", 700 para
-  "keyword"/"critical" — en vez del combo anterior (ArchivoBlack + Anton, las dos en mayúscula de
-  palo ancha). Pedido explícito: "más cursiva, no tanto negrita, que es medio aburrido". Tamaño base
-  48 (antes 54). El criterio de CUÁNTO énfasis (1-2 palabras "critical" por oración, el resto
-  "normal") no cambió, solo cómo se ve.
-  - **Variedad de familia (refresco del 26-11-2026):** pedido explícito "quiero que el editor combine
-    fuentes, tamaños" (con el ejemplo de un reel de Instagram). La palabra "critical" de 1 de cada 3
-    oraciones usa Fraunces itálica en vez de Archivo itálica (`accentFontFor` en
-    `ReelComposition.tsx`, determinístico por índice de frase, no al azar en cada render). "normal" y
-    "keyword" siguen siempre en Archivo — es la base legible de la frase, nunca cambia.
+- **Tipografía (segundo refresco, 26-11-2026): Playfair Display, no Archivo.** Pedido explícito tras
+  ver el primer render real con el efecto "detrás tuyo": "la letra que usás... es horrible... buscá
+  en Google Fonts o buscá letras premium, sutiles, detalladas". Playfair Display itálica (serifa de
+  contraste alto, el estándar "premium/editorial" en moda y marcas de lujo) reemplaza a Archivo en
+  TODO el sistema de subtítulos — 500 para "normal", 700 para "keyword"/"critical" (mismo criterio de
+  antes: el énfasis es tipografía + tamaño, nunca color). Misma familia que ahora usa
+  `cutout_scene.py` para "detrás tuyo" (`FONT_PATH_PREMIUM`) — consistencia entre el texto de frente
+  y el de atrás. (Historial: 25-11-2026 ya había pasado de ArchivoBlack+Anton a Archivo itálica por
+  sentirse "aburrido"; este refresco reemplaza Archivo mismo, no vuelve atrás a ese combo viejo.)
+  - **Variedad de familia:** pedido explícito "quiero que el editor combine fuentes, tamaños" (con el
+    ejemplo de un reel de Instagram). La palabra "critical" de 1 de cada 3 oraciones usa Fraunces
+    itálica en vez de Playfair Display itálica (`accentFontFor` en `ReelComposition.tsx`,
+    determinístico por índice de frase, no al azar en cada render). "normal" y "keyword" siguen
+    siempre en Playfair — es la base legible de la frase, nunca cambia.
 - **El énfasis es semántico y tiene que leer el guión completo, no palabra por palabra aislada.**
   `caption-style.ts` (`classifyWordEmphasis`) le pasa a Claude el guión YA agrupado por oración real
   (mismo criterio que `content-analysis.ts`) para que primero entienda el rol de cada oración dentro
@@ -96,14 +103,16 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 - **Sin efecto de sonido por palabra.** Se probó (pop sintetizado) y quedó mal — se sacó por completo.
   Si en el futuro se vuelve a pedir un sonido ahí, no reusar el enfoque viejo de `caption-pop.mp3`
   (seno sintético con ffmpeg) sin escuchar primero una muestra real con el usuario.
-- **Posición (refresco 26-11-2026).** Antes: centrado, siempre a la misma altura fija
-  (`paddingTop: 780`) — en varias tomas eso caía justo sobre la cara. Pedido explícito: "fijate que no
-  me tapen la cara... ponelos más arriba, o partilos... jugando con esto de que los subtítulos no sean
-  todos planos". Ahora `subtitleLayoutFor` (`ReelComposition.tsx`) rota 3 zonas por bloque: arriba
-  centrado, arriba pegado a la izquierda (asimetría), y más abajo sobre el pecho — todas pensadas para
-  el encuadre habitual (sentado, cámara a la altura del pecho/cara), NO es seguimiento de cara en vivo
-  (requeriría otra pasada de IA sobre el video) — si en una toma puntual el encuadre es muy distinto,
-  puede volver a superponerse. Nunca al mismo tiempo que la caja de producto.
+- **Posición: una sola zona fija, arriba (refresco 26-11-2026, ajustado el mismo día).** Antes:
+  centrado, siempre a la misma altura fija (`paddingTop: 780`) — en varias tomas eso caía justo sobre
+  la cara. Pedido explícito: "fijate que no me tapen la cara... ponelos más arriba". Se probó una
+  versión que además ROTABA entre 3 zonas por bloque (arriba centrado / arriba izquierda / abajo sobre
+  el pecho) buscando variedad — se revirtió el mismo día: el salto entre zonas de un bloque al
+  siguiente se sentía "cruzado y opuesto", no dinámico (ver sección de arriba). `subtitleLayoutFor`
+  (`ReelComposition.tsx`) quedó en UNA sola posición fija, arriba de donde normalmente está la cabeza
+  — pensada para el encuadre habitual (sentado, cámara a la altura del pecho/cara), NO es seguimiento
+  de cara en vivo (requeriría otra pasada de IA sobre el video) — si en una toma puntual el encuadre es
+  muy distinto, puede volver a superponerse. Nunca al mismo tiempo que la caja de producto.
 - **Números + "por ciento" → "N%" (26-11-2026).** `lib/video-editor/number-words.ts`
   (`mergePercentWords`) corre sobre la transcripción de Whisper ANTES de armar oraciones/análisis —
   reconoce el número dicho (en dígitos o deletreado, 0-999) seguido de "por ciento"/"porciento" y lo
@@ -164,6 +173,22 @@ fondo por uno nuevo).
   viene etiquetado `bt709` — Remotion interpretaba mal el clip sin etiqueta al insertarlo en el render
   final. Arreglo: el encode final de `cutout_scene.py` ahora fuerza `-color_primaries/-color_trc/
   -colorspace bt709` (el estándar real de un iPhone, no una suposición al voleo).
+- **Segundo bug real encontrado y arreglado (26-11-2026): texto cortado por el pelo.** Con la altura
+  fija (`0.33` del alto del cuadro) un "NO" quedó partido al medio por el límite de la máscara de
+  recorte — esa toma puntual tenía a Nacho más inclinado/cerca de cámara que de costumbre, con el pelo
+  más arriba de lo habitual. Arreglo: `draw_caption` ahora recibe `person_top` (la fila más alta con
+  alpha fuerte EN ESE FRAME puntual, calculado en el loop principal) y el texto nunca baja más de
+  `person_top` menos un margen, aunque eso signifique subir por encima de la altura "ideal" — puede
+  solaparse con el logo de fondo en vez del pelo, que se ve mucho mejor que el texto partido a la
+  mitad.
+- **Tipografía (26-11-2026): Playfair Display, no Archivo.** Mismo pedido y mismo reemplazo que la
+  sección 3 — "la letra que usás... es horrible... buscá letras premium, sutiles, detalladas".
+  `FONT_PATH_PREMIUM` (`assets/PlayfairDisplay-Italic.ttf`, variable, un solo eje `wght` 400-900, a
+  diferencia de Archivo que tiene `wght`+`wdth`) reemplaza a `FONT_PATH` (Archivo) en el modo depth —
+  `draw_caption` prueba primero 2 valores en `set_variation_by_axes` (Archivo) y cae a 1 valor si
+  falla (Playfair); en la práctica PIL/FreeType acepta igual un array más largo que la cantidad de
+  ejes reales del archivo, así que ambos casos funcionan sin tirar. whitebg/moneyrain (manuales, ver
+  sección 6) siguen con Archivo — no se tocaron, no es lo que Nacho está mirando a diario.
 - Nunca tira: sin `selfie_segmenter.tflite` instalado, o si python3/mediapipe fallan, esa oración
   sigue con el subtítulo normal (de frente) en vez de perder el render.
 - Verificado con capturas de frames reales de un clip real el 26-11-2026 (ver commit) antes de darlo
@@ -239,10 +264,12 @@ cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nueva
   corrida real del agente (26-11-2026) — el criterio de selección (1 de cada 4, tope 3 por video)
   sigue siendo un primer número, no algo afinado todavía: si con más videos reales se siente repetido
   o mal ubicado, ajustar `EVERY_NTH_ELIGIBLE`/`MAX_DEPTH_SCENES_PER_CLIP` en `depth-captions.ts`.
-- La posición rotativa de los subtítulos normales (sección 3, `subtitleLayoutFor`) es una zona segura
+- La posición fija de los subtítulos normales (sección 3, `subtitleLayoutFor`) es una zona segura
   pensada para el encuadre habitual de Nacho (sentado, cámara a la altura del pecho/cara) — si graba
   parado, muy cerca, o con un encuadre bien distinto al de siempre, puede volver a superponerse con la
-  cara. No hay detección de cara en vivo todavía.
+  cara. No hay detección de cara en vivo todavía (sí lo hay para el efecto "detrás tuyo" — ver
+  `person_top` en la sección 4b — porque ahí ya se calcula la máscara de la persona por otro motivo;
+  traer esa misma lógica acá sería la forma de resolver esto si vuelve a pasar).
 - El parser de números deletreados de `number-words.ts` (para "noventa y nueve por ciento" → "99%")
   cubre las formas habituales en español hasta 999, pero es "mejor esfuerzo" — una forma rara o mal
   transcripta por Whisper puede no mergearse (queda el texto tal cual vino, no rompe el render).

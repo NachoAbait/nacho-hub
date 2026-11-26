@@ -42,6 +42,12 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
 FONT_PATH = os.path.join(os.path.dirname(__file__), "assets", "archivo-italic.ttf")
+# Tipografía premium (refresco 26-11-2026) — pedido explícito: "la letra que usás para el detrás es
+# horrible... buscá letras premium, sutiles, detalladas". Playfair Display itálica (variable, un solo
+# eje "wght" 400-900, a diferencia de Archivo que tiene wght+wdth) reemplaza a Archivo en estas
+# escenas. Es la MISMA familia que ahora usa ReelComposition.tsx para los subtítulos normales —
+# consistencia entre el texto de frente y el de atrás.
+FONT_PATH_PREMIUM = os.path.join(os.path.dirname(__file__), "assets", "PlayfairDisplay-Italic.ttf")
 
 
 def run(cmd):
@@ -174,7 +180,8 @@ def wrap_text(draw, text, font, max_width):
     return lines
 
 
-def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=None, scale=0.062):
+def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=None, scale=0.062,
+                  font_path=FONT_PATH, weight=620, person_top=None):
     """phrases: lista de {start, end, words:[{text,start}]} (todo relativo al arranque de la escena,
     en segundos) — UNA oración a la vez, igual regla que el resto del video (ver
     docs/VIDEO-EDITOR-WHITEPAPER.md sección 3: "una oración a la vez, no un párrafo cargándose de a
@@ -186,7 +193,15 @@ def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=Non
     billetes) — con stroke (contorno) si se pasa, para que lea sobre un fondo oscuro con movimiento.
     scale: proporción del ancho del cuadro que ocupa el tamaño de letra — más grande para el modo
     "depth" (1-2 palabras sueltas, ver depth-captions.ts) que para whitebg/moneyrain (oraciones
-    completas, necesitan entrar en varias líneas)."""
+    completas, necesitan entrar en varias líneas).
+    font_path/weight: variable font + eje de peso — Archivo tiene wght+wdth (dos valores), Playfair
+    Display solo wght (un valor); por eso `weight` se pasa tal cual a set_variation_by_axes según
+    cuántos ejes tenga la fuente que se esté usando (ver más abajo).
+    person_top: fila (en píxeles, 0 = arriba del cuadro) donde arranca la persona EN ESTE FRAME
+    puntual (ver _run_scene) — si se pasa, el texto nunca baja más de `person_top` menos un margen,
+    aunque la posición "ideal" (0.33 del alto) caiga más abajo. Pedido explícito tras ver en vivo un
+    "NO" cortado a la mitad por el pelo: la altura fija no sabía que en ESE frame Nacho estaba más
+    inclinado hacia cámara, con el pelo más arriba de lo habitual."""
     phrase = next((p for p in phrases if p["start"] <= t_sec < p["end"]), None)
     if phrase is None:
         return pil_img
@@ -195,11 +210,17 @@ def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=Non
         return pil_img
     draw = ImageDraw.Draw(pil_img)
     size = int(w * scale)
-    font = ImageFont.truetype(FONT_PATH, size)
+    font = ImageFont.truetype(font_path, size)
     try:
-        font.set_variation_by_axes([620, 100])
+        # Archivo (whitebg/moneyrain, oraciones completas) trae wght+wdth: [peso, ancho]. Playfair
+        # Display (depth, ver FONT_PATH_PREMIUM) trae solo wght: un valor. Probar con 2 primero y
+        # caer a 1 es más simple que inspeccionar el archivo cada vez.
+        font.set_variation_by_axes([weight, 100])
     except Exception:
-        pass
+        try:
+            font.set_variation_by_axes([weight])
+        except Exception:
+            pass
     text = " ".join(visible)
     max_width = w * 0.82
     lines = wrap_text(draw, text, font, max_width)
@@ -213,6 +234,10 @@ def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=Non
         # 25-11-2026 con "imposible": casi no se le veía ni una letra). Un poco de solape con la
         # cabeza sigue dando el efecto "atrás mío" buscado, pero sin tapar la palabra entera.
         y = int(pil_img.height * 0.33) - total_h // 2
+        if person_top is not None:
+            margin = int(pil_img.height * 0.02)
+            y = min(y, person_top - margin - total_h)
+            y = max(y, int(pil_img.height * 0.06))  # nunca tan arriba que se salga del cuadro
     for line in lines:
         lw = draw.textlength(line, font=font)
         x = (w - lw) / 2
@@ -296,12 +321,20 @@ def _run_scene(args, fps, tmpdir):
             # superpone encima en la misma composición — el fondo del video no cambia en nada.
             bg_pil = Image.fromarray(img_rgb)
             if captions:
+                # Dónde arranca la persona EN ESTE FRAME puntual (fila más alta con alpha fuerte) —
+                # ver person_top en draw_caption: sin esto el texto a una altura fija podía quedar
+                # cortado a la mitad por el pelo en una toma donde Nacho está más inclinado/cerca de
+                # cámara que de costumbre (visto en vivo el 26-11-2026, un "NO" partido al medio).
+                rows_with_person = np.where(alpha.max(axis=1) > 160)[0]
+                person_top = int(rows_with_person[0]) if len(rows_with_person) else None
                 # scale más grande que el default (0.062): acá entran 1 o 2 palabras sueltas (la idea
                 # principal de la oración, ver depth-captions.ts), no una oración completa — pedido
-                # explícito de Nacho: "bien grandes", no texto chico amontonado.
+                # explícito de Nacho: "bien grandes", no texto chico amontonado. Tipografía premium
+                # (Playfair Display, ver FONT_PATH_PREMIUM) en vez de Archivo — pedido explícito.
                 bg_pil = draw_caption(
                     bg_pil, captions, t_sec, (255, 255, 255), w, position="upper",
                     stroke=((0, 0, 0), max(2, int(w * 0.008))), scale=0.11,
+                    font_path=FONT_PATH_PREMIUM, weight=750, person_top=person_top,
                 )
             bg = np.array(bg_pil)
             comp = (img_rgb.astype(np.float32) * alpha3 + bg.astype(np.float32) * (1 - alpha3)).astype(np.uint8)

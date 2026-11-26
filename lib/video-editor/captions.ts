@@ -45,12 +45,9 @@ const PAUSE_THRESHOLD_SECONDS = 0.45;
 const MAX_SEGMENT_WORDS = 7;
 const MAX_SEGMENT_SECONDS = 3;
 
-/** No es el tope de la oración de arriba (esa sigue siendo la unidad de análisis semántico) — es
- * cuántas palabras como máximo se ven juntas en pantalla a la vez antes de limpiar y pasar al
- * siguiente bloque, DENTRO de la misma oración. Pedido explícito, 26-11-2026: "me di cuenta que
- * [las referencias] cambian de oración o van desapareciendo después de no más de 3 palabras, se
- * hace mucho más dinámico". Ver el loop de abajo en buildPhrases. */
-const DISPLAY_CHUNK_WORDS = 3;
+// Hubo un intento (26-11-2026) de fragmentar esto en mini-bloques de 3 palabras en pantalla — se
+// probó en un render real y se revirtió el mismo día ("no me gusta... totalmente cruzada y opuesta"):
+// ver buildPhrases más abajo, vuelve a ser un bloque por oración completa.
 
 /** Si el tope de arriba cae justo antes de uno de estos, se espera una palabra más — sin esto, "el
  * 14 Pro" se cortaba en "el 14" y "Pro" quedaba solo, como su propia frase de una sola palabra en
@@ -240,16 +237,16 @@ export async function buildPhrases(
         }
         nextWordIdx++;
       }
-      // La oración entera (segWords) es la unidad de ANÁLISIS (así la interpretó Claude en
-      // content-analysis.ts/caption-style.ts, con el guión completo) — pero en PANTALLA, pedido
-      // explícito 26-11-2026: "que cambien o vayan desapareciendo después de no más de 3 palabras, se
-      // hace mucho más dinámico". Por eso acá se corta en bloques de DISPLAY_CHUNK_WORDS para la
-      // animación, sin tocar en nada el análisis semántico de arriba (que ya terminó).
-      const segEndFrame = Math.round(seg.end * fps);
-      for (let i = 0; i < segWords.length; i += DISPLAY_CHUNK_WORDS) {
-        const chunk = segWords.slice(i, i + DISPLAY_CHUNK_WORDS);
-        const nextChunkStart = segWords[i + DISPLAY_CHUNK_WORDS]?.startFrame;
-        phrases.push({ startFrame: chunk[0].startFrame, endFrame: nextChunkStart ?? segEndFrame, words: chunk });
+      // Un bloque en pantalla por oración (no fragmentada en mini-bloques de 3 palabras — eso se
+      // probó el 26-11-2026 y se revirtió el mismo día: "no me gusta que ponga 2 palabras de un lado
+      // y de la nada salgas con una palabra abajo del todo, totalmente cruzada y opuesta... que
+      // termine la idea ahí arriba y abajo dos o tres palabras más" — eso es exactamente una oración
+      // de hasta 7 palabras que envuelve sola a una segunda línea más corta vía `flexWrap` en
+      // ReelComposition.tsx, no bloques separados saltando de posición). Las palabras siguen
+      // apareciendo rápido una por una (ver WordSpan) — lo que se sacó fue el corte en mini-bloques y
+      // el salto de posición entre ellos, no la velocidad de aparición.
+      if (segWords.length > 0) {
+        phrases.push({ startFrame: segWords[0].startFrame, endFrame: Math.round(seg.end * fps), words: segWords });
       }
     }
     return phrases;

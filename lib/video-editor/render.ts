@@ -193,7 +193,9 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
   // exceeded rendering the component at frame 340" el 25-11-2026 en esta misma máquina, sin que el
   // frame en cuestión tuviera nada especial — este es el primer lugar donde agregar más composición
   // por frame (transición, cartel, escena especial) podía hacer que volviera a pasar más seguido.
-  await renderMedia({ composition, serveUrl, codec: "h264", crf: 16, outputLocation, inputProps: serializableProps, timeoutInMilliseconds: 120_000 });
+  // Subido otra vez a 240s el 26-11-2026: con 120s volvió a pasar ("Request closed" / timeout en el
+  // frame 614) al sumar las tipografías nuevas (Playfair Display + Fraunces) de golpe.
+  await renderMedia({ composition, serveUrl, codec: "h264", crf: 16, outputLocation, inputProps: serializableProps, timeoutInMilliseconds: 240_000 });
 
   const buffer = await fs.readFile(outputLocation);
   await fs.unlink(outputLocation).catch(() => {});

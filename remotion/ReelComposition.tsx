@@ -1,19 +1,19 @@
 import { AbsoluteFill, Freeze, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { loadFont as loadArchivo } from "@remotion/google-fonts/Archivo";
+import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
 import { loadFont as loadFraunces } from "@remotion/google-fonts/Fraunces";
 
-// Refresh de tipografía pedido por Nacho el 25-11-2026: el combo anterior (ArchivoBlack + Anton,
-// las dos en mayúscula de palo ancha) lo sintió "aburrido" — pidió más cursiva y menos negrita. En
-// vez de salir a buscar una tipografía nueva de cero, se usa la MISMA familia (Archivo, ya elegida
-// para el resto del hub) en su corte itálico real: 500 itálica para lo normal, 700 itálica para
-// keyword/critical — el énfasis sigue siendo tipografía + tamaño (nunca color, pedido explícito
-// anterior que sigue en pie), solo que ahora es peso+itálica en vez de dos familias distintas.
-const { fontFamily: CAPTION_FONT } = loadArchivo("italic", { weights: ["500"], subsets: ["latin"] });
-const { fontFamily: KEYWORD_FONT } = loadArchivo("italic", { weights: ["700"], subsets: ["latin"] });
-// Segunda tipografía de énfasis (26-11-2026, pedido explícito: "quiero que el editor combine
-// fuentes, tamaños") — una serifa itálica bien distinta de Archivo para que la palabra "critical" de
-// ALGUNAS oraciones cambie de familia, no solo de peso. Nunca para "normal" (esa sigue siempre en
-// Archivo, es la base legible de la frase) — ver phraseFontVariant más abajo para cuándo se usa.
+// Tipografía (segundo refresco, 26-11-2026): Archivo (sans geométrica) quedó reemplazada por
+// Playfair Display itálica — pedido explícito tras ver el primer render real: "la letra que usás...
+// es horrible... buscá letras premium, sutiles, detalladas". Playfair Display es una serifa de
+// contraste alto, el estándar de "premium/editorial" en marcas de moda y lujo — encaja bien con ese
+// pedido. 500 para "normal", 700 para "keyword"/"critical" (mismo criterio de antes: el énfasis es
+// tipografía + tamaño, nunca color). Misma familia que ahora usa cutout_scene.py para "detrás tuyo"
+// (FONT_PATH_PREMIUM) — consistencia entre el texto de frente y el de atrás.
+const { fontFamily: CAPTION_FONT } = loadPlayfair("italic", { weights: ["500"], subsets: ["latin"] });
+const { fontFamily: KEYWORD_FONT } = loadPlayfair("italic", { weights: ["700"], subsets: ["latin"] });
+// Segunda tipografía de énfasis — una serifa itálica distinta de Playfair para que la palabra
+// "critical" de ALGUNAS oraciones cambie de familia, no solo de peso (pedido explícito: "combine
+// fuentes"). Nunca para "normal" (esa sigue siempre en Playfair, es la base legible de la frase).
 const { fontFamily: ACCENT_FONT } = loadFraunces("italic", { weights: ["600"], subsets: ["latin"] });
 
 /** Contorno negro sólido (no un blur) + una sombra suave debajo — el look "impact text" de los
@@ -142,7 +142,7 @@ const LEVEL_STYLE: Record<"normal" | "keyword" | "critical", { scale: number; fo
 };
 
 /** Cada oración (no cada palabra — mezclar tipografías dentro de una misma frase se ve a los
- * ponchazos) decide si su palabra "critical" usa la itálica de Archivo (la mayoría de las veces) o
+ * ponchazos) decide si su palabra "critical" usa la itálica de Playfair (la mayoría de las veces) o
  * la serifa de Fraunces (1 de cada 3, variedad real de familia, no solo de peso) — determinístico
  * por índice de frase, no al azar en cada render, para que un mismo video dé siempre el mismo
  * resultado si hay que re-renderizarlo. */
@@ -150,17 +150,16 @@ function accentFontFor(phraseIndex: number): string {
   return phraseIndex % 3 === 1 ? ACCENT_FONT : KEYWORD_FONT;
 }
 
-/** 3 zonas para el subtítulo normal, rotando por bloque (ver uso más abajo) — pedido explícito,
- * 26-11-2026: que no tape la cara y que no sea siempre el mismo lugar plano. Las dos primeras quedan
- * arriba de donde normalmente está la cabeza en el encuadre habitual (entre el cartel/logo de fondo y
- * el pelo); la tercera baja a la zona del pecho, para variar el ritmo visual entre bloques. */
-const SUBTITLE_LAYOUTS: { paddingTop: number; align: "center" | "left" }[] = [
-  { paddingTop: 560, align: "center" },
-  { paddingTop: 560, align: "left" },
-  { paddingTop: 1300, align: "center" },
-];
-function subtitleLayoutFor(phraseIndex: number): { paddingTop: number; align: "center" | "left" } {
-  return SUBTITLE_LAYOUTS[phraseIndex % SUBTITLE_LAYOUTS.length];
+/** Una sola zona fija para el subtítulo normal — arriba de donde normalmente está la cabeza en el
+ * encuadre habitual (entre el cartel/logo de fondo y el pelo), pensada para no tapar la cara (pedido
+ * explícito 26-11-2026). Hubo una versión que ROTABA entre 3 zonas por bloque (intentando variar el
+ * ritmo visual) — se revirtió el mismo día: "no me gusta que ponga 2 palabras de un lado y de la
+ * nada salgas con una palabra abajo del todo, totalmente cruzada y opuesta". Con un bloque por
+ * oración completa (ver buildPhrases en captions.ts) y `flexWrap` para la segunda línea cuando hace
+ * falta, una sola posición estable ya alcanza para que no quede siempre "plano" ni se tape la cara. */
+const SUBTITLE_LAYOUT = { paddingTop: 560, align: "center" as const };
+function subtitleLayoutFor(_phraseIndex: number): { paddingTop: number; align: "center" | "left" } {
+  return SUBTITLE_LAYOUT;
 }
 
 /**
@@ -361,13 +360,13 @@ export function ReelComposition({
           entra con su propio "pop" (ver WordSpan). Nunca al mismo tiempo que la caja de producto (ver
           activePhrase arriba).
 
-          Posición (refresco 26-11-2026): pedido explícito "fijate que no me tapen la cara... ponelos
-          más arriba... jugando con esto de que los subtítulos no sean todos planos" — antes quedaba
-          centrado a una altura fija (paddingTop 780) que en varias tomas caía justo sobre la cara. Se
-          reemplaza por `subtitleLayoutFor` (ver abajo): una franja más arriba, por encima de donde
-          normalmente está la cabeza, con 3 variantes (centrado / pegado a la izquierda / más abajo
-          sobre el pecho) que rotan por bloque — no es seguimiento de cara en vivo (necesitaría otra
-          pasada de IA), es una zona segura para el encuadre habitual. */}
+          Posición: pedido explícito "fijate que no me tapen la cara... ponelos más arriba" — antes
+          quedaba centrado a una altura fija (paddingTop 780) que en varias tomas caía justo sobre la
+          cara. `subtitleLayoutFor` (ver abajo) sube esa franja arriba de donde normalmente está la
+          cabeza — una sola posición estable, no es seguimiento de cara en vivo (necesitaría otra
+          pasada de IA), es una zona segura para el encuadre habitual. Se probó una versión que
+          rotaba entre 3 posiciones por bloque y se revirtió el mismo día (26-11-2026): el salto de
+          lugar entre bloques consecutivos se sentía "cruzado y opuesto", no dinámico. */}
       {visibleWords.length > 0 &&
         (() => {
           const layout = subtitleLayoutFor(activePhraseIndex);
