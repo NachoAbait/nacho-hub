@@ -108,8 +108,10 @@ Nacho SOLO quiere el precio UNITARIO de una unidad suelta. Para cada ítem:
 ## Consolas (PlayStation, categoría "console")
 
 1. Modelo: SIEMPRE con el prefijo "PlayStation" + la revisión física, nunca la edición pegada ahí. Los modelos que
-   existen hoy: "PlayStation 5", "PlayStation 5 Slim", "PlayStation 5 Pro", "PlayStation 4 Slim". Si el proveedor
-   escribe "PS5" es "PlayStation 5" igual.
+   existen hoy: "PlayStation 5", "PlayStation 5 Pro", "PlayStation 4 Slim". "PlayStation 5" y "PlayStation 5 Slim"
+   son el MISMO producto (confirmado por Nacho el 26-11-2026: hoy Sony solo fabrica la revisión Slim) — si el
+   proveedor escribe "PS5", "PS5 Slim" o "PlayStation 5 Slim", el modelo es SIEMPRE "PlayStation 5" (sin "Slim").
+   No hagas esta misma fusión con "PlayStation 5 Pro": es una consola distinta, no una revisión del PS5 base.
 2. edition: "Digital" o "Física", SIEMPRE como campo propio, nunca parte del modelo. "PS5 Slim Digital" → model
    "PlayStation 5 Slim", edition "Digital" (NUNCA model "PlayStation 5 Slim Digital"). Si el proveedor no aclara
    digital/física para una consola que solo se vende en una edición, dejalo null en vez de adivinar.
@@ -119,7 +121,7 @@ Nacho SOLO quiere el precio UNITARIO de una unidad suelta. Para cada ítem:
    (usado/open box/reacondicionado → "used") igual que con el resto.
 
 Ejemplos:
-- "PS5 SLIM DIGITAL 1TB · U$S 480" → category "console", model "PlayStation 5 Slim", edition "Digital", capacity "1TB".
+- "PS5 SLIM DIGITAL 1TB · U$S 480" → category "console", model "PlayStation 5" (sin "Slim"), edition "Digital", capacity "1TB".
 - "PlayStation 5 Pro 2TB Física u$d 720" → category "console", model "PlayStation 5 Pro", edition "Física", capacity "2TB".
 - "PS4 SLIM 500GB USADA 180u$s" → category "console", model "PlayStation 4 Slim", edition null (PS4 no distingue
   digital/física en esta lista), capacity "500GB", condition "used".

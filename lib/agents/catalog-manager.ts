@@ -92,7 +92,9 @@ export const catalogManager: AgentModule = {
     const priceAutoApply = await confirmAllUpdates(ctx.db, ctx.today);
 
     const auto = await getSetting<boolean>(ctx.db, "catalog_manager_auto", false);
-    const catalog = (await fetchCatalog()) ?? [];
+    // onlyVisible: false — Bruno tiene que VER lo que ya está oculto para poder decidir mostrarlo de
+    // nuevo; con el default (solo visibles) un producto oculto nunca entraba a showCandidates.
+    const catalog = (await fetchCatalog({ onlyVisible: false })) ?? [];
 
     // Para volver a MOSTRAR algo basta con que lo coticen hoy. Para OCULTARLO se mira la ventana
     // entera de DIAS_SIN_COTIZAR días: un día sin cotizar no es falta de stock.

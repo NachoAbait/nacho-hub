@@ -703,7 +703,11 @@ async function newModelsToday(db: ReturnType<typeof supabaseAdmin>): Promise<Pen
  */
 async function reconcilePendingVisibility(rows: PendingVisibility[]): Promise<PendingVisibility[]> {
   if (!rows.length) return rows;
-  const catalog = (await fetchCatalog()) ?? [];
+  // onlyVisible: false — justo lo que estamos chequeando es si algo oculto sigue oculto; con el
+  // default (solo visibles) una fila oculta no aparecía en catalog, visibleById.get(id) daba
+  // undefined, y el filtro de abajo la descartaba SIEMPRE (el "show" pendiente desaparecía del
+  // panel aunque siguiera sin mostrarse).
+  const catalog = (await fetchCatalog({ onlyVisible: false })) ?? [];
   const visibleById = new Map(catalog.map((r) => [r.id, r.public_visible]));
   return rows.filter((r) => {
     const visible = visibleById.get(r.id);
@@ -799,7 +803,9 @@ export async function createCatalogProduct(updateId: string): Promise<ActionResu
     if (!nx) return { ok: false, message: "Falta la conexión con NexiOS" };
 
     const device = CATEGORY_TO_DEVICE[u.category as Category];
-    const catalog = (await fetchCatalog()) ?? [];
+    // onlyVisible: false — el "sibling" de la misma familia (de abajo) puede estar oculto hoy por
+    // falta de cotización; si no lo vemos, se crea un producto duplicado en vez de reusar su texto.
+    const catalog = (await fetchCatalog({ onlyVisible: false })) ?? [];
     const margins = catalog.filter((r) => r.device_type === device && r.margin_usd != null).map((r) => r.margin_usd as number);
     const margin = margins.length ? Math.round(margins.reduce((a, b) => a + b, 0) / margins.length) : 0;
     const cost = Number(u.detected_cost_usd);

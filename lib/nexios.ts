@@ -67,17 +67,30 @@ export interface NexiosCatalogRow {
   attributes: { screen?: string; chip?: string; ram?: string; material?: string; connectivity?: string; edition?: string } | null;
 }
 
-/** Catálogo de sellados activo. */
-export async function fetchCatalog(): Promise<NexiosCatalogRow[] | null> {
+/**
+ * Catálogo de sellados activo. `onlyVisible` (default true) es el "ojito": is_active=true sin eso
+ * puede ser un modelo que ya no se consigue, así que todo lo público (customer-bot, banners) lo deja
+ * en true.
+ *
+ * Quien hace MATCHING contra el catálogo (loadCatalogIndex, catalog-manager) tiene que pedir
+ * `onlyVisible: false`: un producto oculto por falta de cotización sigue existiendo, y si esta
+ * función lo tacha de la lista, una cotización nueva de ese mismo producto nunca lo va a encontrar
+ * — Martín lo trata como "modelo nuevo" en vez de "actualizale el costo", y como la fila ocultada
+ * tampoco aparece para evaluar si hay que volver a mostrarla, queda oculta para siempre aunque la
+ * sigan cotizando. Encontrado el 26-11-2026 con el "PlayStation 5".
+ */
+export async function fetchCatalog(opts: { onlyVisible?: boolean } = {}): Promise<NexiosCatalogRow[] | null> {
+  const { onlyVisible = true } = opts;
   const db = nexios();
   if (!db) return null;
-  const { data, error } = await db
+  let query = db
     .from("price_catalog")
     .select("id, device_type, condition, model, capacity, cost_usd, margin_usd, price_usd, is_active, public_visible, created_at, updated_at, attributes")
     .eq("organization_id", NEXIOS_ORG_ID)
     .eq("is_active", true)
-    .eq("public_visible", true) // el "ojito": is_active=true sin esto puede ser un modelo que ya no se consigue
-    .eq("condition", "new_sealed")
+    .eq("condition", "new_sealed");
+  if (onlyVisible) query = query.eq("public_visible", true);
+  const { data, error } = await query
     .order("device_type")
     .order("model")
     .order("capacity");

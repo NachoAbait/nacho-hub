@@ -101,7 +101,10 @@ export async function loadCatalogIndex(db: SupabaseClient): Promise<Map<string, 
     else index.set(key, [entry]);
   };
 
-  const nexiosRows = (await fetchCatalog()) ?? [];
+  // onlyVisible: false — un producto oculto por falta de cotización sigue siendo el mismo producto;
+  // si no entra acá, una cotización nueva de ese modelo nunca lo encuentra y queda como "modelo
+  // nuevo" en vez de actualizarle el costo al que ya existe.
+  const nexiosRows = (await fetchCatalog({ onlyVisible: false })) ?? [];
   for (const r of nexiosRows as NexiosCatalogRow[]) {
     const category = DEVICE_TO_CATEGORY[r.device_type];
     if (!category) continue;
