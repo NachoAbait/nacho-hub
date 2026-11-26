@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ReelPhrase } from "@/remotion/ReelComposition";
+import { mergePercentWords } from "@/lib/video-editor/number-words";
 
 const WHISPER_MODEL = "whisper-1";
 
@@ -43,6 +44,13 @@ const PAUSE_THRESHOLD_SECONDS = 0.45;
  * normal no necesitan 4.5s en pantalla). */
 const MAX_SEGMENT_WORDS = 7;
 const MAX_SEGMENT_SECONDS = 3;
+
+/** No es el tope de la oración de arriba (esa sigue siendo la unidad de análisis semántico) — es
+ * cuántas palabras como máximo se ven juntas en pantalla a la vez antes de limpiar y pasar al
+ * siguiente bloque, DENTRO de la misma oración. Pedido explícito, 26-11-2026: "me di cuenta que
+ * [las referencias] cambian de oración o van desapareciendo después de no más de 3 palabras, se
+ * hace mucho más dinámico". Ver el loop de abajo en buildPhrases. */
+const DISPLAY_CHUNK_WORDS = 3;
 
 /** Si el tope de arriba cae justo antes de uno de estos, se espera una palabra más — sin esto, "el
  * 14 Pro" se cortaba en "el 14" y "Pro" quedaba solo, como su propia frase de una sola palabra en
@@ -147,7 +155,10 @@ async function fetchWhisperTranscript(audioPath: string, apiKey: string): Promis
   });
   if (!res.ok) throw new Error(`Whisper falló (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { words?: WhisperWord[]; text?: string };
-  const words = json.words ?? [];
+  // "89 por ciento" (dígito o deletreado) → un solo token "89%" — pedido explícito, 26-11-2026. Se
+  // hace ACÁ, antes de armar oraciones/análisis/subtítulos, para que todo lo demás (content-analysis,
+  // caption-style, buildPhrases) ya vea "89%" como una palabra normal, sin tener que saber de este caso.
+  const words = mergePercentWords(json.words ?? []);
   return { words, segments: sentenceSegmentsFromWords(words), text: json.text ?? "" };
 }
 
@@ -229,8 +240,16 @@ export async function buildPhrases(
         }
         nextWordIdx++;
       }
-      if (segWords.length > 0) {
-        phrases.push({ startFrame: Math.round(seg.start * fps), endFrame: Math.round(seg.end * fps), words: segWords });
+      // La oración entera (segWords) es la unidad de ANÁLISIS (así la interpretó Claude en
+      // content-analysis.ts/caption-style.ts, con el guión completo) — pero en PANTALLA, pedido
+      // explícito 26-11-2026: "que cambien o vayan desapareciendo después de no más de 3 palabras, se
+      // hace mucho más dinámico". Por eso acá se corta en bloques de DISPLAY_CHUNK_WORDS para la
+      // animación, sin tocar en nada el análisis semántico de arriba (que ya terminó).
+      const segEndFrame = Math.round(seg.end * fps);
+      for (let i = 0; i < segWords.length; i += DISPLAY_CHUNK_WORDS) {
+        const chunk = segWords.slice(i, i + DISPLAY_CHUNK_WORDS);
+        const nextChunkStart = segWords[i + DISPLAY_CHUNK_WORDS]?.startFrame;
+        phrases.push({ startFrame: chunk[0].startFrame, endFrame: nextChunkStart ?? segEndFrame, words: chunk });
       }
     }
     return phrases;

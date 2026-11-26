@@ -150,6 +150,19 @@ function accentFontFor(phraseIndex: number): string {
   return phraseIndex % 3 === 1 ? ACCENT_FONT : KEYWORD_FONT;
 }
 
+/** 3 zonas para el subtítulo normal, rotando por bloque (ver uso más abajo) — pedido explícito,
+ * 26-11-2026: que no tape la cara y que no sea siempre el mismo lugar plano. Las dos primeras quedan
+ * arriba de donde normalmente está la cabeza en el encuadre habitual (entre el cartel/logo de fondo y
+ * el pelo); la tercera baja a la zona del pecho, para variar el ritmo visual entre bloques. */
+const SUBTITLE_LAYOUTS: { paddingTop: number; align: "center" | "left" }[] = [
+  { paddingTop: 560, align: "center" },
+  { paddingTop: 560, align: "left" },
+  { paddingTop: 1300, align: "center" },
+];
+function subtitleLayoutFor(phraseIndex: number): { paddingTop: number; align: "center" | "left" } {
+  return SUBTITLE_LAYOUTS[phraseIndex % SUBTITLE_LAYOUTS.length];
+}
+
 /**
  * Estilo "spotlight de producto" copiado de la competencia que Nacho mostró: fondo con el
  * presentador difuminado y oscurecido, una caja redondeada con borde que brilla (dorado neutro,
@@ -344,18 +357,46 @@ export function ReelComposition({
           reemplazando a la anterior — pedido explícito: "que no aparezcan y desaparezcan, como que
           la oración se va completando a medida que hablo"). Sin placa de fondo, blanco con contorno
           negro sólido (ver CAPTION_OUTLINE), sin variedad de colores — el énfasis lo marcan la
-          tipografía y el tamaño de cada palabra (ver LEVEL_STYLE), no el color. Reposicionado a la
-          mitad del cuadro y nunca al mismo tiempo que la caja de producto (ver activePhrase arriba).
-          Cada palabra nueva entra con su propio "pop" (ver WordSpan). */}
-      {visibleWords.length > 0 && (
-        <AbsoluteFill style={{ justifyContent: "flex-start", alignItems: "center", paddingTop: 780 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "baseline", gap: "6px 18px", maxWidth: "88%" }}>
-            {visibleWords.map((w, i) => (
-              <WordSpan key={i} word={w} frame={frame} fps={fps} phraseIndex={activePhraseIndex} />
-            ))}
-          </div>
-        </AbsoluteFill>
-      )}
+          tipografía y el tamaño de cada palabra (ver LEVEL_STYLE), no el color. Cada palabra nueva
+          entra con su propio "pop" (ver WordSpan). Nunca al mismo tiempo que la caja de producto (ver
+          activePhrase arriba).
+
+          Posición (refresco 26-11-2026): pedido explícito "fijate que no me tapen la cara... ponelos
+          más arriba... jugando con esto de que los subtítulos no sean todos planos" — antes quedaba
+          centrado a una altura fija (paddingTop 780) que en varias tomas caía justo sobre la cara. Se
+          reemplaza por `subtitleLayoutFor` (ver abajo): una franja más arriba, por encima de donde
+          normalmente está la cabeza, con 3 variantes (centrado / pegado a la izquierda / más abajo
+          sobre el pecho) que rotan por bloque — no es seguimiento de cara en vivo (necesitaría otra
+          pasada de IA), es una zona segura para el encuadre habitual. */}
+      {visibleWords.length > 0 &&
+        (() => {
+          const layout = subtitleLayoutFor(activePhraseIndex);
+          return (
+            <AbsoluteFill
+              style={{
+                justifyContent: "flex-start",
+                alignItems: layout.align === "left" ? "flex-start" : "center",
+                paddingTop: layout.paddingTop,
+                paddingLeft: layout.align === "left" ? 72 : 0,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: layout.align === "left" ? "flex-start" : "center",
+                  alignItems: "baseline",
+                  gap: "6px 18px",
+                  maxWidth: layout.align === "left" ? "72%" : "88%",
+                }}
+              >
+                {visibleWords.map((w, i) => (
+                  <WordSpan key={i} word={w} frame={frame} fps={fps} phraseIndex={activePhraseIndex} />
+                ))}
+              </div>
+            </AbsoluteFill>
+          );
+        })()}
 
       {activeBadge && <Badge startFrame={activeBadge.startFrame} frame={frame} fps={fps} />}
     </AbsoluteFill>

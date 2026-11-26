@@ -133,7 +133,7 @@ export async function buildContentTimeline(ctx: AgentContext, videoPath: string)
   // CUALQUIER video, no depende de que haya catálogo ni de que se haya detectado ningún modelo, solo
   // de que haya oraciones elegibles. Nunca tira: sin modelo de MediaPipe instalado, o si falla una
   // escena puntual, sigue con subtítulo normal ahí (ver warnings).
-  const { cutoutScenes, warnings: depthWarnings } = await buildDepthScenes(videoPath, transcript.segments, transcript.words, overlaySegments);
+  const { cutoutScenes, warnings: depthWarnings } = await buildDepthScenes(videoPath, transcript.segments, transcript.words, levels, overlaySegments);
   for (const w of depthWarnings) ctx.log(w);
 
   // QC básico pedido por Nacho: si Claude detectó que se nombra un modelo que SÍ está en el catálogo

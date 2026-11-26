@@ -15,6 +15,10 @@ const EVERY_NTH_ELIGIBLE = 4;
 const MAX_DEPTH_SCENES_PER_CLIP = 3;
 /** Una oración muy corta no alcanza a leerse bien compitiendo con la cara detrás. */
 const MIN_PHRASE_SECONDS = 1.2;
+/** Como mucho 2 palabras detrás tuyo — pedido explícito, 26-11-2026: "es alguna palabra o a lo sumo
+ * 2 palabras bien grandes, representando la idea principal de la frase, no poniendo una oración
+ * entera en la parte de atrás". */
+const MAX_KEYWORDS = 2;
 
 function runPython(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -49,6 +53,7 @@ export async function buildDepthScenes(
   videoPath: string,
   segments: WhisperSegment[],
   words: WhisperWord[],
+  levels: ("normal" | "keyword" | "critical")[],
   overlaySegments: OverlaySegmentInput[],
 ): Promise<DepthScenesResult> {
   try {
@@ -68,16 +73,34 @@ export async function buildDepthScenes(
   const cutoutScenes: CutoutSceneInput[] = [];
   const warnings: string[] = [];
   for (const seg of chosen) {
-    const segWords = words.filter((w) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);
-    if (segWords.length === 0) continue;
+    const segWordsIdx = words
+      .map((w, idx) => ({ w, idx }))
+      .filter(({ w }) => w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05);
+    if (segWordsIdx.length === 0) continue;
 
-    // Mismo formato que espera cutout_scene.py --captions: UN grupo por oración, tiempos relativos
-    // al arranque de la escena (no al clip entero) — ver draw_caption en el script.
+    // 1-2 palabras como mucho, nunca la oración entera — la idea principal de la oración, no el
+    // texto completo (ver MAX_KEYWORDS). Prioriza "critical" (el pico emocional de la oración, mismo
+    // criterio que caption-style.ts) sobre "keyword" (un dato concreto); si Claude no clasificó nada
+    // ahí (esta oración quedó toda "normal"), la palabra más larga es mejor que no mostrar nada.
+    const critical = segWordsIdx.filter(({ idx }) => levels[idx] === "critical");
+    const keyword = segWordsIdx.filter(({ idx }) => levels[idx] === "keyword");
+    let picked = critical.length > 0 ? critical : keyword.length > 0 ? keyword : [];
+    if (picked.length === 0) {
+      const longest = [...segWordsIdx].sort((a, b) => b.w.word.length - a.w.word.length)[0];
+      if (longest) picked = [longest];
+    }
+    picked = picked.slice(0, MAX_KEYWORDS);
+    if (picked.length === 0) continue;
+
+    // Mismo formato que espera cutout_scene.py --captions: UN grupo, tiempos relativos al arranque
+    // de la escena — acá las 1-2 palabras aparecen juntas desde el principio y quedan fijas toda la
+    // escena (start:0 para todas), no se van completando palabra por palabra como el resto del video:
+    // son solo 1-2 palabras sueltas, no una oración que se arma de a poco.
     const captions = [
       {
         start: 0,
         end: seg.end - seg.start,
-        words: segWords.map((w) => ({ text: w.word.trim(), start: Math.max(0, w.start - seg.start) })),
+        words: picked.map(({ w }) => ({ text: w.word.trim().toUpperCase(), start: 0 })),
       },
     ];
 

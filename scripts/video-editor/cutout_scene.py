@@ -174,7 +174,7 @@ def wrap_text(draw, text, font, max_width):
     return lines
 
 
-def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=None):
+def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=None, scale=0.062):
     """phrases: lista de {start, end, words:[{text,start}]} (todo relativo al arranque de la escena,
     en segundos) — UNA oración a la vez, igual regla que el resto del video (ver
     docs/VIDEO-EDITOR-WHITEPAPER.md sección 3: "una oración a la vez, no un párrafo cargándose de a
@@ -183,7 +183,10 @@ def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=Non
     — visto en vivo el 25-11-2026 en la escena de fondo blanco.
     position="upper": centrado arriba, pensado para quedar DETRÁS de la cabeza (escena fondo blanco).
     position="bottom": pegado abajo, como el resto de los subtítulos del video (escena lluvia de
-    billetes) — con stroke (contorno) si se pasa, para que lea sobre un fondo oscuro con movimiento."""
+    billetes) — con stroke (contorno) si se pasa, para que lea sobre un fondo oscuro con movimiento.
+    scale: proporción del ancho del cuadro que ocupa el tamaño de letra — más grande para el modo
+    "depth" (1-2 palabras sueltas, ver depth-captions.ts) que para whitebg/moneyrain (oraciones
+    completas, necesitan entrar en varias líneas)."""
     phrase = next((p for p in phrases if p["start"] <= t_sec < p["end"]), None)
     if phrase is None:
         return pil_img
@@ -191,7 +194,7 @@ def draw_caption(pil_img, phrases, t_sec, color, w, position="upper", stroke=Non
     if not visible:
         return pil_img
     draw = ImageDraw.Draw(pil_img)
-    size = int(w * 0.062)
+    size = int(w * scale)
     font = ImageFont.truetype(FONT_PATH, size)
     try:
         font.set_variation_by_axes([620, 100])
@@ -293,7 +296,13 @@ def _run_scene(args, fps, tmpdir):
             # superpone encima en la misma composición — el fondo del video no cambia en nada.
             bg_pil = Image.fromarray(img_rgb)
             if captions:
-                bg_pil = draw_caption(bg_pil, captions, t_sec, (255, 255, 255), w, position="upper", stroke=((0, 0, 0), max(2, int(w * 0.006))))
+                # scale más grande que el default (0.062): acá entran 1 o 2 palabras sueltas (la idea
+                # principal de la oración, ver depth-captions.ts), no una oración completa — pedido
+                # explícito de Nacho: "bien grandes", no texto chico amontonado.
+                bg_pil = draw_caption(
+                    bg_pil, captions, t_sec, (255, 255, 255), w, position="upper",
+                    stroke=((0, 0, 0), max(2, int(w * 0.008))), scale=0.11,
+                )
             bg = np.array(bg_pil)
             comp = (img_rgb.astype(np.float32) * alpha3 + bg.astype(np.float32) * (1 - alpha3)).astype(np.uint8)
         else:
@@ -307,9 +316,16 @@ def _run_scene(args, fps, tmpdir):
                 comp = np.array(comp_pil)
         Image.fromarray(comp).save(os.path.join(frames_out, fname))
 
+    # -color_primaries/-color_trc/-colorspace bt709: SIN esto el clip sale sin ninguna etiqueta de
+    # color ("unknown"), y como el video original de un iPhone SÍ viene etiquetado bt709, Remotion
+    # (OffthreadVideo/ffmpeg) interpreta mal este clip sin etiqueta al insertarlo en el render final —
+    # se ve con un tinte verdoso/enfermizo ("pantalla verde", pedido explícito de Nacho el 26-11-2026
+    # tras ver el primer render real). bt709 es el estándar de los iPhone, así que etiquetar con eso
+    # es correcto para cualquier clip que suba Nacho, no una suposición al voleo.
     run(["ffmpeg", "-y", "-framerate", f"{fps}", "-i", os.path.join(frames_out, "f_%05d.png"),
          "-i", audio_path, "-c:v", "libx264", "-crf", "16", "-preset", "slow", "-c:a", "copy",
-         "-pix_fmt", "yuv420p", args.out])
+         "-pix_fmt", "yuv420p", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+         args.out])
     print(f"OK -> {args.out}")
 
 

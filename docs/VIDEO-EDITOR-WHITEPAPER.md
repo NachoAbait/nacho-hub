@@ -60,11 +60,18 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 - **La oración se va completando palabra por palabra**, sin que las palabras anteriores desaparezcan,
   hasta terminar esa oración — ahí se limpia todo y arranca la siguiente (`ReelPhrase`/`ReelWord` en
   `ReelComposition.tsx`). Nunca "una palabra reemplaza a la anterior" (karaoke clásico).
-- **Una oración a la vez, no un párrafo cargándose de a poco.** Cada frase en pantalla tiene un tope
-  duro de **7 palabras / 3 segundos** (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`,
-  bajado de 11/4.5 el 26-11-2026 — pedido explícito: "no quiero que aparezcan más de 6/7 palabras en
-  una oración"), además de cortar por puntuación o pausa real (>0.45s) — así alguien hablando corrido
-  sin comas no termina armando un solo bloque gigante de texto.
+- **Una oración a la vez, no un párrafo cargándose de a poco.** Cada ORACIÓN (la unidad de análisis
+  semántico — ver más abajo) tiene un tope duro de **7 palabras / 3 segundos**
+  (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`, bajado de 11/4.5 el 26-11-2026 — pedido
+  explícito: "no quiero que aparezcan más de 6/7 palabras en una oración"), además de cortar por
+  puntuación o pausa real (>0.45s) — así alguien hablando corrido sin comas no termina armando un solo
+  bloque gigante de texto.
+  - **Bloques de pantalla más cortos que la oración (refresco 26-11-2026).** Lo de arriba sigue siendo
+    la unidad que analiza Claude (contexto completo para el énfasis — ver más abajo), pero en PANTALLA
+    se corta aparte en bloques de **máximo 3 palabras** (`DISPLAY_CHUNK_WORDS` en `captions.ts`, dentro
+    de `buildPhrases`) que se limpian y cambian más seguido — pedido explícito: "que cambien o vayan
+    desapareciendo después de no más de 3 palabras, se hace mucho más dinámico". Esto NO toca el
+    análisis semántico de arriba, solo cómo se reparte esa misma oración ya analizada en pantalla.
 - **Sin colores.** Todo el texto es blanco con contorno negro sólido. El énfasis lo marcan SOLO
   tipografía y tamaño (`LEVEL_STYLE` en `ReelComposition.tsx`). Pedido explícito: "no uses tantos
   colores, solo con cambiar tipografía... y tamaño alcanza".
@@ -89,8 +96,20 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 - **Sin efecto de sonido por palabra.** Se probó (pop sintetizado) y quedó mal — se sacó por completo.
   Si en el futuro se vuelve a pedir un sonido ahí, no reusar el enfoque viejo de `caption-pop.mp3`
   (seno sintético con ffmpeg) sin escuchar primero una muestra real con el usuario.
-- Posición: centrado, pegado a la parte de arriba de la mitad inferior del cuadro (`paddingTop: 780`),
-  nunca superpuesto con la caja de producto.
+- **Posición (refresco 26-11-2026).** Antes: centrado, siempre a la misma altura fija
+  (`paddingTop: 780`) — en varias tomas eso caía justo sobre la cara. Pedido explícito: "fijate que no
+  me tapen la cara... ponelos más arriba, o partilos... jugando con esto de que los subtítulos no sean
+  todos planos". Ahora `subtitleLayoutFor` (`ReelComposition.tsx`) rota 3 zonas por bloque: arriba
+  centrado, arriba pegado a la izquierda (asimetría), y más abajo sobre el pecho — todas pensadas para
+  el encuadre habitual (sentado, cámara a la altura del pecho/cara), NO es seguimiento de cara en vivo
+  (requeriría otra pasada de IA sobre el video) — si en una toma puntual el encuadre es muy distinto,
+  puede volver a superponerse. Nunca al mismo tiempo que la caja de producto.
+- **Números + "por ciento" → "N%" (26-11-2026).** `lib/video-editor/number-words.ts`
+  (`mergePercentWords`) corre sobre la transcripción de Whisper ANTES de armar oraciones/análisis —
+  reconoce el número dicho (en dígitos o deletreado, 0-999) seguido de "por ciento"/"porciento" y lo
+  reemplaza por un solo token "N%", así todo lo demás (análisis, énfasis, subtítulos) ya lo ve como una
+  palabra normal. Es "mejor esfuerzo" en la forma deletreada (cubre las formas habituales en español,
+  no un parser numérico completo) — si no reconoce la forma exacta, deja las palabras como vinieron.
 
 ## 4. Imagen y efectos
 
@@ -122,6 +141,16 @@ fondo por uno nuevo).
 - Elige **1 de cada 4** oraciones elegibles (`EVERY_NTH_ELIGIBLE`), con un tope de **3 por video**
   (`MAX_DEPTH_SCENES_PER_CLIP`) — oraciones de al menos 1.2s, y nunca durante una ventana donde ya
   está la caja de producto (se pisarían).
+- **1 o 2 palabras, bien grandes — nunca la oración entera (refresco 26-11-2026).** Pedido explícito
+  tras ver el primer render real: "generalmente cuando ponés un subtítulo atrás mío, es alguna palabra
+  o a lo sumo 2 palabras bien grandes, representando la idea principal de la frase, no poniendo una
+  oración entera en la parte de atrás". `buildDepthScenes` elige la(s) palabra(s) "critical" de esa
+  oración (mismo criterio semántico que la sección 3), o "keyword" si no hay ninguna "critical", o la
+  palabra más larga como último recurso — nunca más de `MAX_KEYWORDS = 2`. Aparecen juntas desde el
+  arranque de la escena y quedan fijas (no se completan palabra por palabra como el resto del video:
+  son 1-2 palabras sueltas) con un tamaño de letra bastante más grande (`scale=0.11` en
+  `cutout_scene.py`, antes 0.062, que sigue siendo el tamaño para whitebg/moneyrain que sí llevan
+  oraciones completas).
 - Por cada una elegida, llama a `scripts/video-editor/cutout_scene.py --mode depth` (MediaPipe Selfie
   Segmentation, mismo segmentador que usan las escenas manuales de la sección 6) — el "fondo" sobre
   el que se dibuja el subtítulo es el FRAME REAL tal cual, no uno nuevo: el texto queda atrás solo
@@ -129,10 +158,17 @@ fondo por uno nuevo).
 - El resultado (un .mp4 corto ya compuesto) se agrega como `cutoutScenes` — mismo mecanismo que ya
   usaban las escenas manuales de whitebg/moneyrain (`ReelComposition.tsx` las reproduce en vez de la
   cámara normal durante esa ventana, con prioridad sobre el subtítulo normal).
+- **Bug real encontrado y arreglado (26-11-2026): "pantalla verde".** El primer render real mostró un
+  tinte verdoso/enfermizo en estas escenas. Causa: el clip que arma `cutout_scene.py` salía sin
+  ninguna etiqueta de color (`color_space=unknown`), mientras que el video original de un iPhone SÍ
+  viene etiquetado `bt709` — Remotion interpretaba mal el clip sin etiqueta al insertarlo en el render
+  final. Arreglo: el encode final de `cutout_scene.py` ahora fuerza `-color_primaries/-color_trc/
+  -colorspace bt709` (el estándar real de un iPhone, no una suposición al voleo).
 - Nunca tira: sin `selfie_segmenter.tflite` instalado, o si python3/mediapipe fallan, esa oración
   sigue con el subtítulo normal (de frente) en vez de perder el render.
 - Verificado con capturas de frames reales de un clip real el 26-11-2026 (ver commit) antes de darlo
-  por bueno — no alcanzaba con que compilara.
+  por bueno — no alcanzaba con que compilara. Esta sección recién corrió dentro de una corrida real
+  completa del agente ese mismo día (antes solo se había probado en una ventana fabricada a mano).
 
 ## 5. QC automático antes de dar un render por bueno
 
@@ -199,8 +235,14 @@ cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nueva
 - El corte de silencios es nuevo (sección 1, paso 1) — la primera vez que corra sobre clips reales,
   conviene revisar con atención el log (`corté Xs de silencio...`) y comparar contra el clip original
   para confirmar que no se comió ninguna palabra, no solo confiar en que el código "debería" andar.
-- El efecto "detrás tuyo" automático (sección 4b) es nuevo el 26-11-2026 — probado con un clip real
-  en una ventana fabricada a mano, pero todavía no corrió dentro de una corrida real del agente
-  (Drive → Whisper → Claude → render). La primera vez que lo haga, revisar en qué oraciones eligió
-  meterlo y si se siente repetido o mal ubicado (ej. muy pegado a otra escena especial) — el criterio
-  de selección (1 de cada 4, tope 3) es un primer número, no algo ya validado en video real completo.
+- El efecto "detrás tuyo" automático (sección 4b) ya corrió una vez de punta a punta dentro de una
+  corrida real del agente (26-11-2026) — el criterio de selección (1 de cada 4, tope 3 por video)
+  sigue siendo un primer número, no algo afinado todavía: si con más videos reales se siente repetido
+  o mal ubicado, ajustar `EVERY_NTH_ELIGIBLE`/`MAX_DEPTH_SCENES_PER_CLIP` en `depth-captions.ts`.
+- La posición rotativa de los subtítulos normales (sección 3, `subtitleLayoutFor`) es una zona segura
+  pensada para el encuadre habitual de Nacho (sentado, cámara a la altura del pecho/cara) — si graba
+  parado, muy cerca, o con un encuadre bien distinto al de siempre, puede volver a superponerse con la
+  cara. No hay detección de cara en vivo todavía.
+- El parser de números deletreados de `number-words.ts` (para "noventa y nueve por ciento" → "99%")
+  cubre las formas habituales en español hasta 999, pero es "mejor esfuerzo" — una forma rara o mal
+  transcripta por Whisper puede no mergearse (queda el texto tal cual vino, no rompe el render).
