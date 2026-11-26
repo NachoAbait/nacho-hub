@@ -14,7 +14,7 @@ import { PanelSkeleton } from "@/components/office/skeleton";
 import type { PendingNewModel, PendingVisibility } from "@/lib/agents/catalog-manager";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
-const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
+const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung", "console"];
 
 const btn = "rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40";
 

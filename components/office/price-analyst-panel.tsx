@@ -5,7 +5,7 @@ import { applyAllRecommended, confirmPriceUpdate, loadPriceComparison, selectSup
 import { PanelSkeleton } from "@/components/office/skeleton";
 import { CATEGORY_LABEL, type Category } from "@/lib/types";
 
-const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung"];
+const CATEGORY_ORDER: Category[] = ["iphone", "macbook", "ipad", "watch", "airpods", "samsung", "console"];
 
 /** Orden pedido: modelo - chip - (+Cell si tiene) - pulgadas/mm - memoria - RAM, separado con "-". */
 function fullLabel(row: ComparisonRow): string {
