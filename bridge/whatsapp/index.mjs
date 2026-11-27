@@ -16,6 +16,19 @@ if (existsSync(new URL("./.env", import.meta.url))) {
 }
 
 const HUB_URL = (process.env.HUB_URL ?? "https://nacho-hub.vercel.app").replace(/\/$/, "");
+
+/** Cuántos minutos puede tener un mensaje para que el bot todavía le conteste.
+ *
+ * Al reconectar, WhatsApp le entrega al puente TODO lo que llegó mientras
+ * estuvo caído, y Baileys lo emite como si fuera nuevo. El 27-11-2026 el
+ * puente estuvo 24 horas apagado y al volver el bot contestó conversaciones
+ * de ayer que Nacho ya había respondido a mano: el cliente recibió dos
+ * respuestas distintas con un día de diferencia.
+ *
+ * El filtro va SOLO en el camino del bot de clientes. Las listas de
+ * proveedores se siguen procesando aunque lleguen viejas: ahí no hay nadie
+ * esperando del otro lado y perder una lista de precios es peor. */
+const MINUTOS_FRESCURA = Number(process.env.MINUTOS_FRESCURA ?? 10);
 const CRON_SECRET = process.env.CRON_SECRET;
 if (!CRON_SECRET) {
   console.error("Falta CRON_SECRET. Creá bridge/whatsapp/.env con HUB_URL y CRON_SECRET (ver README).");
@@ -251,6 +264,12 @@ async function start() {
       });
       // No es proveedor cargado ni hubo error: si es un chat 1 a 1, se lo pasamos al bot de clientes.
       if (!isSupplier && !isGroup) {
+        // Viejo = el puente estuvo caído y esto ya lo contestó Nacho a mano.
+        const minutos = (Date.now() - (Number(msg.messageTimestamp) || 0) * 1000) / 60000;
+        if (minutos > MINUTOS_FRESCURA) {
+          console.log(`[wa] NO contesto: el mensaje tiene ${Math.round(minutos)} min (tope ${MINUTOS_FRESCURA}). De ${toBarePhone(sender)}`);
+          continue;
+        }
         const barePhone = toBarePhone(sender);
         if (!barePhone) {
           // DIAGNÓSTICO TEMPORAL: no pudimos sacar un número real de este mensaje 1 a 1 (sender vacío
