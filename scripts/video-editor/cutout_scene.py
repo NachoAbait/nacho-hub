@@ -42,12 +42,13 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
 FONT_PATH = os.path.join(os.path.dirname(__file__), "assets", "archivo-italic.ttf")
-# Tipografía premium (refresco 26-11-2026) — pedido explícito: "la letra que usás para el detrás es
-# horrible... buscá letras premium, sutiles, detalladas". Playfair Display itálica (variable, un solo
-# eje "wght" 400-900, a diferencia de Archivo que tiene wght+wdth) reemplaza a Archivo en estas
-# escenas. Es la MISMA familia que ahora usa ReelComposition.tsx para los subtítulos normales —
-# consistencia entre el texto de frente y el de atrás.
-FONT_PATH_PREMIUM = os.path.join(os.path.dirname(__file__), "assets", "PlayfairDisplay-Italic.ttf")
+# Tipografía premium (tercer refresco, 27-11-2026) — Playfair Display quedó descartada por Nacho
+# ("no quiero ninguna de esta página" sobre el repertorio enviado). Anton reemplaza a Playfair acá:
+# es la misma que ahora usa ReelComposition.tsx para la palabra "keyword"/"critical" — consistencia
+# entre el texto de frente y el de atrás. Archivo (de peso variable) no sirve de base para Anton
+# (peso fijo, sin ejes) — set_variation_by_axes más abajo tira excepción y se ignora sin romper nada,
+# ver draw_caption.
+FONT_PATH_PREMIUM = os.path.join(os.path.dirname(__file__), "assets", "Anton-Regular.ttf")
 
 
 def run(cmd):
@@ -330,7 +331,7 @@ def _run_scene(args, fps, tmpdir):
                 # scale más grande que el default (0.062): acá entran 1 o 2 palabras sueltas (la idea
                 # principal de la oración, ver depth-captions.ts), no una oración completa — pedido
                 # explícito de Nacho: "bien grandes", no texto chico amontonado. Tipografía premium
-                # (Playfair Display, ver FONT_PATH_PREMIUM) en vez de Archivo — pedido explícito.
+                # (Anton, ver FONT_PATH_PREMIUM) en vez de Playfair — pedido explícito (27-11-2026).
                 bg_pil = draw_caption(
                     bg_pil, captions, t_sec, (255, 255, 255), w, position="upper",
                     stroke=((0, 0, 0), max(2, int(w * 0.008))), scale=0.11,

@@ -1,20 +1,22 @@
 import { AbsoluteFill, Freeze, Img, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
-import { loadFont as loadFraunces } from "@remotion/google-fonts/Fraunces";
+import { loadFont as loadMontserrat } from "@remotion/google-fonts/Montserrat";
+import { loadFont as loadAnton } from "@remotion/google-fonts/Anton";
+import { loadFont as loadLeagueSpartan } from "@remotion/google-fonts/LeagueSpartan";
 
-// Tipografía (segundo refresco, 26-11-2026): Archivo (sans geométrica) quedó reemplazada por
-// Playfair Display itálica — pedido explícito tras ver el primer render real: "la letra que usás...
-// es horrible... buscá letras premium, sutiles, detalladas". Playfair Display es una serifa de
-// contraste alto, el estándar de "premium/editorial" en marcas de moda y lujo — encaja bien con ese
-// pedido. 500 para "normal", 700 para "keyword"/"critical" (mismo criterio de antes: el énfasis es
-// tipografía + tamaño, nunca color). Misma familia que ahora usa cutout_scene.py para "detrás tuyo"
-// (FONT_PATH_PREMIUM) — consistencia entre el texto de frente y el de atrás.
-const { fontFamily: CAPTION_FONT } = loadPlayfair("italic", { weights: ["500"], subsets: ["latin"] });
-const { fontFamily: KEYWORD_FONT } = loadPlayfair("italic", { weights: ["700"], subsets: ["latin"] });
-// Segunda tipografía de énfasis — una serifa itálica distinta de Playfair para que la palabra
-// "critical" de ALGUNAS oraciones cambie de familia, no solo de peso (pedido explícito: "combine
-// fuentes"). Nunca para "normal" (esa sigue siempre en Playfair, es la base legible de la frase).
-const { fontFamily: ACCENT_FONT } = loadFraunces("italic", { weights: ["600"], subsets: ["latin"] });
+// Tipografía (tercer refresco, 27-11-2026): Playfair Display + Fraunces quedaron descartadas por
+// Nacho sin dar vuelta atrás ("no quiero ninguna de esta página", sobre el repertorio que le mandamos
+// para elegir) — no por un bug, por gusto. El repertorio nuevo son todas sans bold en mayúscula, el
+// registro que de verdad se usa en Reels de producto (investigación 27-11-2026: "bold sans + impact
+// caps", nunca itálica/serifa para este formato). Montserrat Black es la base legible (citada como
+// "la más versátil para captions de Reels 2026"); Anton es la palabra de impacto ("keyword"/
+// "critical" y la MISMA fuente que ahora usa cutout_scene.py en "detrás tuyo", FONT_PATH_PREMIUM,
+// consistencia entre el texto de frente y el de atrás); League Spartan es la variedad de familia para
+// 1 de cada 3 oraciones (ver accentFontFor), geométrica bold pero distinta de Anton para que se note
+// el cambio de fuente sin salirse del mismo registro "bold caps" (evita el choque de registro que
+// Nacho rechazó cuando probamos mezclar itálica elegante con mayúscula ancha).
+const { fontFamily: CAPTION_FONT } = loadMontserrat("normal", { weights: ["800"], subsets: ["latin"] });
+const { fontFamily: KEYWORD_FONT } = loadAnton("normal", { weights: ["400"], subsets: ["latin"] });
+const { fontFamily: ACCENT_FONT } = loadLeagueSpartan("normal", { weights: ["800"], subsets: ["latin"] });
 
 /** Contorno negro sólido (no un blur) + una sombra suave debajo — el look "impact text" de los
  * subtítulos de la competencia, legible sobre cualquier fondo sin necesitar una placa detrás. */
@@ -136,16 +138,19 @@ const MOOD_COLORS: Record<"neutral" | "positive" | "negative", { accent: string;
  * blanco (ver CAPTION_OUTLINE más abajo) — lo que marca el énfasis es la forma de la letra y cuánto
  * ocupa, no de qué color es. */
 const LEVEL_STYLE: Record<"normal" | "keyword" | "critical", { scale: number; font: string; weight: number }> = {
-  normal: { scale: 1, font: CAPTION_FONT, weight: 500 },
-  keyword: { scale: 1.16, font: KEYWORD_FONT, weight: 700 },
-  critical: { scale: 1.32, font: KEYWORD_FONT, weight: 700 },
+  normal: { scale: 1, font: CAPTION_FONT, weight: 800 },
+  // Anton es de un solo peso (400, no tiene variable wght) — el weight de acá no hace nada para esa
+  // fuente, queda solo para cuando "critical" cae en League Spartan (ver accentFontFor), que sí tiene
+  // rango de pesos.
+  keyword: { scale: 1.16, font: KEYWORD_FONT, weight: 400 },
+  critical: { scale: 1.32, font: KEYWORD_FONT, weight: 400 },
 };
 
 /** Cada oración (no cada palabra — mezclar tipografías dentro de una misma frase se ve a los
- * ponchazos) decide si su palabra "critical" usa la itálica de Playfair (la mayoría de las veces) o
- * la serifa de Fraunces (1 de cada 3, variedad real de familia, no solo de peso) — determinístico
- * por índice de frase, no al azar en cada render, para que un mismo video dé siempre el mismo
- * resultado si hay que re-renderizarlo. */
+ * ponchazos) decide si su palabra "critical" usa Anton (la mayoría de las veces) o League Spartan
+ * (1 de cada 3, variedad real de familia, no solo de peso) — determinístico por índice de frase, no
+ * al azar en cada render, para que un mismo video dé siempre el mismo resultado si hay que
+ * re-renderizarlo. */
 function accentFontFor(phraseIndex: number): string {
   return phraseIndex % 3 === 1 ? ACCENT_FONT : KEYWORD_FONT;
 }
@@ -220,12 +225,29 @@ export function ReelComposition({
   // Nunca al mismo tiempo que la caja de producto: mostrar las dos cosas juntas "sería mucha cosa"
   // (feedback directo de Nacho) — el subtítulo solo aparece en los tramos donde se está presentando
   // a cámara, no mientras se ve el render del celular.
+  //
+  // PHRASE_EXIT_FRAMES extiende la ventana más allá de `endFrame` para poder desvanecer el bloque en
+  // vez de cortarlo seco (investigación de motion graphics 27-11-2026: "las salidas tienen que ser
+  // más rápidas que las entradas", nunca un corte a opacity 0 de un frame al otro). La entrada de
+  // cada palabra dura 6 frames (ver WordSpan) — la salida del bloque entero dura menos, 4.
+  const PHRASE_EXIT_FRAMES = 4;
   const activePhrase =
-    activeOverlay || activeCutout || activeBadge ? undefined : phrases.find((p) => frame >= p.startFrame && frame < p.endFrame);
+    activeOverlay || activeCutout || activeBadge
+      ? undefined
+      : phrases.find((p) => frame >= p.startFrame && frame < p.endFrame + PHRASE_EXIT_FRAMES);
   // La frase se va completando: todas las palabras cuyo `startFrame` ya pasó quedan en pantalla
   // juntas (no se reemplazan entre sí) hasta que termina la frase entera.
   const visibleWords = activePhrase?.words.filter((w) => frame >= w.startFrame) ?? [];
   const activePhraseIndex = activePhrase ? phrases.indexOf(activePhrase) : 0;
+  const phraseExitProgress = activePhrase
+    ? spring({
+        frame: frame - activePhrase.endFrame,
+        fps,
+        config: { damping: 14, mass: 0.3 },
+        durationInFrames: PHRASE_EXIT_FRAMES,
+      })
+    : 0;
+  const phraseExitOpacity = activePhrase && frame >= activePhrase.endFrame ? interpolate(phraseExitProgress, [0, 1], [1, 0]) : 1;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
@@ -377,6 +399,7 @@ export function ReelComposition({
                 alignItems: layout.align === "left" ? "flex-start" : "center",
                 paddingTop: layout.paddingTop,
                 paddingLeft: layout.align === "left" ? 72 : 0,
+                opacity: phraseExitOpacity,
               }}
             >
               <div
@@ -432,12 +455,12 @@ function Badge({ startFrame, frame, fps }: { startFrame: number; frame: number; 
           gap: 10,
         }}
       >
-        <div style={{ fontFamily: KEYWORD_FONT, fontStyle: "italic", fontWeight: 700, fontSize: 52, color: "white", textAlign: "center" }}>
+        <div style={{ fontFamily: KEYWORD_FONT, fontWeight: 400, fontSize: 52, color: "white", textAlign: "center" }}>
           100% ORIGINAL
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <div style={{ fontFamily: CAPTION_FONT, fontStyle: "italic", fontWeight: 500, fontSize: 30, color: GOLD_LIGHT }}>✓ Sin cambios</div>
-          <div style={{ fontFamily: CAPTION_FONT, fontStyle: "italic", fontWeight: 500, fontSize: 30, color: GOLD_LIGHT }}>✓ Sin arreglos</div>
+          <div style={{ fontFamily: CAPTION_FONT, fontWeight: 800, fontSize: 30, color: GOLD_LIGHT }}>✓ Sin cambios</div>
+          <div style={{ fontFamily: CAPTION_FONT, fontWeight: 800, fontSize: 30, color: GOLD_LIGHT }}>✓ Sin arreglos</div>
         </div>
       </div>
     </AbsoluteFill>
@@ -449,16 +472,17 @@ function Badge({ startFrame, frame, fps }: { startFrame: number; frame: number; 
  * sume con un empujón breve) separado en su propio componente porque cada una necesita su propio
  * `spring()` con un frame relativo distinto (`frame - word.startFrame`), y eso solo es válido dentro
  * de un componente propio, no de un callback suelto dentro de .map(). */
-// 48, no 54: pedido explícito junto con el cambio de tipografía ("cambiarle el tamaño") — la itálica
-// de Archivo ya lee más estilizada a igual tamaño que la mayúscula de palo ancha de antes, así que
-// bajarla un poco no resta legibilidad.
+// Bold caps anchas (Montserrat/Anton/League Spartan, ver arriba) leen más "grandes" a igual tamaño
+// que una itálica fina — mismo motivo de antes para no irse a 54, ahora con el motivo invertido.
 const CAPTION_BASE_SIZE = 48;
 
 function WordSpan({ word, frame, fps, phraseIndex }: { word: ReelWord; frame: number; fps: number; phraseIndex: number }) {
+  // Entrada: nunca interpolate() lineal (se ve "a los ponchazos", ver investigación de motion
+  // graphics 27-11-2026) — spring() ya hacía esto bien, se mantiene igual.
   const pop = spring({ frame: frame - word.startFrame, fps, config: { damping: 12, mass: 0.4 }, durationInFrames: 6 });
   const level = LEVEL_STYLE[word.level ?? "normal"];
   // Variedad de familia tipográfica solo en la palabra "critical" (ver accentFontFor) — "normal" y
-  // "keyword" se quedan siempre en Archivo, que es la base legible de la frase.
+  // "keyword" se quedan siempre en su fuente base (Montserrat / Anton).
   const font = word.level === "critical" ? accentFontFor(phraseIndex) : level.font;
   // `fontSize` real, no `transform: scale()` — un scale visual no mueve el layout, así que una
   // palabra "critical" más grande se superponía con la de al lado en vez de empujarla (visto en
@@ -470,9 +494,8 @@ function WordSpan({ word, frame, fps, phraseIndex }: { word: ReelWord; frame: nu
     <span
       style={{
         fontFamily: font,
-        fontStyle: "italic",
         fontWeight: level.weight,
-        letterSpacing: "0.005em",
+        letterSpacing: "0.01em",
         fontSize: CAPTION_BASE_SIZE * sizeFactor,
         lineHeight: 1.15,
         color: "white",

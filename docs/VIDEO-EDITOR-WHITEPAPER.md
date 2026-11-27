@@ -13,16 +13,28 @@ mirar un solo frame suelto.
 ## 1. Orden del pipeline
 
 1. **Cortar silencios** (`lib/video-editor/silence-cut.ts`, `cutSilences`) — SIEMPRE lo primero,
-   antes de transcribir o mejorar nada. Corta tramos de silencio de **1 segundo o más** (con ~0.12s de
-   margen de cada lado para no comerse el ataque de una palabra), no todo silencio — las pausas cortas
-   y naturales de alguien hablando a cámara se dejan como están. Como corre antes de Whisper, todo lo
-   que viene después ya trabaja sobre la línea de tiempo del clip YA recortado.
-   - **Silencio inicial (refresco del 26-11-2026):** el tramo ANTES de la primera palabra no es una
-     pausa a proteger — ahí todavía no hay nadie hablando, es tiempo muerto quieto mirando a cámara.
-     Pedido explícito: "hay fracciones de segundo antes de que comience a hablar y queda feo". Por eso
-     se evalúa aparte con un umbral mucho más bajo (`LEADING_SILENCE_MIN_SECONDS = 0.2`, no 1s) — solo
-     para el silencio que arranca en el segundo 0 del clip, el resto del video sigue protegido por el
-     umbral de 1s de siempre.
+   antes de transcribir o mejorar nada. Como corre antes de Whisper, todo lo que viene después ya
+   trabaja sobre la línea de tiempo del clip YA recortado.
+   - **Rediseño completo (27-11-2026):** pedido explícito — "corta los clips milisegundos antes de
+     comenzar a hablar, que casi no haya silencios... entre clip y clip, no me cortes adentro de un
+     mismo clip". `cutSilences` YA NO toca pausas de en medio de una misma toma (antes cortaba
+     cualquier tramo ≥1s en todo el clip, con `MIN_SILENCE_SECONDS`) — ahora recorta ÚNICAMENTE el
+     silencio ANTES de la primera palabra (tiempo muerto quieto a cámara antes de arrancar), con un
+     umbral muy bajo (`LEADING_SILENCE_MIN_SECONDS = 0.03`) y un margen mínimo (`LEADING_PAD_SECONDS =
+     0.04`, no los ~0.12s de antes) para que el corte caiga literalmente "milisegundos antes de hablar".
+     `detectSilences` (el helper de más abajo) sigue existiendo tal cual para quien quiera ese chequeo
+     más general (ver `qc.ts`, sección 5) — es informativo, ya no corta nada.
+   - **Bug encontrado el mismo día (27-11-2026):** desde que esta función existe, `probeDuration` usaba
+     mal un flag de ffprobe (`noprint_wrapper` en vez de `noprint_wrappers`, sin la "s") — ffprobe
+     tiraba error, el try/catch de `cutSilences` lo tragaba en silencio, y la función devolvía SIEMPRE
+     el clip sin tocar. Es decir: **el corte de silencio nunca funcionó en ningún render anterior**,
+     ni el general (1s) ni el inicial (0.2s) de la versión de ayer — todos los "corté Xs de silencio"
+     que se reportaron antes de hoy eran en realidad "nada que cortar" por este bug, no por falta de
+     silencio real. Ya está arreglado (una palabra, `noprint_wrappers`) y confirmado con un render real
+     (0.69s de silencio inicial cortado). Moraleja para la próxima vez que algo de este pipeline
+     "nunca encuentra nada que cortar/hacer": probar la función aislada con un `try/catch` que SÍ
+     muestre el error, no confiar en que el try/catch defensivo del caller significa que no hay nada
+     que hacer.
 2. **Mejora de imagen tipo "Enhance" de CapCut** (`lib/video-editor/enhance.ts`, `enhanceClip`) —
    contraste/brillo/saturación + nitidez (unsharp mask). Esto es lo que de verdad mejora la imagen; la
    "calidad 4K/HD" de CapCut es solo resolución de exportación, no hace nada por sí sola.
@@ -78,20 +90,31 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 - **Sin colores.** Todo el texto es blanco con contorno negro sólido. El énfasis lo marcan SOLO
   tipografía y tamaño (`LEVEL_STYLE` en `ReelComposition.tsx`). Pedido explícito: "no uses tantos
   colores, solo con cambiar tipografía... y tamaño alcanza".
-- **Tipografía (segundo refresco, 26-11-2026): Playfair Display, no Archivo.** Pedido explícito tras
-  ver el primer render real con el efecto "detrás tuyo": "la letra que usás... es horrible... buscá
-  en Google Fonts o buscá letras premium, sutiles, detalladas". Playfair Display itálica (serifa de
-  contraste alto, el estándar "premium/editorial" en moda y marcas de lujo) reemplaza a Archivo en
-  TODO el sistema de subtítulos — 500 para "normal", 700 para "keyword"/"critical" (mismo criterio de
-  antes: el énfasis es tipografía + tamaño, nunca color). Misma familia que ahora usa
-  `cutout_scene.py` para "detrás tuyo" (`FONT_PATH_PREMIUM`) — consistencia entre el texto de frente
-  y el de atrás. (Historial: 25-11-2026 ya había pasado de ArchivoBlack+Anton a Archivo itálica por
-  sentirse "aburrido"; este refresco reemplaza Archivo mismo, no vuelve atrás a ese combo viejo.)
-  - **Variedad de familia:** pedido explícito "quiero que el editor combine fuentes, tamaños" (con el
-    ejemplo de un reel de Instagram). La palabra "critical" de 1 de cada 3 oraciones usa Fraunces
-    itálica en vez de Playfair Display itálica (`accentFontFor` en `ReelComposition.tsx`,
-    determinístico por índice de frase, no al azar en cada render). "normal" y "keyword" siguen
-    siempre en Playfair — es la base legible de la frase, nunca cambia.
+- **Tipografía (tercer refresco, 27-11-2026): Montserrat / Anton / League Spartan, no Playfair
+  Display ni Fraunces.** Playfair Display y Fraunces quedaron descartadas sin vuelta atrás — no por un
+  bug, por gusto: se armó un repertorio de 14 tipografías (trending Reels/TikTok 2026 + alternativas
+  gratis a unas pagas que Nacho había visto en un reel ajeno) para que eligiera, y la respuesta fue
+  "las de la primera página descártalas, son horribles" (esa página era justo Playfair + Fraunces).
+  El reemplazo son todas sans bold en mayúscula, SIN itálica — el registro real de los Reels de
+  producto (investigación 27-11-2026: "bold caps", nunca itálica/serifa para este formato, y Amazon
+  mismo recomienda restricción en motion/tipografía para no perder confianza del comprador):
+  - `CAPTION_FONT` = **Montserrat** peso 800 — base legible de "normal", citada en varias guías 2026
+    como "la más versátil para captions de Reels".
+  - `KEYWORD_FONT` = **Anton** — "keyword"/"critical", MISMA familia que usa `cutout_scene.py` en
+    "detrás tuyo" (`FONT_PATH_PREMIUM`) para consistencia entre el texto de frente y el de atrás. Un
+    solo peso (400, sin eje variable) — es de por sí ultra bold.
+  - `ACCENT_FONT` = **League Spartan** peso 800 — variedad de familia para 1 de cada 3 oraciones
+    (`accentFontFor`, determinístico por índice de frase). Se eligió, entre el repertorio, una
+    geométrica bold DISTINTA de Anton pero del mismo registro "bold caps" — la vez anterior que se
+    mezcló un registro elegante/itálico con uno de mayúscula ancha, Nacho lo rechazó ("totalmente
+    cruzada y opuesta").
+  - Las 6 tipografías elegidas por Nacho en pantallas de Instagram (Larken, Symphony Pro, Scholar,
+    Cabrion Bold, Highrise Condensed, Galano Grotesque) eran TODAS pagas (foundries comerciales,
+    US$19-400) — se descargaron equivalentes gratis (Libre Baskerville, Pinyon Script, Cormorant
+    Garamond, Space Grotesk, Big Shoulders Display, Montserrat) a `scripts/video-editor/assets/` para
+    tenerlas disponibles, pero NO se usaron en este refresco (no encajan en el registro "bold caps" que
+    sí pidió para el pipeline real — son más bien serif/script elegante). Quedan ahí por si se arma
+    algo con ese estilo más adelante.
 - **El énfasis es semántico y tiene que leer el guión completo, no palabra por palabra aislada.**
   `caption-style.ts` (`classifyWordEmphasis`) le pasa a Claude el guión YA agrupado por oración real
   (mismo criterio que `content-analysis.ts`) para que primero entienda el rol de cada oración dentro
@@ -100,6 +123,14 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   cualquier oración tienen que quedar en "normal". Si esto se siente azaroso otra vez, el problema está
   en que el prompt perdió el contexto de oración/guión completo, no en ajustar manualmente qué palabra
   es "importante".
+- **Salida con spring, no corte seco (27-11-2026).** Investigación de motion graphics para este
+  formato: "nunca interpolate() lineal, toda entrada con spring(), las salidas más rápidas que las
+  entradas" — la entrada de cada palabra ya usaba `spring()` (bien), pero cuando terminaba una oración
+  el bloque entero desaparecía de un frame al otro. Ahora `phraseExitOpacity`
+  (`ReelComposition.tsx`) extiende la ventana 4 frames más allá de `endFrame` y desvanece el bloque con
+  un `spring()` corto — más rápido que los 6 frames de entrada de cada palabra, como pide la
+  investigación. Referencia de técnicas: `.reference/remotion-cinematic-skill` (clonado, no
+  commiteado — ver `.gitignore`).
 - **Sin efecto de sonido por palabra.** Se probó (pop sintetizado) y quedó mal — se sacó por completo.
   Si en el futuro se vuelve a pedir un sonido ahí, no reusar el enfoque viejo de `caption-pop.mp3`
   (seno sintético con ffmpeg) sin escuchar primero una muestra real con el usuario.
@@ -181,14 +212,15 @@ fondo por uno nuevo).
   `person_top` menos un margen, aunque eso signifique subir por encima de la altura "ideal" — puede
   solaparse con el logo de fondo en vez del pelo, que se ve mucho mejor que el texto partido a la
   mitad.
-- **Tipografía (26-11-2026): Playfair Display, no Archivo.** Mismo pedido y mismo reemplazo que la
-  sección 3 — "la letra que usás... es horrible... buscá letras premium, sutiles, detalladas".
-  `FONT_PATH_PREMIUM` (`assets/PlayfairDisplay-Italic.ttf`, variable, un solo eje `wght` 400-900, a
-  diferencia de Archivo que tiene `wght`+`wdth`) reemplaza a `FONT_PATH` (Archivo) en el modo depth —
-  `draw_caption` prueba primero 2 valores en `set_variation_by_axes` (Archivo) y cae a 1 valor si
-  falla (Playfair); en la práctica PIL/FreeType acepta igual un array más largo que la cantidad de
-  ejes reales del archivo, así que ambos casos funcionan sin tirar. whitebg/moneyrain (manuales, ver
-  sección 6) siguen con Archivo — no se tocaron, no es lo que Nacho está mirando a diario.
+- **Tipografía (27-11-2026): Anton, no Playfair Display.** Mismo refresco de la sección 3 —
+  `FONT_PATH_PREMIUM` en `cutout_scene.py` apunta ahora a `assets/Anton-Regular.ttf`. Anton es de un
+  solo peso fijo (sin eje `wght`), así que el parámetro `weight=750` que se le pasa a `draw_caption` no
+  hace nada para esta fuente — el try/except de `set_variation_by_axes` lo absorbe sin romper nada
+  (ver el código, ya documentado como "inalcanzable pero inofensivo" desde el refresco anterior).
+  (Historial: 26-11-2026 había reemplazado Archivo por Playfair Display acá con el mismo mecanismo —
+  este refresco del 27-11-2026 reemplaza Playfair por Anton, no vuelve a Archivo.) whitebg/moneyrain
+  (manuales, ver sección 6) siguen con Archivo — no se tocaron, no es lo que Nacho está mirando a
+  diario.
 - Nunca tira: sin `selfie_segmenter.tflite` instalado, o si python3/mediapipe fallan, esa oración
   sigue con el subtítulo normal (de frente) en vez de perder el render.
 - Verificado con capturas de frames reales de un clip real el 26-11-2026 (ver commit) antes de darlo
@@ -206,8 +238,11 @@ reporte (`🔍 QC: ...`), no hace perder el clip. Chequeos de hoy:
    después del final del video, ni tiene `start >= end`.
 3. **Subtítulos sincronizados con sus propios límites** — ninguna frase sale del rango del video, y
    ninguna palabra queda fuera de los límites de su propia frase.
-4. **Sin silencios largos (≥1s) sin cortar** — corre `detectSilences` de nuevo sobre el clip YA
-   cortado+mejorado; si sigue encontrando algo, el corte de silencios falló o no corrió.
+4. **Sin tiempo muerto largo antes de la primera palabra** (actualizado 27-11-2026, ver sección 1) —
+   desde que `cutSilences` dejó de tocar pausas de en medio de una toma (pedido explícito), este
+   chequeo YA NO busca "cualquier silencio ≥1s sin cortar" en todo el video (eso va a pasar siempre
+   que haya una pausa real, y ahora es lo esperado) — solo confirma que el silencio INICIAL quedó
+   recortado.
 
 Esto es el chequeo automático que corre SIEMPRE, sin un humano mirando. No reemplaza la revisión
 manual de un cambio nuevo al propio pipeline — eso sigue necesitando capturas de frames reales en
@@ -257,9 +292,14 @@ cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nueva
 - iPhone 13 mini, 13 Pro, 13 Pro Max y 14 Plus no tienen foto en ningún lado (ni CDN de Apple, que los
   retiró, ni biblioteca local) — si Nacho los nombra, el QC los va a marcar como `missingPhotos` y hay
   que generarles una imagen IA como se hizo con el iPhone 13 simple.
-- El corte de silencios es nuevo (sección 1, paso 1) — la primera vez que corra sobre clips reales,
-  conviene revisar con atención el log (`corté Xs de silencio...`) y comparar contra el clip original
-  para confirmar que no se comió ninguna palabra, no solo confiar en que el código "debería" andar.
+- El corte de silencios se reescribió por completo el 27-11-2026 (sección 1) — ahora solo toca el
+  silencio inicial, nunca pausas de en medio. Confirmado con un render real (0.69s cortado) después de
+  arreglar el bug de `probeDuration`, pero todavía vale la recomendación de siempre: revisar el log
+  (`corté Xs de silencio...`) contra el clip original antes de dar algo por bueno a ciegas.
+- Quedó sin uso el `MIN_SILENCE_SECONDS` (pausas de en medio, ≥1s) que antes cortaba `cutSilences` —
+  si en algún momento Nacho pide volver a cortar esas pausas (hoy pidió explícitamente lo contrario:
+  "no me cortes adentro de un mismo clip"), el código de referencia está en el historial de git de
+  `silence-cut.ts` antes del 27-11-2026, no hay que reinventarlo.
 - El efecto "detrás tuyo" automático (sección 4b) ya corrió una vez de punta a punta dentro de una
   corrida real del agente (26-11-2026) — el criterio de selección (1 de cada 4, tope 3 por video)
   sigue siendo un primer número, no algo afinado todavía: si con más videos reales se siente repetido

@@ -46,3 +46,4 @@ bridge/whatsapp/auth.bak-*
 bridge/whatsapp/.env
 bridge/whatsapp/node_modules
 bridge/whatsapp/qr.png
+.reference/

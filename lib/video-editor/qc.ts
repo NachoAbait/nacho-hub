@@ -60,11 +60,17 @@ export async function runQc(input: {
   }
   checks.push({ name: "subtítulos sincronizados con sus propios límites", passed: !badPhrase, detail: badPhrase ?? "ok" });
 
-  const leftoverSilences = await detectSilences(input.videoPath, 1.0).catch(() => []);
+  // Desde el 27-11-2026 cutSilences ya NO corta pausas de en medio de una toma (pedido explícito: "no
+  // me cortes adentro de un mismo clip") — así que acá ya no tiene sentido chequear "¿quedó algún
+  // silencio ≥1s sin cortar?" en todo el video, eso va a pasar siempre que haya una pausa real y es
+  // lo esperado. Lo único que sigue siendo un chequeo válido es el silencio inicial (antes de la
+  // primera palabra), que cutSilences sí debería haber recortado casi del todo.
+  const leadingSilence = await detectSilences(input.videoPath, 0.2).catch(() => []);
+  const leftoverLeading = leadingSilence[0] && leadingSilence[0].start <= 0.05 ? leadingSilence[0] : null;
   checks.push({
-    name: "sin silencios largos (≥1s) sin cortar",
-    passed: leftoverSilences.length === 0,
-    detail: leftoverSilences.length === 0 ? "ok" : `${leftoverSilences.length} tramo(s) de ≥1s sin cortar`,
+    name: "sin tiempo muerto largo antes de la primera palabra",
+    passed: !leftoverLeading,
+    detail: !leftoverLeading ? "ok" : `${leftoverLeading.end.toFixed(2)}s de silencio inicial sin cortar`,
   });
 
   return checks;
