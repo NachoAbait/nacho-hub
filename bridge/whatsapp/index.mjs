@@ -34,9 +34,16 @@ function extractText(message) {
   return m.conversation || m.extendedTextMessage?.text || m.imageMessage?.caption || m.videoMessage?.caption || m.documentMessage?.caption || "";
 }
 
-/** Siempre dígitos solos, nunca con sufijo @s.whatsapp.net / @lid. */
+/** Siempre dígitos solos, nunca con sufijo @s.whatsapp.net / @lid.
+ *
+ * También corta en ":" — WhatsApp numera los dispositivos de una cuenta y a
+ * veces el número llega como "5492245509272:0". Sin esto, el mismo cliente
+ * abría una conversación nueva por cada dispositivo desde el que escribía: el
+ * bot perdía el hilo a mitad de una venta y a Nacho le llegaba el aviso con
+ * un número que no se puede copiar ni pegar. Pasó el 27-11-2026 con 2 de las
+ * 4 conversaciones del día. */
 function toBarePhone(jidOrNumber) {
-  return jidOrNumber.replace(/@.*$/, "");
+  return jidOrNumber.replace(/[:@].*$/, "");
 }
 
 /** true si el hub lo procesó como proveedor (lista de precios). false si lo ignoró (no es proveedor
