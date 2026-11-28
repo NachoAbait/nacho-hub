@@ -16,7 +16,6 @@ import {
   type MoodSegmentInput,
   type OverlaySegmentInput,
 } from "@/lib/video-editor/render";
-import { buildDepthScenes } from "@/lib/video-editor/depth-captions";
 import { enhanceClip } from "@/lib/video-editor/enhance";
 import { cutSilences } from "@/lib/video-editor/silence-cut";
 import { runQc } from "@/lib/video-editor/qc";
@@ -129,12 +128,12 @@ export async function buildContentTimeline(ctx: AgentContext, videoPath: string)
     }
   }
 
-  // Efecto "subtítulo detrás tuyo" (ver lib/video-editor/depth-captions.ts) — automático para
-  // CUALQUIER video, no depende de que haya catálogo ni de que se haya detectado ningún modelo, solo
-  // de que haya oraciones elegibles. Nunca tira: sin modelo de MediaPipe instalado, o si falla una
-  // escena puntual, sigue con subtítulo normal ahí (ver warnings).
-  const { cutoutScenes, warnings: depthWarnings } = await buildDepthScenes(videoPath, transcript.segments, transcript.words, levels, overlaySegments);
-  for (const w of depthWarnings) ctx.log(w);
+  // Efecto "subtítulo detrás tuyo" (ver lib/video-editor/depth-captions.ts) — DESACTIVADO desde el
+  // 28-11-2026, mismo pedido que apagó el subtítulo plano (sección 3 del whitepaper: "saca TODOS los
+  // subtitulos"): esto también es un subtítulo (1-2 palabras grandes compuestas detrás de Nacho),
+  // aunque se viera distinto. Dejar de llamar a buildDepthScenes también ahorra el procesamiento de
+  // MediaPipe/Python por escena, que ya no sirve para nada si no se va a mostrar.
+  const cutoutScenes: CutoutSceneInput[] = [];
 
   // QC básico pedido por Nacho: si Claude detectó que se nombra un modelo que SÍ está en el catálogo
   // pero sin foto (o directamente no está en el catálogo de modelos con foto), avisar explícito en

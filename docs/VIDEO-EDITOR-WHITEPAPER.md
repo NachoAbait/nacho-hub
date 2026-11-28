@@ -229,6 +229,15 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 
 ## 4b. Subtítulo "detrás tuyo" (automático, 26-11-2026)
 
+> **DESACTIVADO desde el 28-11-2026 — mismo pedido que apagó el subtítulo plano (sección 3): "saca
+> TODOS los subtitulos"**. Esto también es un subtítulo (1-2 palabras grandes compuestas detrás de
+> Nacho), aunque se viera distinto — se descubrió que seguía activo DESPUÉS de apagar el de la sección
+> 3 (confirmado con un frame real: "GARANTIZARNOS" seguía apareciendo). `buildContentTimeline`
+> (`lib/agents/video-editor.ts`) ya no llama a `buildDepthScenes` — `cutoutScenes` sale `[]` siempre
+> desde ese código (las escenas especiales MANUALES whitebg/moneyrain de la sección 6 no se tocaron:
+> son otro mecanismo, a pedido puntual, no automático). Todo el resto de esta sección describe código
+> que sigue existiendo (`depth-captions.ts`, `cutout_scene.py --mode depth`), solo que ya no se invoca.
+
 Pedido explícito, con el ejemplo de un reel de Instagram: a veces (no siempre) el subtítulo tiene que
 quedar DETRÁS de Nacho, con el fondo real sin tocar (ni blanco, ni difuminado nuevo, ni ningún
 filtro) — distinto de las escenas especiales manuales de la sección 6 (que sí reemplazan todo el
