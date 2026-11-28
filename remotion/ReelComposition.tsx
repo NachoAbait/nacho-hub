@@ -520,7 +520,13 @@ const PANEL_ACCENT = "#3ddc84";
  * antes de escribir esto (28-11-2026), con Nacho aprobando el diseño ahí primero. */
 function ChecklistPanel({ segment, frame, fps }: { segment: ChecklistPanelSegment; frame: number; fps: number }) {
   const PANEL_EXIT_FRAMES = 8;
-  const pop = spring({ frame: frame - segment.startFrame, fps, config: { damping: 16, mass: 0.6 }, durationInFrames: 14 });
+  // La tarjeta entra junto con el PRIMER ítem, nunca antes — ancla al `revealFrame` de `items[0]`, no
+  // a `segment.startFrame` (que solo marca desde cuándo este panel reemplaza al subtítulo normal, y
+  // puede venir antes). Bug visto en vivo (28-11-2026): con `segment.startFrame` la tarjeta aparecía
+  // vacía (título sin ningún ítem) un par de segundos antes de que arrancara el primero — "quedo
+  // colgado esto". Si no hay ítems, no hay de qué colgarse: se usa `segment.startFrame` como fallback.
+  const entryFrame = segment.items[0]?.revealFrame ?? segment.startFrame;
+  const pop = spring({ frame: frame - entryFrame, fps, config: { damping: 16, mass: 0.6 }, durationInFrames: 14 });
   const entryOpacity = interpolate(pop, [0, 1], [0, 1]);
   const exitProgress =
     frame >= segment.endFrame

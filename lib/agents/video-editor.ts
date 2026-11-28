@@ -275,7 +275,13 @@ export const videoEditor: AgentModule = {
           overlayLabel: overlay?.label ?? null,
           overlaySegments: timeline.overlaySegments,
           moodSegments: timeline.moodSegments,
-          phrases: timeline.phrases,
+          // SIN subtítulo plano palabra por palabra — pedido explícito (28-11-2026), después de varias
+          // vueltas sobre fuente/largo/corte de ese subtítulo durante la sesión: "saca TODOS los
+          // subtitulos, porque veo que es algo que no se te da bien, por ahi de eso me encargo yo".
+          // `timeline.phrases` se sigue calculando (lo sigue usando `buildDepthScenes` para las
+          // escenas "detrás tuyo", que no son esto) pero ya no se le pasa al render principal. Ver
+          // whitepaper sección 3.
+          phrases: [],
         });
 
         const storagePath = `edited/${file.id}.mp4`;

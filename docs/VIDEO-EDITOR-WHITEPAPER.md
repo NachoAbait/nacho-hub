@@ -100,6 +100,16 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
 
 ## 3. Subtítulos
 
+> **DESACTIVADOS en el render principal desde el 28-11-2026 — pedido explícito, después de varias
+> vueltas en la misma sesión sobre fuente/largo de oración/contorno/corte de este subtítulo: "saca
+> TODOS los subtitulos, porque veo que es algo que no se te da bien, por ahi de eso me encargo yo".**
+> `lib/agents/video-editor.ts` ya no le pasa `timeline.phrases` a `renderReel` (pasa `[]`) — todo lo
+> de esta sección sigue siendo el código real y sigue corriendo (`buildPhrases`,
+> `classifyWordEmphasis`), porque `buildDepthScenes` (sección 6) todavía usa esos mismos `levels` para
+> las escenas "detrás tuyo" — esas NO se tocaron, el pedido fue sobre el subtítulo plano de la cámara
+> normal. Si se vuelve a pedir subtítulo plano en el futuro, es un solo cambio (volver a pasar
+> `timeline.phrases` en vez de `[]`) — todo lo demás de esta sección sigue describiendo cómo se arma.
+
 - **La oración se va completando palabra por palabra**, sin que las palabras anteriores desaparezcan,
   hasta terminar esa oración — ahí se limpia todo y arranca la siguiente (`ReelPhrase`/`ReelWord` en
   `ReelComposition.tsx`). Nunca "una palabra reemplaza a la anterior" (karaoke clásico).
