@@ -88,6 +88,18 @@ export function mergePercentWords(words: WhisperWord[]): WhisperWord[] {
         i = lastIdx + 1;
         continue;
       }
+      // Caso visto en vivo (28-11-2026): Whisper ya escribe "85%" en el texto completo del clip, pero
+      // en el array de PALABRAS el símbolo "%" sale como su propio token con texto vacío/en blanco
+      // pegado al número (en vez de venir deletreado "por ciento", que es el único caso que cubre el
+      // bloque de arriba) — sin este caso, el subtítulo mostraba "85" solo, sin el signo. Un token de
+      // texto vacío justo después de un número puro es ese símbolo perdido.
+      const after = tokens[i + num.consumed];
+      if (after === "" && words[i + num.consumed] !== undefined) {
+        const lastIdx = i + num.consumed;
+        out.push({ word: `${num.value}%`, start: words[i].start, end: words[lastIdx].end });
+        i = lastIdx + 1;
+        continue;
+      }
     }
     out.push(words[i]);
     i++;

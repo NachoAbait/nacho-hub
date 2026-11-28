@@ -164,6 +164,14 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   reemplaza por un solo token "N%", así todo lo demás (análisis, énfasis, subtítulos) ya lo ve como una
   palabra normal. Es "mejor esfuerzo" en la forma deletreada (cubre las formas habituales en español,
   no un parser numérico completo) — si no reconoce la forma exacta, deja las palabras como vinieron.
+  - **Caso adicional (28-11-2026):** visto en vivo — Whisper a veces YA escribe "85%" en el texto
+    completo del clip, pero en el array de palabras el símbolo "%" sale como su propio token de texto
+    vacío pegado al número (no deletreado "por ciento", que es el único caso que cubría el párrafo de
+    arriba) — sin esto, el subtítulo mostraba "85" solo, sin el signo. `mergePercentWords` ahora
+    también detecta un token vacío justo después de un número puro y lo fusiona como "%". Queda sin
+    cubrir el caso (visto en el mismo clip, en otra instancia de "85%") donde Whisper pierde el símbolo
+    del todo, sin dejar ni token vacío — no hay señal ninguna en el array de palabras para recuperarlo
+    de forma confiable.
 
 ## 4. Imagen y efectos
 
