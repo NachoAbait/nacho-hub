@@ -96,6 +96,24 @@ export interface CutoutSceneInput {
   clipFileName: string;
 }
 
+/** Ver ChecklistPanelItem en ReelComposition.tsx. */
+export interface ChecklistPanelItemInput {
+  revealSec: number;
+  label: string;
+  icon?: "check" | "box";
+}
+
+/** Ver ChecklistPanelSegment en ReelComposition.tsx — "Panel Checklist", pedido puntual de Nacho
+ * (28-11-2026) para enumeraciones de características. Todavía no hay detección automática de "esto es
+ * una enumeración": la lista de items y sus tiempos se arma a mano por clip (ver
+ * lib/agents/video-editor.ts o un script puntual) hasta que se pida generalizar eso. */
+export interface ChecklistPanelSegmentInput {
+  startSec: number;
+  endSec: number;
+  title: string;
+  items: ChecklistPanelItemInput[];
+}
+
 export interface RenderReelInput {
   /** Ruta local del clip crudo ya descargado (ver downloadClipToTmp). */
   videoPath: string;
@@ -118,6 +136,7 @@ export interface RenderReelInput {
   badgeSegments?: BadgeSegmentInput[];
   transitionPoints?: TransitionPointInput[];
   cutoutScenes?: CutoutSceneInput[];
+  checklistPanels?: ChecklistPanelSegmentInput[];
 }
 
 const DEFAULT_OVERLAY_SECONDS = 6;
@@ -164,6 +183,15 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     frame: Math.max(0, Math.min(durationInFrames, Math.round(t.sec * REEL_FPS))),
   }));
   const cutoutScenes = (input.cutoutScenes ?? []).map((s) => ({ ...toFrameWindow(s.startSec, s.endSec), clipFileName: s.clipFileName }));
+  const checklistPanels = (input.checklistPanels ?? []).map((s) => ({
+    ...toFrameWindow(s.startSec, s.endSec),
+    title: s.title,
+    items: s.items.map((it) => ({
+      revealFrame: Math.max(0, Math.min(durationInFrames, Math.round(it.revealSec * REEL_FPS))),
+      label: it.label,
+      icon: it.icon,
+    })),
+  }));
 
   const serveUrl = await getServeUrl();
   const inputProps: ReelCompositionProps = {
@@ -179,6 +207,7 @@ export async function renderReel(input: RenderReelInput): Promise<Buffer> {
     badgeSegments,
     transitionPoints,
     cutoutScenes,
+    checklistPanels,
   };
   const serializableProps = inputProps as unknown as Record<string, unknown>;
 

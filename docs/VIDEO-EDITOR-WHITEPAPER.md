@@ -91,6 +91,12 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   ancla sea exacta.
 - Nunca al mismo tiempo que los subtítulos — "sería mucha cosa" mostrar las dos cosas juntas cuando se
   está mostrando el render de un celular.
+- **Posición vertical, regla permanente (28-11-2026):** `paddingBottom: 160` en `ReelComposition.tsx`
+  (bajado de 340) — pedido explícito: "cuando aparecen los modelos... ponelos un poco mas abajo que me
+  tapa la cara". Con 340 el borde superior de la caja quedaba a ~56% de la altura del cuadro, que en
+  tomas donde Nacho sostiene los celulares cerca del pecho/mentón llegaba a superponerse con la cara;
+  con 160 baja a ~65%. Si en el futuro el encuadre cambia mucho (otra silla, otra altura de cámara),
+  revisar este valor con una captura real antes de asumir que sigue sirviendo.
 
 ## 3. Subtítulos
 
@@ -150,6 +156,14 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   cualquier oración tienen que quedar en "normal". Si esto se siente azaroso otra vez, el problema está
   en que el prompt perdió el contexto de oración/guión completo, no en ajustar manualmente qué palabra
   es "importante".
+  - **"Unterminated string in JSON" en clips largos — recurrente, visto dos veces (25-11 y
+    28-11-2026).** `maxTokens` se quedaba corto para el JSON de un objeto por palabra en clips de
+    ~190 palabras (subido de 4000→8000 la primera vez, no alcanzó siempre; ahora 16000). Además,
+    `classifyWordEmphasis` reintenta UNA vez si el primer intento tira — el corte puede ser variación
+    de esa tirada puntual, no solo falta de tokens. Cuando esto falla (incluso después del reintento),
+    el render sigue con subtítulos planos (todo "normal") en vez de perderse — si un video sale con
+    todas las palabras del mismo tamaño/tipografía, revisar el log por este error antes de asumir que
+    el prompt dejó de funcionar.
 - **Salida con spring, no corte seco (27-11-2026).** Investigación de motion graphics para este
   formato: "nunca interpolate() lineal, toda entrada con spring(), las salidas más rápidas que las
   entradas" — la entrada de cada palabra ya usaba `spring()` (bien), pero cuando terminaba una oración
@@ -321,6 +335,76 @@ cortes internos quedaban "bastante evidentes". Se sumaron tres capacidades nueva
   - **Esto no está enganchado al cron automático** — qué frase dispara qué efecto depende del guión
     de cada video puntual, no es una regla general. Se corre a mano (ver comentario de uso en el
     propio script) cuando Nacho pide un efecto así para un video nuevo.
+
+## 6b. Motion graphics: categoría, herramienta y cómo pedirlos (28-11-2026)
+
+**Nombre de la categoría.** Todo lo de este archivo que reemplaza al subtítulo plano palabra por
+palabra (la caja de producto, el Badge "100% ORIGINAL", el Panel Checklist de abajo, y lo que se
+sume a futuro — una línea de tiempo, etc.) es, como categoría, un **"motion graphic"** — pedido
+explícito de Nacho de tener un nombre para pedirlos sin saber el detalle técnico: *"hacé un motion
+graphic acá"* y después el tipo (o una descripción si no sabe el nombre exacto, y se lo pone quien
+esté implementando). Catálogo de los que ya existen:
+
+| Nombre | Qué es | Dónde vive |
+|---|---|---|
+| Caja de producto | Tarjeta con el render del celular nombrado | `activeOverlay` en `ReelComposition.tsx` |
+| Badge | Cartel "100% ORIGINAL / Sin cambios / Sin arreglos" | `Badge` en `ReelComposition.tsx` |
+| **Panel Checklist** | Lista que se arma item por item (ver abajo) | `ChecklistPanel` en `ReelComposition.tsx` |
+| Escena "detrás tuyo" | Recorte sobre fondo especial (blanco, billetes) | `cutout_scene.py` + `CutoutScene` |
+
+**Herramienta: Remotion se queda.** Investigado explícitamente a pedido de Nacho (28-11-2026,
+"investiga la mejor herramienta para hacerlo"): Remotion sigue siendo la opción vigente para
+generar video programáticamente vía código (no GUI tipo After Effects) en 2026 — es lo que recomienda
+la comparación de alternativas de la categoría, y Remotion mismo sacó "Agent Skills" oficiales en
+enero 2026 pensadas justo para que un agente de código como este escriba Remotion bien. No hay
+necesidad de migrar a otra cosa. Para coreografías más complejas que un fade/scale/translate (texto
+que se parte en letras, máscaras de revelado, efectos reusables con nombre) existe `@remotion/gsap`
+(wrapper oficial de GSAP, determinístico frame por frame) — no hace falta hoy, el `spring()`/
+`interpolate()` a mano ya cubre todo lo que se pidió hasta ahora; vale la pena si en algún momento se
+pide algo bastante más coreografiado que una lista o un cartel. Contrapunto a tener en cuenta: el
+mismo research marca que un exceso de efectos/pulido hoy se lee como "genérico/hecho por IA" — texto
+legible y restraint le está ganando a la persecución de tendencias visuales en 2026. No sumar motion
+por sumar.
+
+**Cuándo usarlos — pedido explícito: "quiero usarlos siempre que interpretes que algo se puede hacer
+con eso, algo importante, algun proceso, enumeracion de listas".** De acá en más, antes de dar una
+edición por terminada, mirar la transcripción completa del clip (no solo mientras se arma, a
+propósito) buscando candidatos: un punto importante que se podría resaltar como cartel/callout, un
+proceso con pasos (candidato a algo tipo "Timeline"), una enumeración de características o ítems
+(candidato a Panel Checklist). Esto es una sugerencia activa, no silenciosa: **mostrarle a Nacho los
+candidatos encontrados ANTES de tocar el render** (mismo patrón que ya se usó para el Panel
+Checklist: "primero enumeramelos aca a ver si estan bien antes de tocar algo") y esperar su
+confirmación de cuáles sí y de qué tipo, en vez de meter motion graphics por iniciativa propia sin
+mostrarlos primero.
+
+**Panel Checklist — qué es y cómo se arma.** Pedido puntual (28-11-2026) para cuando Nacho enumera
+una lista de características ("de primera mano, sin cambios, sin arreglos, estéticamente impecables,
+batería arriba del 85%") — en vez de que pase como subtítulo plano, una tarjeta fija (mismo lenguaje
+visual que la caja de producto/Badge: fondo oscuro, borde, tipografía Montserrat 800) que va sumando
+filas una por una, cada una con un círculo verde con tilde (o un ícono de caja de Apple para "de
+primera mano / con su caja original" — pedido puntual: "podrias poner una caja original de apple").
+
+- **Tipos**: `ChecklistPanelItem`/`ChecklistPanelSegment` en `ReelComposition.tsx`,
+  `ChecklistPanelItemInput`/`ChecklistPanelSegmentInput` en `render.ts` (conversión segundos→frames
+  como cualquier otro segmento). Prop nueva `checklistPanels` en `ReelCompositionProps`/
+  `RenderReelInput`, `[]` por default — no afecta ningún render que no lo pida.
+- **Timing real, no un intervalo fijo**: cada item tiene su propio `revealFrame`/`revealSec`, anclado
+  a la palabra real donde Nacho empieza a nombrar esa característica en el audio (ver la transcripción
+  de Whisper de ese clip) — pedido explícito: "que no aparezcan de una, que vayan apareciendo las
+  características a medida que voy nombrándolas".
+- **Nunca junto a los subtítulos normales ni a la caja de producto** — mismo criterio que el Badge:
+  `activeChecklistPanel` entra a la misma exclusión mutua (`activeOverlay`/`activeCutout`/
+  `activeBadge`/`activeChecklistPanel`, ver `ReelComposition.tsx`).
+- **Genérico, reusable — los DATOS no**. El componente no asume que el contenido sea siempre "cómo
+  tomamos los usados": cualquier lista futura arma su propio `ChecklistPanelSegment`. Lo que sí sigue
+  siendo manual por ahora es la lista de items y sus tiempos — no hay detección automática de "esto es
+  una enumeración" todavía (ver el punto de arriba: la propuesta es manual/conversacional, no un paso
+  de `content-analysis.ts` nuevo).
+- **Previsualizado antes de tocar código real**: se armó primero un mockup HTML animado (Artifact,
+  con las mismas fuentes/colores del video) para que Nacho aprobara el diseño y el timing de la
+  animación ANTES de escribir el componente de Remotion — vale la pena repetir este paso para
+  cualquier motion graphic nuevo que no sea un ajuste chico de uno que ya existe: es mucho más rápido
+  iterar en HTML que re-renderizando el video entero cada vez.
 
 ## 7. Pendiente / no resuelto
 

@@ -90,6 +90,37 @@ export type TransitionPoint = { frame: number };
  * se reproduce el resultado ya armado en el momento justo, igual que cualquier otro clip. */
 export type CutoutScene = { startFrame: number; endFrame: number; clipFileName: string };
 
+/** Un ítem del "Panel Checklist" (ver ChecklistPanelSegment abajo) — pedido puntual de Nacho
+ * (28-11-2026) para cuando enumera una lista de características ("de primera mano, sin cambios, sin
+ * arreglos..."), en vez de que pase como subtítulo plano palabra por palabra. Previsualizado antes de
+ * tocar el video real con un mockup HTML animado (Artifact), confirmado el diseño, después
+ * implementado acá. */
+export type ChecklistPanelItem = {
+  /** Frame (de la composición entera) en el que este ítem entra — anclado al momento real en que
+   * Nacho empieza a nombrar esa característica en el audio (ver lib/agents/video-editor.ts donde se
+   * arma esto para un clip puntual), NO un intervalo fijo: pedido explícito "que no aparezcan de una,
+   * que vayan apareciendo las características a medida que voy nombrándolas". */
+  revealFrame: number;
+  label: string;
+  /** "check" (default, un círculo verde con tilde) o "box" (ícono de caja de Apple — pedido puntual
+   * para el ítem "de primera mano / con su caja original"). */
+  icon?: "check" | "box";
+};
+
+/** Panel que se arma solo, ítem por ítem, para una enumeración de características — reemplaza a los
+ * subtítulos normales mientras está activo (mismo criterio que la caja de producto y el Badge: nunca
+ * las dos cosas a la vez). Es un componente GENÉRICO y reusable — no asume que el contenido sea
+ * siempre "cómo tomamos los usados"; cualquier lista futura (otra tanda de características, por
+ * ejemplo) arma su propio ChecklistPanelSegment con sus propios items/timings. Lo que SÍ es puntual de
+ * cada video es la lista de items y sus tiempos, armada a mano (o por Claude a futuro) por cada clip —
+ * no hay detección automática de "esto es una enumeración" todavía, Nacho lo pide cuando lo quiere. */
+export type ChecklistPanelSegment = {
+  startFrame: number;
+  endFrame: number;
+  title: string;
+  items: ChecklistPanelItem[];
+};
+
 /** `type`, no `interface`: Remotion's <Composition> necesita que Props satisfaga
  * `Record<string, unknown>`, y un `interface` (declaración abierta) no lo satisface aunque
  * estructuralmente sea igual — gotcha conocido de TypeScript. */
@@ -117,6 +148,9 @@ export type ReelCompositionProps = {
   transitionPoints?: TransitionPoint[];
   /** Ver CutoutScene arriba. [] = todo el video usa la cámara normal. */
   cutoutScenes?: CutoutScene[];
+  /** Ver ChecklistPanelSegment arriba. [] = nunca aparece (el default — la mayoría de los videos no
+   * tiene una enumeración de características). */
+  checklistPanels?: ChecklistPanelSegment[];
 };
 
 const GOLD = "#d4a640";
@@ -187,6 +221,7 @@ export function ReelComposition({
   badgeSegments = [],
   transitionPoints = [],
   cutoutScenes = [],
+  checklistPanels = [],
 }: ReelCompositionProps) {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -194,6 +229,7 @@ export function ReelComposition({
   const activeCutout = cutoutScenes.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
   const activeTransition = transitionPoints.find((t) => frame >= t.frame && frame < t.frame + TRANSITION_LENGTH) ?? null;
   const activeBadge = badgeSegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
+  const activeChecklistPanel = checklistPanels.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null;
 
   // Dos efectos combinados sobre el fondo: un "zoom de entrada" rápido en el primer medio segundo
   // (entra grande y se asienta, como pidió Nacho) + el drift lento tipo "Ken Burns" durante todo el
@@ -206,7 +242,10 @@ export function ReelComposition({
   // Durante una escena especial (fondo blanco / lluvia de billetes) o el cartel de "sin cambios, sin
   // arreglos" no hay lugar para la caja de producto — mismo criterio que ya regía entre caja y
   // subtítulos ("sería mucha cosa" mostrar dos cosas a la vez), ahora con un tercer sistema visual.
-  const activeOverlay = !activeCutout && !activeBadge ? overlaySegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null : null;
+  const activeOverlay =
+    !activeCutout && !activeBadge && !activeChecklistPanel
+      ? overlaySegments.find((s) => frame >= s.startFrame && frame < s.endFrame) ?? null
+      : null;
   const activeMood = moodSegments.find((s) => frame >= s.startFrame && frame < s.endFrame)?.mood ?? "neutral";
   const { accent } = MOOD_COLORS[activeMood];
 
@@ -232,7 +271,7 @@ export function ReelComposition({
   // cada palabra dura 6 frames (ver WordSpan) — la salida del bloque entero dura menos, 4.
   const PHRASE_EXIT_FRAMES = 4;
   const activePhrase =
-    activeOverlay || activeCutout || activeBadge
+    activeOverlay || activeCutout || activeBadge || activeChecklistPanel
       ? undefined
       : phrases.find((p) => frame >= p.startFrame && frame < p.endFrame + PHRASE_EXIT_FRAMES);
   // La frase se va completando: todas las palabras cuyo `startFrame` ya pasó quedan en pantalla
@@ -298,9 +337,14 @@ export function ReelComposition({
 
       {/* Caja de producto: antes arriba y chica (300px), ahora grande (440px) y centrada en la
           mitad inferior — deja a los subtítulos su propio espacio pegado al borde de abajo, sin
-          pisarse. */}
+          pisarse.
+          paddingBottom bajado de 340 a 160 el 28-11-2026 — pedido explícito: "cuando aparecen los
+          modelos... ponelos un poco mas abajo que me tapa la cara". Regla permanente de acá en
+          adelante, no un ajuste puntual de un clip: con 340 el borde superior de la caja quedaba a
+          ~56% de la altura del cuadro, que en tomas donde Nacho sostiene los celulares cerca del
+          pecho/mentón llegaba a superponerse con la cara. Con 160 el borde superior baja a ~65%. */}
       {activeOverlay && (
-        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 340 }}>
+        <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 160 }}>
           <div style={{ perspective: 1000, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div
               style={{
@@ -421,6 +465,7 @@ export function ReelComposition({
         })()}
 
       {activeBadge && <Badge startFrame={activeBadge.startFrame} frame={frame} fps={fps} />}
+      {activeChecklistPanel && <ChecklistPanel segment={activeChecklistPanel} frame={frame} fps={fps} />}
     </AbsoluteFill>
   );
 }
@@ -464,6 +509,111 @@ function Badge({ startFrame, frame, fps }: { startFrame: number; frame: number; 
         </div>
       </div>
     </AbsoluteFill>
+  );
+}
+
+const PANEL_ACCENT = "#3ddc84";
+
+/** "Panel Checklist" — ver ChecklistPanelSegment arriba. Una tarjeta fija (mismo "piso" visual que la
+ * caja de producto y el Badge) que va sumando filas una por una a medida que `frame` pasa el
+ * `revealFrame` de cada ítem — no una sola entrada de golpe. Previsualizado en un mockup HTML aparte
+ * antes de escribir esto (28-11-2026), con Nacho aprobando el diseño ahí primero. */
+function ChecklistPanel({ segment, frame, fps }: { segment: ChecklistPanelSegment; frame: number; fps: number }) {
+  const PANEL_EXIT_FRAMES = 8;
+  const pop = spring({ frame: frame - segment.startFrame, fps, config: { damping: 16, mass: 0.6 }, durationInFrames: 14 });
+  const entryOpacity = interpolate(pop, [0, 1], [0, 1]);
+  const exitProgress =
+    frame >= segment.endFrame
+      ? spring({ frame: frame - segment.endFrame, fps, config: { damping: 14, mass: 0.3 }, durationInFrames: PANEL_EXIT_FRAMES })
+      : 0;
+  const exitOpacity = frame >= segment.endFrame ? interpolate(exitProgress, [0, 1], [1, 0]) : 1;
+
+  return (
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 190 }}>
+      <div
+        style={{
+          opacity: entryOpacity * exitOpacity,
+          width: 900,
+          background: "linear-gradient(180deg, rgba(13,11,9,0.9) 0%, rgba(13,11,9,0.96) 100%)",
+          border: "2px solid #3a3127",
+          borderRadius: 32,
+          padding: "30px 34px 26px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 18,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: CAPTION_FONT,
+            fontWeight: 800,
+            fontSize: 24,
+            letterSpacing: "0.07em",
+            textTransform: "uppercase",
+            color: GOLD,
+          }}
+        >
+          {segment.title}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {segment.items.map((item, i) => (
+            <ChecklistRow key={i} item={item} frame={frame} fps={fps} />
+          ))}
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+}
+
+function ChecklistRow({ item, frame, fps }: { item: ChecklistPanelItem; frame: number; fps: number }) {
+  const shown = frame >= item.revealFrame;
+  const pop = spring({ frame: frame - item.revealFrame, fps, config: { damping: 13, mass: 0.5 }, durationInFrames: 12 });
+  const opacity = shown ? interpolate(pop, [0, 1], [0, 1]) : 0;
+  const translateY = shown ? interpolate(pop, [0, 1], [18, 0]) : 18;
+  const checkPop = spring({ frame: frame - item.revealFrame, fps, config: { damping: 11, mass: 0.4 }, durationInFrames: 10 });
+  const checkScale = shown ? interpolate(checkPop, [0, 1], [0, 1]) : 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 18, opacity, transform: `translateY(${translateY}px)` }}>
+      {item.icon === "box" ? <BoxIcon /> : <CheckIcon scale={checkScale} />}
+      <div style={{ fontFamily: CAPTION_FONT, fontWeight: 800, fontSize: 30, color: "white", lineHeight: 1.15, maxWidth: 740 }}>
+        {item.label}
+      </div>
+    </div>
+  );
+}
+
+function CheckIcon({ scale }: { scale: number }) {
+  return (
+    <div
+      style={{
+        flex: "0 0 auto",
+        width: 46,
+        height: 46,
+        borderRadius: 999,
+        background: PANEL_ACCENT,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transform: `scale(${scale})`,
+      }}
+    >
+      <svg width="26" height="26" viewBox="0 0 24 24">
+        <path d="M5 13l4 4L19 7" fill="none" stroke="#0a2614" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+/** Ícono de caja de Apple — pedido puntual para el ítem "de primera mano / con su caja original":
+ * "podrias poner una caja original de apple, o algo por el estilo". */
+function BoxIcon() {
+  return (
+    <svg width="46" height="46" viewBox="0 0 24 24" style={{ flex: "0 0 auto" }}>
+      <rect x="3" y="7" width="18" height="13" rx="1.5" fill="#f2f2f2" stroke="#111" strokeWidth={1.4} />
+      <path d="M3 7l9-4 9 4" fill="none" stroke="#111" strokeWidth={1.4} />
+      <path d="M12 3v17" stroke="#111" strokeWidth={1} opacity={0.5} />
+    </svg>
   );
 }
 

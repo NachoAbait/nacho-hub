@@ -72,9 +72,9 @@ export async function classifyWordEmphasis(
     `para repartir variedad pareja ni para que cada oración tenga su cuota de palabras grandes.\n` +
     `- "sentiment": positive/negative/neutral — el tono de esa palabra puntual dentro de su oración.`;
 
-  const result = await askJson({
-    agent: "video-editor",
-    role: "parser",
+  const askOpts = {
+    agent: "video-editor" as const,
+    role: "parser" as const,
     system:
       "Interpretás el guión completo de un reel de venta de celulares como una historia con intención (gancho, " +
       "presentación de producto, argumento de venta, cierre) — no como una lista plana de palabras sueltas — y " +
@@ -83,12 +83,25 @@ export async function classifyWordEmphasis(
     prompt,
     schema: EmphasisSchema,
     usage,
-    // 4000 se quedaba corto y cortaba el JSON a mitad de un string (visto en vivo el 25-11-2026 con
-    // un clip de 191 palabras: "Unterminated string in JSON") — un objeto por palabra entera
-    // {index,level,sentiment} no es caro, pero con clips largos se va acumulando.
-    maxTokens: 8000,
-  });
+    // Subido de 4000 a 8000 el 25-11-2026 (clip de 191 palabras, "Unterminated string in JSON") y a
+    // 16000 el 28-11-2026 (volvió a pasar con un clip de tamaño similar — 8000 tampoco alcanzaba
+    // siempre). Un objeto por palabra entera {index,level,sentiment} no es caro, pero se acumula.
+    maxTokens: 16000,
+  };
 
+  // Un intento más antes de resignarse a subtítulos planos: el corte a mitad de string puede ser
+  // variación normal de la generación (misma entrada, otra tirada no se corta), no solo falta de
+  // tokens — un reintento es barato (Haiku) comparado con perder el énfasis de TODO el video.
+  try {
+    return finalize(await askJson(askOpts), words);
+  } catch (err) {
+    console.warn(`[caption-style] primer intento falló (${err instanceof Error ? err.message : err}), reintentando una vez`);
+    const result = await askJson(askOpts);
+    return finalize(result, words);
+  }
+}
+
+function finalize(result: z.infer<typeof EmphasisSchema>, words: WhisperWord[]): WordEmphasis[] {
   const byIndex = new Map(result.words.map((w) => [w.index, w]));
   return words.map((_, i) => {
     const w = byIndex.get(i);
