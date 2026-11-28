@@ -20,10 +20,22 @@ mirar un solo frame suelto.
      mismo clip". `cutSilences` YA NO toca pausas de en medio de una misma toma (antes cortaba
      cualquier tramo ≥1s en todo el clip, con `MIN_SILENCE_SECONDS`) — ahora recorta ÚNICAMENTE el
      silencio ANTES de la primera palabra (tiempo muerto quieto a cámara antes de arrancar), con un
-     umbral muy bajo (`LEADING_SILENCE_MIN_SECONDS = 0.03`) y un margen mínimo (`LEADING_PAD_SECONDS =
+     umbral muy bajo (`LEADING_SILENCE_MIN_SECONDS = 0.03`) y un margen mínimo (`EDGE_PAD_SECONDS =
      0.04`, no los ~0.12s de antes) para que el corte caiga literalmente "milisegundos antes de hablar".
      `detectSilences` (el helper de más abajo) sigue existiendo tal cual para quien quiera ese chequeo
      más general (ver `qc.ts`, sección 5) — es informativo, ya no corta nada.
+   - **Ampliado a las dos puntas (28-11-2026):** pedido explícito — "tenes que cortar los clips! ni
+     bien termino de hablar en uno, y ni bien arranco a hablar en el proximo, pero justito justito"
+     (confirmado después: esto corre automáticamente para CADA clip que procesa el pipeline, no es un
+     caso especial de un video puntual — `cutSilences` se llama una vez por fila dentro del loop
+     principal, `lib/agents/video-editor.ts`). `cutSilences` ahora también recorta el silencio DESPUÉS
+     de la última palabra (si el clip termina en silencio real hasta el final del archivo), con el
+     mismo umbral y el mismo `EDGE_PAD_SECONDS` que la punta inicial. Sigue sin tocar nada de en medio:
+     solo cuenta como "punta final" un silencio cuyo `end` llegue hasta la duración total del archivo
+     (lo que `detectSilences` ya reporta como el cierre de un `silence_start` sin `silence_end` propio)
+     — una pausa real en medio del clip no cumple esa condición y queda intacta. El recorte de las dos
+     puntas se hace en un solo paso de ffmpeg (`-ss` + `-t`, duración relativa) en vez de un `-ss` suelto,
+     para no depender de cómo interpreta `-to` combinado con seek de salida.
    - **Bug encontrado el mismo día (27-11-2026):** desde que esta función existe, `probeDuration` usaba
      mal un flag de ffprobe (`noprint_wrapper` en vez de `noprint_wrappers`, sin la "s") — ffprobe
      tiraba error, el try/catch de `cutSilences` lo tragaba en silencio, y la función devolvía SIEMPRE
@@ -73,11 +85,13 @@ Esto ya quedó confirmado como estándar (no es un tema abierto):
   hasta terminar esa oración — ahí se limpia todo y arranca la siguiente (`ReelPhrase`/`ReelWord` en
   `ReelComposition.tsx`). Nunca "una palabra reemplaza a la anterior" (karaoke clásico).
 - **Una oración a la vez, no un párrafo cargándose de a poco.** Cada ORACIÓN (la unidad de análisis
-  semántico — ver más abajo) tiene un tope duro de **7 palabras / 3 segundos**
-  (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`, bajado de 11/4.5 el 26-11-2026 — pedido
-  explícito: "no quiero que aparezcan más de 6/7 palabras en una oración"), además de cortar por
-  puntuación o pausa real (>0.45s) — así alguien hablando corrido sin comas no termina armando un solo
-  bloque gigante de texto.
+  semántico — ver más abajo) tiene un tope duro de **4 palabras / 1.7 segundos**
+  (`MAX_SEGMENT_WORDS`/`MAX_SEGMENT_SECONDS` en `captions.ts`, bajado de 11→7 el 26-11-2026 y de 7→4 el
+  28-11-2026 — pedido explícito, sobre un render con bloques de 7 palabras: "primer segundo y ya me
+  pones una oracion de 7 palabras"), además de cortar por puntuación o pausa real (>0.45s) — así
+  alguien hablando corrido sin comas no termina armando un solo bloque gigante de texto. Esto NO es
+  volver al experimento de mini-bloques rotando de posición (ver el punto de abajo) — sigue siendo un
+  solo bloque fijo arriba, simplemente más corto.
   - **Se probó y se revirtió: fragmentar en mini-bloques de 3 palabras (26-11-2026).** Hubo una
     versión que cortaba cada oración en bloques de máximo 3 palabras en pantalla, combinada con una
     posición que rotaba entre 3 zonas por bloque (ver más abajo) — se probó en un render real el mismo

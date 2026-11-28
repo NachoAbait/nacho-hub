@@ -63,14 +63,22 @@ export async function runQc(input: {
   // Desde el 27-11-2026 cutSilences ya NO corta pausas de en medio de una toma (pedido explícito: "no
   // me cortes adentro de un mismo clip") — así que acá ya no tiene sentido chequear "¿quedó algún
   // silencio ≥1s sin cortar?" en todo el video, eso va a pasar siempre que haya una pausa real y es
-  // lo esperado. Lo único que sigue siendo un chequeo válido es el silencio inicial (antes de la
-  // primera palabra), que cutSilences sí debería haber recortado casi del todo.
-  const leadingSilence = await detectSilences(input.videoPath, 0.2).catch(() => []);
-  const leftoverLeading = leadingSilence[0] && leadingSilence[0].start <= 0.05 ? leadingSilence[0] : null;
+  // lo esperado. Lo que sigue siendo un chequeo válido son las dos PUNTAS del clip (antes de la
+  // primera palabra y después de la última), que cutSilences sí debería haber recortado casi del todo
+  // (ver el pedido del 28-11-2026 sobre la punta final: "ni bien termino de hablar... justito justito").
+  const edgeSilences = await detectSilences(input.videoPath, 0.2).catch(() => []);
+  const leftoverLeading = edgeSilences[0] && edgeSilences[0].start <= 0.05 ? edgeSilences[0] : null;
+  const lastWindow = edgeSilences[edgeSilences.length - 1];
+  const leftoverTrailing = lastWindow && lastWindow.end >= durationInSeconds - 0.05 && lastWindow !== leftoverLeading ? lastWindow : null;
   checks.push({
     name: "sin tiempo muerto largo antes de la primera palabra",
     passed: !leftoverLeading,
     detail: !leftoverLeading ? "ok" : `${leftoverLeading.end.toFixed(2)}s de silencio inicial sin cortar`,
+  });
+  checks.push({
+    name: "sin tiempo muerto largo después de la última palabra",
+    passed: !leftoverTrailing,
+    detail: !leftoverTrailing ? "ok" : `${(durationInSeconds - leftoverTrailing.start).toFixed(2)}s de silencio final sin cortar`,
   });
 
   return checks;

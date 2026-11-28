@@ -13,11 +13,12 @@ const LEADING_SILENCE_MIN_SECONDS = 0.03;
 /** Nivel por debajo del cual ffmpeg considera "silencio" — no es 0 absoluto, ruido de ambiente/mic
  * real nunca llega a -∞dB. */
 const SILENCE_NOISE_DB = "-30dB";
-/** Margen que se deja pegado al final del silencio inicial para no comerse el ataque de la primera
- * palabra. Chico (no los 0.12s que haría falta si hubiera habla de los DOS lados) porque acá no hay
- * nada del lado izquierdo que proteger — pedido explícito (27-11-2026): "milisegundos antes de
- * comenzar a hablar". */
-const LEADING_PAD_SECONDS = 0.04;
+/** Margen que se deja pegado a cada punta (al final del silencio inicial, y al principio del
+ * silencio final) para no comerse el ataque de la primera palabra ni el final de la última. Chico
+ * porque de ese lado no hay habla real que proteger, solo el borde del propio corte — pedido explícito
+ * (27-11-2026): "milisegundos antes de comenzar a hablar"; (28-11-2026): "ni bien termino de hablar...
+ * pero justito justito". Mismo valor para las dos puntas, no hay motivo para que sean distintas. */
+const EDGE_PAD_SECONDS = 0.04;
 
 function run(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -78,49 +79,63 @@ export interface SilenceCutResult {
 }
 
 /**
- * Primer paso del pipeline, antes de cualquier otra edición. Recorta ÚNICAMENTE el silencio antes de
- * la primera palabra (tiempo muerto quieto a cámara antes de arrancar a hablar) — pedido explícito
- * (27-11-2026): "corta los clips milisegundos antes de comenzar a hablar... entre clip y clip, no me
- * cortes adentro de un mismo clip". Antes (hasta el mismo día) esta función también cortaba pausas
- * ≥1s en medio de una misma toma (MIN_SILENCE_SECONDS) — se sacó esa parte a pedido explícito: ya no
- * se toca nada que esté "adentro" del clip, solo el borde de arranque. `detectSilences` (abajo) sigue
- * existiendo tal cual para quien quiera ese chequeo más general (ver qc.ts), que es informativo y no
- * corta nada.
+ * Primer paso del pipeline, antes de cualquier otra edición. Recorta el silencio en LAS DOS PUNTAS del
+ * clip — antes de la primera palabra Y después de la última (tiempo muerto quieto a cámara, antes de
+ * arrancar o después de terminar de hablar) — pedido explícito (27-11-2026): "corta los clips
+ * milisegundos antes de comenzar a hablar... que casi no haya silencios"; (28-11-2026, sobre el mismo
+ * pedido no cumplido del todo): "tenes que cortar los clips! ni bien termino de hablar en uno, y ni
+ * bien arranco a hablar en el proximo, pero justito justito". Nunca toca nada que esté ADENTRO del
+ * clip (pedido explícito 27-11-2026: "no me cortes adentro de un mismo clip") — antes de esa fecha
+ * esta función también cortaba pausas ≥1s en medio de una misma toma (MIN_SILENCE_SECONDS); se sacó
+ * esa parte por ese pedido y sigue sin tocarse acá. `detectSilences` (abajo) sigue existiendo tal cual
+ * para quien quiera ese chequeo más general (ver qc.ts), que es informativo y no corta nada.
  *
  * Como esto corre ANTES de transcribir con Whisper, todo lo que viene después (subtítulos, ventanas de
- * producto) ya trabaja sobre la línea de tiempo del video recortado — no hace falta reproyectar
+ * producto) ya trabaja sobre la línea de tiempo del video YA recortado — no hace falta reproyectar
  * ningún timestamp.
  *
- * Nunca tira: si ffmpeg/ffprobe fallan, o no hay silencio inicial que cortar, devuelve el path
- * original sin tocar — el caller sigue con el clip completo en vez de perder el render.
+ * Nunca tira: si ffmpeg/ffprobe fallan, o no hay silencio en ninguna punta que cortar, devuelve el
+ * path original sin tocar — el caller sigue con el clip completo en vez de perder el render.
  */
 export async function cutSilences(videoPath: string): Promise<SilenceCutResult> {
   try {
     const duration = await probeDuration(videoPath);
     if (duration <= 0) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
 
-    const leading = (await detectSilences(videoPath, LEADING_SILENCE_MIN_SECONDS))[0];
-    // Solo cuenta si arranca de verdad en 0 (silence_start puede no ser exactamente 0 por redondeo de
-    // ffmpeg) — si no, es una pausa más adelante en el clip, y esa ya no se toca (ver nota arriba).
-    if (!leading || leading.start > 0.05) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
+    const silences = await detectSilences(videoPath, LEADING_SILENCE_MIN_SECONDS);
+    const leading = silences[0];
+    const trailing = silences[silences.length - 1];
 
-    const cutEnd = Math.min(duration, Math.max(0, leading.end - LEADING_PAD_SECONDS));
-    if (cutEnd < 0.1) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
+    // Solo cuenta si arranca de verdad en 0 (silence_start puede no ser exactamente 0 por redondeo de
+    // ffmpeg) — si no, es una pausa más adelante en el clip, y esa no se toca (ver nota arriba).
+    const hasLeading = !!leading && leading.start <= 0.05;
+    // Simétrico: solo cuenta si el silencio llega de verdad hasta el final del archivo (es el cierre
+    // detectado por detectSilences cuando hay un silence_start sin su silence_end) — si termina antes,
+    // es una pausa de en medio y tampoco se toca.
+    const hasTrailing = !!trailing && trailing.end >= duration - 0.05 && trailing !== leading;
+
+    if (!hasLeading && !hasTrailing) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
+
+    const cutStart = hasLeading ? Math.min(duration, Math.max(0, leading.end - EDGE_PAD_SECONDS)) : 0;
+    const cutEnd = hasTrailing ? Math.max(cutStart, Math.min(duration, trailing.start + EDGE_PAD_SECONDS)) : duration;
+    const keptDuration = cutEnd - cutStart;
+    if (keptDuration < 0.1) return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
 
     const { name } = path.parse(videoPath);
     const outPath = path.join(VIDEO_EDITOR_TMP_DIR, `${name}-cut-${Date.now()}.mp4`);
-    // Un solo trim desde cutEnd hasta el final — ya no hace falta concat (un único corte, siempre al
-    // principio). crf 16 + preset slow, igual que enhance.ts: este corte es el PRIMER re-encode de la
-    // cadena (corte → enhance → render), así que tiene que mantener el mismo estándar de calidad.
-    await run("ffmpeg", [
-      "-y", "-i", videoPath,
-      "-ss", cutEnd.toFixed(3),
-      "-c:v", "libx264", "-crf", "16", "-preset", "slow",
-      "-c:a", "aac", "-b:a", "192k",
-      outPath,
-    ]);
+    // `-ss` + `-t` (duración, no timestamp absoluto) para que el recorte de la punta final no dependa
+    // de cómo ffmpeg interprete `-to` combinado con un `-ss` de salida. crf 16 + preset slow, igual que
+    // enhance.ts: este corte es el PRIMER re-encode de la cadena (corte → enhance → render), así que
+    // tiene que mantener el mismo estándar de calidad.
+    const args = ["-y", "-i", videoPath];
+    if (cutStart > 0) args.push("-ss", cutStart.toFixed(3));
+    if (hasTrailing) args.push("-t", keptDuration.toFixed(3));
+    args.push("-c:v", "libx264", "-crf", "16", "-preset", "slow", "-c:a", "aac", "-b:a", "192k", outPath);
+    await run("ffmpeg", args);
 
-    return { path: outPath, cutsApplied: 1, secondsRemoved: Number(cutEnd.toFixed(2)) };
+    const cutsApplied = (hasLeading ? 1 : 0) + (hasTrailing ? 1 : 0);
+    const secondsRemoved = Number((cutStart + (duration - cutEnd)).toFixed(2));
+    return { path: outPath, cutsApplied, secondsRemoved };
   } catch {
     return { path: videoPath, cutsApplied: 0, secondsRemoved: 0 };
   }

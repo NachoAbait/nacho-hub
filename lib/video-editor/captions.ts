@@ -39,11 +39,14 @@ const PAUSE_THRESHOLD_SECONDS = 0.45;
  * haya pausa ni puntuación — no es perfecto (puede cortar en medio de una idea), pero mantiene cada
  * frase en pantalla corta y legible, que es lo que se pidió.
  *
- * Bajado de 11 a 7 el 26-11-2026 — pedido explícito: "no quiero que aparezcan más de 6/7 palabras en
- * una oración". MAX_SEGMENT_SECONDS también bajó en la misma proporción (7 palabras habladas a ritmo
- * normal no necesitan 4.5s en pantalla). */
-const MAX_SEGMENT_WORDS = 7;
-const MAX_SEGMENT_SECONDS = 3;
+ * Bajado de 11 a 7 el 26-11-2026, y de 7 a 4 el 28-11-2026 — pedido explícito (28-11-2026, sobre un
+ * render con bloques de 7 palabras): "primer segundo y ya me pones una oracion de 7 palabras". Esto NO
+ * es volver al experimento de mini-bloques rotando de posición que se rechazó el 26-11 (ver nota en
+ * buildPhrases más abajo) — sigue siendo un solo bloque fijo arriba, simplemente más corto.
+ * MAX_SEGMENT_SECONDS baja en la misma proporción (4 palabras habladas a ritmo normal no necesitan
+ * 3s en pantalla). */
+const MAX_SEGMENT_WORDS = 4;
+const MAX_SEGMENT_SECONDS = 1.7;
 
 // Hubo un intento (26-11-2026) de fragmentar esto en mini-bloques de 3 palabras en pantalla — se
 // probó en un render real y se revirtió el mismo día ("no me gusta... totalmente cruzada y opuesta"):
