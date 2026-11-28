@@ -36,6 +36,19 @@ mirar un solo frame suelto.
      — una pausa real en medio del clip no cumple esa condición y queda intacta. El recorte de las dos
      puntas se hace en un solo paso de ffmpeg (`-ss` + `-t`, duración relativa) en vez de un `-ss` suelto,
      para no depender de cómo interpreta `-to` combinado con seek de salida.
+   - **Compactación de pausas de EN MEDIO del clip, estándar desde el 28-11-2026:** pedido explícito,
+     sobre un render donde el corte de solo las puntas (1.24s) se sintió insuficiente — "TENES QUE
+     CORTARLO MUCHO MAS... por lo menos 3 mas". Esto REVIERTE el "no me cortes adentro de un mismo
+     clip" del punto anterior: `cutSilences` ahora también compacta cualquier pausa de en medio
+     ≥`MID_SILENCE_MIN_SECONDS` (0.3s — más corta que eso es respiración/prosodia normal, no se toca),
+     dejando `MID_PAD_SECONDS` de aire real a cada lado en vez de silencio absoluto. Arrancó en 0.12
+     (~0.24s de hueco total, para no sentirse como jump-cut seco) y bajó a **0.025 (~0.05s de hueco)**
+     el mismo día, después de probar un corte manual mucho más ceñido en los puntos reales de cambio de
+     toma de un clip real y que Nacho lo confirmara como el estándar que quiere de ahora en adelante:
+     "los cortes estuvieron espectacular... así los quiero de ahora en adelante". Varias pausas en el
+     mismo clip (no solo una al principio/final) necesitan recortar pedazos de EN MEDIO del archivo, así
+     que ya no alcanza con un `-ss`/`-t` simple — se arma cada tramo a mantener con `trim`/`atrim` +
+     `setpts`/`asetpts` y se unen con el filtro `concat` de ffmpeg.
    - **Bug encontrado el mismo día (27-11-2026):** desde que esta función existe, `probeDuration` usaba
      mal un flag de ffprobe (`noprint_wrapper` en vez de `noprint_wrappers`, sin la "s") — ffprobe
      tiraba error, el try/catch de `cutSilences` lo tragaba en silencio, y la función devolvía SIEMPRE
